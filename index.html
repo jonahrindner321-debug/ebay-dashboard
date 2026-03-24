@@ -3262,6 +3262,7 @@ function openAudit() {
   $('audit-modal').classList.add('open');
 }
 
+let partyAudio = null;
 function toggleParty() {
   const on = document.body.classList.toggle('party');
   const btn  = $('party-btn');
@@ -3273,12 +3274,21 @@ function toggleParty() {
     launchConfetti();
     partyInterval = setInterval(launchConfetti, 2200);
     showToast('🪩 Party mode activated!', 'success', '🎉');
+    // Six Flags theme (We Like to Party - Vengaboys)
+    if (!partyAudio) {
+      partyAudio = new Audio('https://www.myinstants.com/media/sounds/we-like-to-party.mp3');
+      partyAudio.loop = true;
+      partyAudio.volume = 0.5;
+    }
+    partyAudio.currentTime = 0;
+    partyAudio.play().catch(() => {});
   } else {
     btn.textContent = '🎉 Party';
     btn.classList.remove('btn-party-on');
     ball.style.display = 'none';
     clearInterval(partyInterval);
     partyInterval = null;
+    if (partyAudio) { partyAudio.pause(); partyAudio.currentTime = 0; }
     showToast('Party mode off 😢', 'info', '🌙');
   }
 }

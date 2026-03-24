@@ -1110,6 +1110,12 @@
     </div>
   </div>
 
+  <!-- ── Expenses Section ── -->
+  <div id="expenses-section" style="display:none;margin-bottom:var(--gap)">
+    <div class="section-hdr"><span class="section-title">🧾 Operational Expenses</span><span style="font-size:11px;color:var(--muted)" id="expenses-sub"></span></div>
+    <div id="expenses-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--gap)"></div>
+  </div>
+
   <!-- ── Suggestions ── -->
   <div class="suggest-section" id="suggest-section" style="display:none">
     <div class="section-hdr"><span class="section-title">💡 Insights & Suggestions</span></div>
@@ -1253,6 +1259,51 @@ const SHEETS = {
 };
 
 const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i;
+
+// Store creation dates fetched from Drive API — populated on load
+const STORE_CREATED = {}; // { person: 'YYYY-MM-DD' }
+
+// Expenses parsed from Expense tabs — populated on load
+// Structure: { person: { 'YYYY-MM': totalAmount, ... } }
+const EXPENSES = {};
+
+// Convert month label "Mar 2026" → "2026-03"
+function monthLabelToKey(label) {
+  const MN = {Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+  const m = label.match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (!m) return null;
+  const mo = MN[m[1]]; if (!mo) return null;
+  return `${m[2]}-${mo}`;
+}
+
+// Get total expenses for a person across given month keys (or all if none given)
+function getExpenses(person, monthKeys) {
+  const pExp = EXPENSES[person] || {};
+  if (!monthKeys) return r2(Object.values(pExp).reduce((s,v)=>s+v,0));
+  return r2(monthKeys.reduce((s,k)=>s+(pExp[k]||0),0));
+}
+
+// Parse an expense tab — returns array of { person, monthKey, label, amount }
+function parseExpenseTab(values, person) {
+  const MO = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+  const CRED = /email|pass|password|username|user|buyer|seller|vps|ip|aliexpress|amazon|ebay|proton|anydesk|pin|phone/i;
+  const result = [];
+  for (const row of values) {
+    if (!row || row.length < 2) continue;
+    const label    = String(row[0] || '').trim();
+    const amtRaw   = String(row[1] || '').trim();
+    const monthRaw = String(row[2] || '').toLowerCase().trim().substring(0, 3);
+    if (!label || !MO[monthRaw]) continue;              // must have a month
+    if (label.toLowerCase().includes('total')) continue; // skip total row
+    if (CRED.test(label)) continue;                     // skip credential rows
+    const amt = parseFloat(amtRaw.replace(/[$,\s]/g, ''));
+    if (!isFinite(amt) || amt <= 0) continue;
+    const mo = MO[monthRaw];
+    const yr = (mo === 11 || mo === 12) ? 2025 : 2026;
+    result.push({ person, monthKey: `${yr}-${String(mo).padStart(2,'0')}`, label, amount: r2(amt) });
+  }
+  return result;
+}
 
 const MONTH_ORDER = [
   'Nov 2025','Dec 2025','Dec/Jan 2026','Jan 2026',
@@ -1733,6 +1784,17 @@ async function loadAll() {
   }
   ids.forEach((id,i)=>tabLists[i].forEach(tab=>allSources.push({id,person:SHEETS[id],tab})));
 
+  // Fetch sheet creation dates from Drive API (fire and forget — non-blocking)
+  Promise.all(ids.map(async id => {
+    try {
+      const url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime`;
+      const data = await apiFetch(url);
+      if (data.createdTime) {
+        STORE_CREATED[SHEETS[id]] = data.createdTime.substring(0, 10); // YYYY-MM-DD
+      }
+    } catch(e) { /* ignore — creation date is optional info */ }
+  }));
+
   if (!allSources.length) {
     const msg = tabErrors.length ? 'API error: '+tabErrors[0].e : 'No tabs — check sheet sharing';
     setStatus('error', msg);
@@ -1753,11 +1815,22 @@ async function loadAll() {
     await Promise.all(batch.map(async src => {
       try {
         const values = await getTabValues(src.id, src.tab);
-        const parsed = parseValues(values, src.person, normSpecial(src.tab));
-        RAW.push(...parsed);
-        const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
-        const status = parsed.length > 0 ? 'ok' : 'skipped';
-        loadAudit.push({ person: src.person, tab: src.tab, rows: parsed.length, profit: tabProfit, status });
+
+        // If it's an expense tab, parse it separately and store
+        if (/^expenses?$/i.test(src.tab.trim())) {
+          const expRows = parseExpenseTab(values, src.person);
+          expRows.forEach(e => {
+            if (!EXPENSES[e.person]) EXPENSES[e.person] = {};
+            EXPENSES[e.person][e.monthKey] = r2((EXPENSES[e.person][e.monthKey] || 0) + e.amount);
+          });
+          loadAudit.push({ person: src.person, tab: src.tab, rows: expRows.length, profit: 0, status: expRows.length > 0 ? 'ok' : 'skipped' });
+        } else {
+          const parsed = parseValues(values, src.person, normSpecial(src.tab));
+          RAW.push(...parsed);
+          const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
+          const status = parsed.length > 0 ? 'ok' : 'skipped';
+          loadAudit.push({ person: src.person, tab: src.tab, rows: parsed.length, profit: tabProfit, status });
+        }
       } catch(e) {
         loadAudit.push({ person: src.person, tab: src.tab, rows: 0, profit: 0, status: 'error', err: e.message });
       } finally {
@@ -1838,6 +1911,7 @@ function applyFilters() {
   renderLeaderboard(d);
   renderHealthScores(d);
   renderH2H();
+  renderExpenses(d);
   renderSuggestions(d);
   renderTable(d);
   checkMilestones(r2(d.reduce((s,r)=>s+r.profit,0)));
@@ -1923,14 +1997,33 @@ function renderSplitSummary(data) {
         <span style="font-size:10px;color:var(--muted)">${x.split.danianPct}%</span>
       </span></div>`).join('');
 
+  // Build month keys from current data selection for expense lookup
+  const dataMonthKeys = [...new Set(data.map(r => monthLabelToKey(r.month)).filter(Boolean))];
+
   const ownerRows = byPerson
     .filter(x => x.split.storeOwner > 0).sort((a, b) => b.split.storeOwner - a.split.storeOwner)
-    .map(x => `<div class="split-row">
-      <span class="split-row-lbl">${x.p}${x.split.type === 'jacob' ? ' <span style="color:var(--muted);font-size:10px">(name fee)</span>' : ''}</span>
-      <span class="split-row-right">
-        <span class="split-row-v" style="color:var(--yellow)">${fmt$(x.split.storeOwner)}</span>
-        <span style="font-size:10px;color:var(--muted)">${ownerPctLabel(x)}</span>
-      </span></div>`).join('');
+    .map(x => {
+      const exp = getExpenses(x.p, dataMonthKeys);
+      const net = r2(x.split.storeOwner - exp);
+      const expHtml = exp > 0
+        ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;text-align:right">
+            − ${fmt$(exp)} expenses &nbsp;=&nbsp;
+            <span style="color:${net >= 0 ? 'var(--yellow)' : 'var(--rose)'}">
+              ${fmt$(net)} net
+            </span>
+           </div>`
+        : '';
+      return `<div class="split-row" style="flex-direction:column;align-items:stretch">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="split-row-lbl">${x.p}${x.split.type === 'jacob' ? ' <span style="color:var(--muted);font-size:10px">(name fee)</span>' : ''}</span>
+          <span class="split-row-right">
+            <span class="split-row-v" style="color:var(--yellow)">${fmt$(x.split.storeOwner)}</span>
+            <span style="font-size:10px;color:var(--muted)">${ownerPctLabel(x)}</span>
+          </span>
+        </div>
+        ${expHtml}
+      </div>`;
+    }).join('');
 
   section.style.display = 'block';
   grid.innerHTML = `
@@ -2752,6 +2845,27 @@ function renderHealthScores(data) {
     const consPct = Math.round(consScore/30*100);
     const barColor = (pct) => pct>=70?'var(--emerald)':pct>=40?'var(--yellow)':'var(--rose)';
     const startLabel = score.firstDate ? `Since ${fmtDayLabel(score.firstDate)}` : '';
+
+    // Store creation date + days to first sale (informational only)
+    const createdDate = STORE_CREATED[p] || null;
+    let storeAgeLabel = '', daysToFirstSaleLabel = '';
+    if (createdDate) {
+      const created = new Date(createdDate + 'T00:00:00');
+      const now = new Date();
+      const storeAgeDays = Math.floor((now - created) / 86400000);
+      const storeAgeMonths = (storeAgeDays / 30.44).toFixed(1);
+      storeAgeLabel = storeAgeDays < 60
+        ? `${storeAgeDays} days old`
+        : `${storeAgeMonths} months old`;
+      if (score.firstDate) {
+        const firstSale = new Date(score.firstDate + 'T00:00:00');
+        const daysToFirst = Math.round((firstSale - created) / 86400000);
+        daysToFirstSaleLabel = daysToFirst <= 0
+          ? '🔥 Sold on day 1!'
+          : `⏱️ ${daysToFirst} day${daysToFirst===1?'':'s'} to first sale`;
+      }
+    }
+
     const tip = `<div class="health-tip">
       <div class="ht-grade-row">
         <div class="ht-grade-big ${score.grade}">${score.grade}</div>
@@ -2764,7 +2878,11 @@ function renderHealthScores(data) {
       <div class="ht-bar-wrap"><div class="ht-bar-fill" style="width:${actPct}%;background:${barColor(actPct)}"></div></div>
       <div class="ht-row"><span class="ht-lbl">✅ Profitable Days</span><span class="ht-val">${score.profitableDays} / ${score.activeDays}</span></div>
       <div class="ht-bar-wrap" style="margin-bottom:4px"><div class="ht-bar-fill" style="width:${consPct}%;background:${barColor(consPct)}"></div></div>
-      ${startLabel ? `<div style="margin-top:8px;font-size:10px;color:var(--muted)">🗓 ${startLabel}</div>` : ''}
+      ${createdDate || startLabel ? `<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,.08);padding-top:8px">` : ''}
+      ${createdDate ? `<div style="font-size:10px;color:var(--muted);margin-bottom:3px">🗓 Store created: <b style="color:var(--text2)">${fmtDayLabel(createdDate)}</b> &nbsp;·&nbsp; ${storeAgeLabel}</div>` : ''}
+      ${daysToFirstSaleLabel ? `<div style="font-size:10px;color:var(--cyan);margin-bottom:3px">${daysToFirstSaleLabel}</div>` : ''}
+      ${startLabel ? `<div style="font-size:10px;color:var(--muted)">📦 First sale: <b style="color:var(--text2)">${fmtDayLabel(score.firstDate)}</b></div>` : ''}
+      ${createdDate || startLabel ? `</div>` : ''}
       ${ia ? `<div style="margin-top:4px;font-size:10px;color:var(--rose);font-weight:700">⚠️ Inactive ${inactive} days</div>` : ''}
     </div>`;
     return `<div class="card health-card" style="animation:fadeUp .4s ease ${i*.05}s both">
@@ -2963,6 +3081,40 @@ function renderSuggestions(data) {
       metric:`${best.pct.toFixed(0)}% profitable days` });
   }
 
+  // ── Expense insights ──
+  const dataMonthKeys = [...new Set(data.map(r => monthLabelToKey(r.month)).filter(Boolean))];
+  personStats.forEach(s => {
+    const exp = getExpenses(s.p, dataMonthKeys);
+    if (exp <= 0) return;
+    const split = getSplit(s.p, s.profit);
+    const ownerTake = split.storeOwner;
+    if (ownerTake <= 0) return; // only store owners pay expenses
+    const expPct = r2(exp / ownerTake * 100);
+    const net = r2(ownerTake - exp);
+    if (net < 0) {
+      insights.push({ type:'warning', icon:'🚨', title:`${s.p}'s expenses exceed their take`,
+        body:`Their ops costs (${fmt$(exp)}) are more than their profit share (${fmt$(ownerTake)}) for this period. They're in the red on ops.`,
+        metric:`${fmt$(net)} net after expenses` });
+    } else if (expPct > 40) {
+      insights.push({ type:'warning', icon:'💸', title:`Expenses eating ${expPct.toFixed(0)}% of ${s.p}'s take`,
+        body:`Ops costs of ${fmt$(exp)} are a large chunk of their ${fmt$(ownerTake)} share. Worth reviewing subscriptions or renegotiating costs.`,
+        metric:`${fmt$(net)} net after expenses` });
+    } else if (expPct > 0) {
+      insights.push({ type:'info', icon:'🧾', title:`${s.p} ops cost: ${fmt$(exp)}`,
+        body:`After ops expenses, their net take is ${fmt$(net)} (${(100-expPct).toFixed(0)}% of gross share).`,
+        metric:`${fmt$(net)} net take` });
+    }
+  });
+
+  // Flag accounts with no expenses logged at all (possible missing data)
+  const partnerPersons = personStats.filter(s => getSplit(s.p, s.profit).type === 'partner' && s.sales > 5);
+  const noExpense = partnerPersons.filter(s => getExpenses(s.p, dataMonthKeys) === 0);
+  if (noExpense.length > 0) {
+    insights.push({ type:'info', icon:'📋', title:`${noExpense.length} account${noExpense.length>1?'s have':' has'} no expenses logged`,
+      body:`${noExpense.map(s=>s.p).join(', ')} ${noExpense.length>1?'have':'has'} no expense data recorded. Add ops costs to their Expense tab so the net take calculation is accurate.`,
+      metric:`${noExpense.map(s=>s.p).join(', ')}` });
+  }
+
   if (!insights.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';
   grid.innerHTML = insights.map((ins, i) => `
@@ -2972,6 +3124,69 @@ function renderSuggestions(data) {
       <div class="suggest-body">${ins.body}</div>
       <div class="suggest-metric">${ins.metric}</div>
     </div>`).join('');
+}
+
+// ─── EXPENSES SECTION ─────────────────────────────────────────────────────────
+function renderExpenses(data) {
+  const section = $('expenses-section'), grid = $('expenses-grid');
+  if (!Object.keys(EXPENSES).length) { section.style.display = 'none'; return; }
+
+  const dataMonthKeys = [...new Set(data.map(r => monthLabelToKey(r.month)).filter(Boolean))];
+  const MN = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
+
+  // Filter to accounts that have expenses AND are in current data view
+  const persons = [...new Set(data.map(r => r.person))];
+  const expPersons = Object.keys(EXPENSES).filter(p => persons.includes(p) || Object.keys(EXPENSES[p]).length > 0);
+
+  if (!expPersons.length) { section.style.display = 'none'; return; }
+
+  let grandTotal = 0;
+  const cards = expPersons.sort().map(p => {
+    const pExp = EXPENSES[p] || {};
+    // Get expenses for selected months, or all if no filter
+    const relevantKeys = dataMonthKeys.length > 0
+      ? dataMonthKeys.filter(k => pExp[k])
+      : Object.keys(pExp);
+    if (!relevantKeys.length) return null;
+
+    const total = r2(relevantKeys.reduce((s,k) => s + (pExp[k]||0), 0));
+    grandTotal = r2(grandTotal + total);
+
+    // Build month breakdown
+    const monthRows = relevantKeys.sort().map(k => {
+      const [yr, mo] = k.split('-');
+      return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="color:var(--text2)">${MN[parseInt(mo)]} ${yr}</span>
+        <span style="color:var(--yellow);font-weight:600">${fmt$(pExp[k])}</span>
+      </div>`;
+    }).join('');
+
+    // Get their profit split and net
+    const personData = data.filter(r => r.person === p);
+    const profit = r2(personData.reduce((s,r) => s + r.profit, 0));
+    const split = getSplit(p, profit);
+    const ownerTake = split.storeOwner;
+    const net = ownerTake > 0 ? r2(ownerTake - total) : null;
+
+    return `<div class="card" style="padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-weight:700;font-size:14px">${p}</div>
+        <div style="font-size:18px;font-weight:800;color:var(--rose)">${fmt$(total)}</div>
+      </div>
+      ${monthRows}
+      ${ownerTake > 0 ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.1);font-size:11px;color:var(--muted)">
+        Take: <span style="color:var(--yellow)">${fmt$(ownerTake)}</span> &nbsp;−&nbsp;
+        Expenses: <span style="color:var(--rose)">${fmt$(total)}</span> &nbsp;=&nbsp;
+        <span style="color:${net>=0?'var(--green)':'var(--rose)'};font-weight:700">${fmt$(net)} net</span>
+      </div>` : ''}
+    </div>`;
+  }).filter(Boolean);
+
+  if (!cards.length) { section.style.display = 'none'; return; }
+
+  $('expenses-sub').textContent = `Total ops costs: ${fmt$(grandTotal)}`;
+  grid.innerHTML = cards.join('');
+  section.style.display = 'block';
 }
 
 // ─── DATA GUIDE ───────────────────────────────────────────────────────────────

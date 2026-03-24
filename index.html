@@ -842,6 +842,7 @@
     <button class="btn btn-primary" onclick="loadAll()"><span id="ri">↻</span> Refresh</button>
     <button class="btn btn-ghost" id="party-btn" onclick="toggleParty()">🎉 Party</button>
     <button class="btn btn-ghost" onclick="changeKey()">⚙ Key</button>
+    <button class="btn btn-ghost" id="audit-btn" onclick="openAudit()" style="display:none">🔍 Audit</button>
   </div>
 </header>
 
@@ -903,6 +904,17 @@
 </div>
 
 <!-- ── Weekly Wrap Modal ── -->
+<!-- ── Audit Modal ── -->
+<div class="modal-overlay" id="audit-modal">
+  <div class="modal-card" style="max-width:700px;width:95%">
+    <div class="modal-hdr">
+      <div class="modal-title">🔍 Data Load Audit</div>
+      <button class="modal-close" onclick="closeModal('audit-modal')">✕</button>
+    </div>
+    <div id="audit-content" style="padding:20px;max-height:70vh;overflow-y:auto"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="wrap-modal">
   <div class="modal-card wrap-modal-card">
     <div class="modal-hdr">
@@ -1639,7 +1651,9 @@ async function apiFetch(url) {
 async function getDataTabs(id) {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}?key=${API_KEY}&fields=sheets.properties(title,sheetType)`;
   const data = await apiFetch(url);
-  return (data.sheets||[]).filter(s=>s.properties.sheetType==='GRID').map(s=>s.properties.title).filter(t=>!SKIP_TABS.test(t));
+  // No blacklist — let parseValues detect valid data tabs by looking for DATE+PRICE headers.
+  // Any tab without proper headers returns 0 rows automatically, so new/renamed tabs never break anything.
+  return (data.sheets||[]).filter(s=>s.properties.sheetType==='GRID').map(s=>s.properties.title);
 }
 async function getTabValues(id, tab) {
   const enc = encodeURIComponent(tab);
@@ -1655,7 +1669,7 @@ function parseValues(values, person, monthLabel) {
   let headerIdx = -1, colMap = {};
   for (let i = 0; i < Math.min(6, values.length); i++) {
     const row = values[i].map(c=>String(c||'').toUpperCase().trim());
-    if (row.includes('DATE') && row.includes('PRICE')) {
+    if ((row.includes('DATE') || row.includes('PROFIT')) && (row.includes('PRICE') || row.includes('PROFIT'))) {
       headerIdx = i;
       row.forEach((h,idx) => {
         if      (h==='DATE')       colMap.date   = idx;
@@ -1669,13 +1683,17 @@ function parseValues(values, person, monthLabel) {
       break;
     }
   }
-  if (headerIdx < 0 || colMap.price === undefined) return rows;
+  // Skip tab only if we couldn't find any recognizable header at all
+  if (headerIdx < 0 || (colMap.price === undefined && colMap.profit === undefined)) return rows;
   const n = v => { const f = parseFloat(v); return isFinite(f) ? f : 0; };
   for (let i = headerIdx+1; i < values.length; i++) {
     const row = values[i];
-    const price = n(row[colMap.price]);
-    if (!price) continue;
+    const price  = n(row[colMap.price]);
     const profit = n(row[colMap.profit]);
+    const cost_check = n(row[colMap.cost]);
+    const fee_check  = n(row[colMap.fee]);
+    // only skip rows that have absolutely no numeric data at all
+    if (!price && !profit && !cost_check && !fee_check) continue;
     const cost   = n(row[colMap.cost]);
     const fee    = n(row[colMap.fee]);
     let roi      = n(row[colMap.roi]);
@@ -1712,16 +1730,25 @@ async function loadAll() {
   setProgress(0, totalJobs);
   setStatus('loading', `Fetching 0 / ${totalJobs}…`);
 
+  const loadAudit = []; // track per-tab results
+
   await Promise.all(allSources.map(async src => {
     try {
       const values = await getTabValues(src.id, src.tab);
-      RAW.push(...parseValues(values, src.person, normSpecial(src.tab)));
-    } catch(e) { /* skip */ } finally {
+      const parsed = parseValues(values, src.person, normSpecial(src.tab));
+      RAW.push(...parsed);
+      const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
+      const status = parsed.length > 0 ? 'ok' : 'skipped';
+      loadAudit.push({ person: src.person, tab: src.tab, rows: parsed.length, profit: tabProfit, status });
+    } catch(e) {
+      loadAudit.push({ person: src.person, tab: src.tab, rows: 0, profit: 0, status: 'error', err: e.message });
+    } finally {
       doneJobs++;
       setProgress(doneJobs, totalJobs);
       setStatus('loading', `Fetching ${doneJobs} / ${totalJobs}…`);
     }
   }));
+  window._loadAudit = loadAudit; // expose for audit modal
 
   ri.className=''; ri.textContent='↻';
   const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
@@ -1732,6 +1759,7 @@ async function loadAll() {
     populateFilters();
     renderAllTimeBanner();
     applyFilters();
+    $('audit-btn').style.display = '';
     if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
     else showToast('Data refreshed', 'info', '🔄');
   } else {
@@ -2933,6 +2961,78 @@ function toggleGuide() {
 
 // ─── PARTY MODE ───────────────────────────────────────────────────────────────
 let partyInterval = null;
+function openAudit() {
+  const audit = window._loadAudit || [];
+  if (!audit.length) { showToast('No audit data — hit Refresh first', 'info', '⚠️'); return; }
+
+  // group by person
+  const byPerson = {};
+  audit.forEach(a => {
+    if (!byPerson[a.person]) byPerson[a.person] = [];
+    byPerson[a.person].push(a);
+  });
+
+  const grandRows   = audit.reduce((s,a)=>s+a.rows, 0);
+  const grandProfit = audit.reduce((s,a)=>s+a.profit, 0);
+  const errors      = audit.filter(a=>a.status==='error');
+  const skipped     = audit.filter(a=>a.status==='skipped');
+
+  let html = `
+    <div style="margin-bottom:16px;padding:14px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.3);border-radius:12px;display:flex;gap:32px">
+      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Total Rows Loaded</div>
+           <div style="font-size:24px;font-weight:800;color:var(--cyan)">${grandRows.toLocaleString()}</div></div>
+      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Total Profit Loaded</div>
+           <div style="font-size:24px;font-weight:800;color:var(--green)">$${grandProfit.toFixed(2)}</div></div>
+      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Failed Tabs</div>
+           <div style="font-size:24px;font-weight:800;color:${errors.length?'var(--rose)':'var(--green)'}">${errors.length}</div></div>
+      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Non-Data Tabs Skipped</div>
+           <div style="font-size:24px;font-weight:800;color:var(--muted)">${skipped.length}</div></div>
+    </div>`;
+
+  if (errors.length) {
+    html += `<div style="margin-bottom:14px;padding:12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px">
+      <div style="font-weight:700;color:var(--rose);margin-bottom:8px">❌ Failed Tabs (data was NOT loaded):</div>
+      ${errors.map(e=>`<div style="font-size:13px;color:var(--text2);padding:4px 0">${e.person} → <b>${e.tab}</b> — ${e.err||'unknown error'}</div>`).join('')}
+    </div>`;
+  }
+
+  html += `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em">
+      <th style="text-align:left;padding:6px 8px">Account</th>
+      <th style="text-align:left;padding:6px 8px">Tab</th>
+      <th style="text-align:right;padding:6px 8px">Rows</th>
+      <th style="text-align:right;padding:6px 8px">Profit</th>
+      <th style="text-align:center;padding:6px 8px">Status</th>
+    </tr></thead><tbody>`;
+
+  Object.entries(byPerson).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([person, tabs]) => {
+    const pRows   = tabs.reduce((s,t)=>s+t.rows,0);
+    const pProfit = tabs.reduce((s,t)=>s+t.profit,0);
+    html += `<tr style="background:rgba(255,255,255,.04)">
+      <td style="padding:8px;font-weight:700;color:var(--text)" colspan="2">${person}</td>
+      <td style="padding:8px;text-align:right;color:var(--cyan)">${pRows}</td>
+      <td style="padding:8px;text-align:right;color:var(--green)">$${pProfit.toFixed(2)}</td>
+      <td></td></tr>`;
+    tabs.forEach(t => {
+      const ok = t.status === 'ok';
+      html += `<tr style="border-top:1px solid rgba(255,255,255,.04)">
+        <td style="padding:5px 8px;color:var(--muted)"></td>
+        <td style="padding:5px 8px;color:var(--text2)">${t.tab}</td>
+        <td style="padding:5px 8px;text-align:right;color:var(--muted)">${t.rows}</td>
+        <td style="padding:5px 8px;text-align:right;color:var(--muted)">$${t.profit.toFixed(2)}</td>
+        <td style="padding:5px 8px;text-align:center">${t.status==='ok'?'✅':t.status==='skipped'?'⏭️':'❌'}</td></tr>`;
+    });
+  });
+
+  html += `</tbody></table>
+    <div style="margin-top:12px;font-size:11px;color:var(--muted);text-align:center">
+      Compare these numbers to your Excel files to spot missing data
+    </div>`;
+
+  $('audit-content').innerHTML = html;
+  $('audit-modal').classList.add('open');
+}
+
 function toggleParty() {
   const on = document.body.classList.toggle('party');
   const btn  = $('party-btn');

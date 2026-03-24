@@ -1997,13 +1997,10 @@ function renderSplitSummary(data) {
         <span style="font-size:10px;color:var(--muted)">${x.split.danianPct}%</span>
       </span></div>`).join('');
 
-  // Build month keys from current data selection for expense lookup
-  const dataMonthKeys = [...new Set(data.map(r => monthLabelToKey(r.month)).filter(Boolean))];
-
   const ownerRows = byPerson
     .filter(x => x.split.storeOwner > 0).sort((a, b) => b.split.storeOwner - a.split.storeOwner)
     .map(x => {
-      const exp = getExpenses(x.p, dataMonthKeys);
+      const exp = getExpenses(x.p); // always use all-time expenses, not filtered by month
       const net = r2(x.split.storeOwner - exp);
       const expHtml = exp > 0
         ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;text-align:right">
@@ -3081,10 +3078,9 @@ function renderSuggestions(data) {
       metric:`${best.pct.toFixed(0)}% profitable days` });
   }
 
-  // ── Expense insights ──
-  const dataMonthKeys = [...new Set(data.map(r => monthLabelToKey(r.month)).filter(Boolean))];
+  // ── Expense insights — always use all-time expenses, not filtered by month ──
   personStats.forEach(s => {
-    const exp = getExpenses(s.p, dataMonthKeys);
+    const exp = getExpenses(s.p);
     if (exp <= 0) return;
     const split = getSplit(s.p, s.profit);
     const ownerTake = split.storeOwner;
@@ -3108,7 +3104,7 @@ function renderSuggestions(data) {
 
   // Flag accounts with no expenses logged at all (possible missing data)
   const partnerPersons = personStats.filter(s => getSplit(s.p, s.profit).type === 'partner' && s.sales > 5);
-  const noExpense = partnerPersons.filter(s => getExpenses(s.p, dataMonthKeys) === 0);
+  const noExpense = partnerPersons.filter(s => getExpenses(s.p) === 0);
   if (noExpense.length > 0) {
     insights.push({ type:'info', icon:'📋', title:`${noExpense.length} account${noExpense.length>1?'s have':' has'} no expenses logged`,
       body:`${noExpense.map(s=>s.p).join(', ')} ${noExpense.length>1?'have':'has'} no expense data recorded. Add ops costs to their Expense tab so the net take calculation is accurate.`,
@@ -3131,22 +3127,18 @@ function renderExpenses(data) {
   const section = $('expenses-section'), grid = $('expenses-grid');
   if (!Object.keys(EXPENSES).length) { section.style.display = 'none'; return; }
 
-  const dataMonthKeys = [...new Set(data.map(r => monthLabelToKey(r.month)).filter(Boolean))];
   const MN = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
 
-  // Filter to accounts that have expenses AND are in current data view
-  const persons = [...new Set(data.map(r => r.person))];
-  const expPersons = Object.keys(EXPENSES).filter(p => persons.includes(p) || Object.keys(EXPENSES[p]).length > 0);
+  // Show all accounts that have any expense data (not filtered by month selection)
+  const expPersons = Object.keys(EXPENSES).filter(p => Object.keys(EXPENSES[p]).length > 0);
 
   if (!expPersons.length) { section.style.display = 'none'; return; }
 
   let grandTotal = 0;
   const cards = expPersons.sort().map(p => {
     const pExp = EXPENSES[p] || {};
-    // Get expenses for selected months, or all if no filter
-    const relevantKeys = dataMonthKeys.length > 0
-      ? dataMonthKeys.filter(k => pExp[k])
-      : Object.keys(pExp);
+    // Always show ALL expense months regardless of the active month filter
+    const relevantKeys = Object.keys(pExp);
     if (!relevantKeys.length) return null;
 
     const total = r2(relevantKeys.reduce((s,k) => s + (pExp[k]||0), 0));

@@ -429,6 +429,9 @@
     @keyframes rainbowHue  { from{filter:hue-rotate(0deg)} to{filter:hue-rotate(360deg)} }
     @keyframes discoBounce { 0%,100%{transform:translateY(0) rotate(-5deg) scale(1)} 30%{transform:translateY(-18px) rotate(8deg) scale(1.1)} 60%{transform:translateY(8px) rotate(-8deg) scale(.95)} }
     @keyframes partyBg     { 0%,100%{background:rgba(6,12,24,.88)} 25%{background:rgba(30,6,24,.88)} 50%{background:rgba(6,24,12,.88)} 75%{background:rgba(6,12,30,.88)} }
+    @keyframes screenShake { 0%,100%{transform:translate(0,0) rotate(0deg)} 15%{transform:translate(-4px,2px) rotate(-.5deg)} 30%{transform:translate(4px,-3px) rotate(.5deg)} 45%{transform:translate(-3px,3px) rotate(-.3deg)} 60%{transform:translate(3px,-2px) rotate(.3deg)} 75%{transform:translate(-2px,1px) rotate(-.2deg)} }
+    @keyframes billFall    { 0%{opacity:1;transform:translateY(0) rotate(0deg) scale(1)} 80%{opacity:1} 100%{opacity:0;transform:translateY(100vh) rotate(540deg) scale(.7)} }
+    @keyframes sparkle     { 0%{opacity:1;transform:scale(1)} 100%{opacity:0;transform:scale(0) translateY(-20px)} }
     body.party .card  { animation: partyBorder 1.8s linear infinite !important; }
     body.party .section-title { animation: partyText 1.4s linear infinite !important; -webkit-text-fill-color: unset !important; background: none !important; }
     body.party .orb-1 { animation: drift1 5s ease-in-out infinite, rainbowHue 3s linear infinite !important; opacity: .28 !important; }
@@ -437,9 +440,12 @@
     body.party .header { animation: partyBg 4s ease infinite; }
     body.party .kpi-val { animation: pulseBig .8s ease-in-out infinite !important; }
     body.party .alltime-val { animation: pulseBig 1s ease-in-out infinite !important; }
+    body.party-shake { animation: screenShake .4s ease !important; }
     .disco-ball { display: none; position: fixed; font-size: 52px; z-index: 998; pointer-events: none; top: 70px; right: 20px; animation: discoBounce 2.5s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,200,0,.6)); }
     body.party .disco-ball { display: block; }
     .btn-party-on { background: linear-gradient(135deg,#ec4899,#f59e0b,#34d399,#6366f1) !important; background-size: 300% !important; animation: gradShift .8s linear infinite !important; color: #fff !important; border-color: transparent !important; }
+    .bill { position:fixed; pointer-events:none; z-index:9997; font-size:26px; animation: billFall linear forwards; }
+    .cursor-spark { position:fixed; pointer-events:none; z-index:9998; font-size:16px; animation: sparkle .6s ease forwards; }
 
     /* ── Footer ── */
     .footer { text-align: center; font-size: 11px; color: var(--muted); padding: 24px 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -2971,6 +2977,17 @@ function launchConfetti() {
     box.appendChild(p);
     setTimeout(()=>p.remove(),5000);
   }
+  // Rain dollar bills during party mode
+  if (document.body.classList.contains('party')) {
+    for(let i=0;i<18;i++){
+      const b=document.createElement('div');
+      b.className='bill';
+      b.textContent=['💵','💸','🤑','💰'][Math.floor(Math.random()*4)];
+      b.style.cssText=`left:${Math.random()*100}%;top:-40px;animation-duration:${2.8+Math.random()*2}s;animation-delay:${Math.random()*1.2}s;`;
+      document.body.appendChild(b);
+      setTimeout(()=>b.remove(),6000);
+    }
+  }
 }
 
 // ─── SUGGESTIONS ─────────────────────────────────────────────────────────────
@@ -3190,6 +3207,37 @@ function toggleGuide() {
 
 // ─── PARTY MODE ───────────────────────────────────────────────────────────────
 let partyInterval = null;
+let partyHypeInterval = null;
+let partyShakeInterval = null;
+let partyCursorHandler = null;
+const HYPE_MSGS = [
+  ['SHEESH 🔥','success'],['WE EAT 💰','success'],['MONEY PRINTER GO BRRR 🖨️','success'],
+  ['LETS GOOO 🚀','success'],['STACK SZN 💎','success'],['BIG BAG ALERT 🧳','success'],
+  ['PROFIT GODS ARE PLEASED 🙏','success'],['WE ARE SO BACK 📈','success'],
+  ['DROPSHIP DRIP 💧','success'],['NO CAP WE WINNING 🏆','success'],
+  ['JOHNA AND RUSS EATING 🍽️','success'],['ANOTHER ONE 🎤','success'],
+];
+let _hypeIdx = 0;
+function triggerShake() {
+  document.body.classList.add('party-shake');
+  setTimeout(()=>document.body.classList.remove('party-shake'), 400);
+}
+function startCursorTrail() {
+  const emojis = ['💵','✨','🤑','💸','⭐','💰','🔥'];
+  partyCursorHandler = (e) => {
+    if (!document.body.classList.contains('party')) return;
+    const s = document.createElement('div');
+    s.className = 'cursor-spark';
+    s.textContent = emojis[Math.floor(Math.random()*emojis.length)];
+    s.style.cssText = `left:${e.clientX - 8}px;top:${e.clientY - 8}px;`;
+    document.body.appendChild(s);
+    setTimeout(()=>s.remove(), 700);
+  };
+  document.addEventListener('mousemove', partyCursorHandler);
+}
+function stopCursorTrail() {
+  if (partyCursorHandler) { document.removeEventListener('mousemove', partyCursorHandler); partyCursorHandler = null; }
+}
 function openAudit() {
   const audit = window._loadAudit || [];
   if (!audit.length) { showToast('No audit data — hit Refresh first', 'info', '⚠️'); return; }
@@ -3270,8 +3318,18 @@ function toggleParty() {
     btn.textContent = '🪩 Party On!';
     btn.classList.add('btn-party-on');
     ball.style.display = 'block';
+    // Change title to something stupid
+    document.querySelector('.logo-text') && (document.querySelector('.logo-text').textContent = '💰 MONEY MODE 💰');
     launchConfetti();
-    partyInterval = setInterval(launchConfetti, 2200);
+    partyInterval      = setInterval(launchConfetti, 2200);
+    partyShakeInterval = setInterval(triggerShake, 5500);
+    _hypeIdx = 0;
+    partyHypeInterval  = setInterval(()=>{
+      const [msg, type] = HYPE_MSGS[_hypeIdx % HYPE_MSGS.length];
+      showToast(msg, type, '🤑');
+      _hypeIdx++;
+    }, 4000);
+    startCursorTrail();
     showToast('🪩 Party mode activated!', 'success', '🎉');
     // Six Flags theme — hidden YouTube iframe (autoplay works after user gesture)
     let yt = document.getElementById('party-yt');
@@ -3287,8 +3345,11 @@ function toggleParty() {
     btn.textContent = '🎉 Party';
     btn.classList.remove('btn-party-on');
     ball.style.display = 'none';
-    clearInterval(partyInterval);
-    partyInterval = null;
+    document.querySelector('.logo-text') && (document.querySelector('.logo-text').textContent = 'eBay Ops');
+    clearInterval(partyInterval);     partyInterval = null;
+    clearInterval(partyHypeInterval); partyHypeInterval = null;
+    clearInterval(partyShakeInterval); partyShakeInterval = null;
+    stopCursorTrail();
     const yt = document.getElementById('party-yt');
     if (yt) yt.src = '';
     showToast('Party mode off 😢', 'info', '🌙');

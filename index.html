@@ -1286,16 +1286,15 @@ function getExpenses(person, monthKeys) {
 // Parse an expense tab — returns array of { person, monthKey, label, amount }
 function parseExpenseTab(values, person) {
   const MO = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
-  const CRED = /email|pass|password|username|user|buyer|seller|vps|ip|aliexpress|amazon|ebay|proton|anydesk|pin|phone/i;
   const result = [];
   for (const row of values) {
     if (!row || row.length < 2) continue;
     const label    = String(row[0] || '').trim();
     const amtRaw   = String(row[1] || '').trim();
     const monthRaw = String(row[2] || '').toLowerCase().trim().substring(0, 3);
-    if (!label || !MO[monthRaw]) continue;              // must have a month
-    if (label.toLowerCase().includes('total')) continue; // skip total row
-    if (CRED.test(label)) continue;                     // skip credential rows
+    // Credential rows have no valid month in col C — they're automatically skipped here
+    if (!label || !MO[monthRaw]) continue;
+    if (label.toLowerCase().includes('total')) continue; // skip total/summary rows
     const amt = parseFloat(amtRaw.replace(/[$,\s]/g, ''));
     if (!isFinite(amt) || amt <= 0) continue;
     const mo = MO[monthRaw];
@@ -1770,6 +1769,9 @@ async function loadAll() {
   setStatus('loading', 'Loading…');
   const ri = $('ri'); ri.className = 'spin'; ri.textContent = '↻';
   RAW = []; doneJobs = 0;
+  // Clear accumulated state so refreshes don't double-count
+  Object.keys(EXPENSES).forEach(k => delete EXPENSES[k]);
+  Object.keys(STORE_CREATED).forEach(k => delete STORE_CREATED[k]);
 
   const ids = Object.keys(SHEETS);
   let allSources = [], tabErrors = [];

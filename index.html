@@ -1643,10 +1643,17 @@ function checkApiKey() {
 }
 
 // ─── FETCH ─────────────────────────────────────────────────────────────────
-async function apiFetch(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
+async function apiFetch(url, retry = 3) {
+  for (let attempt = 0; attempt < retry; attempt++) {
+    const res = await fetch(url);
+    if (res.ok) return res.json();
+    if (res.status === 429 && attempt < retry - 1) {
+      // Rate limited — wait and retry with backoff
+      await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+      continue;
+    }
+    throw new Error('HTTP ' + res.status);
+  }
 }
 async function getDataTabs(id) {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}?key=${API_KEY}&fields=sheets.properties(title,sheetType)`;
@@ -1716,7 +1723,14 @@ async function loadAll() {
   const ids = Object.keys(SHEETS);
   let allSources = [], tabErrors = [];
 
-  const tabLists = await Promise.all(ids.map(id=>getDataTabs(id).catch(e=>{tabErrors.push({id,e:e.message});return [];})));
+  // Fetch tab lists with small stagger to avoid 429 rate limiting
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  const tabLists = [];
+  for (let i = 0; i < ids.length; i++) {
+    if (i > 0) await delay(120);
+    const list = await getDataTabs(ids[i]).catch(e => { tabErrors.push({id: ids[i], e: e.message}); return []; });
+    tabLists.push(list);
+  }
   ids.forEach((id,i)=>tabLists[i].forEach(tab=>allSources.push({id,person:SHEETS[id],tab})));
 
   if (!allSources.length) {
@@ -1732,22 +1746,28 @@ async function loadAll() {
 
   const loadAudit = []; // track per-tab results
 
-  await Promise.all(allSources.map(async src => {
-    try {
-      const values = await getTabValues(src.id, src.tab);
-      const parsed = parseValues(values, src.person, normSpecial(src.tab));
-      RAW.push(...parsed);
-      const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
-      const status = parsed.length > 0 ? 'ok' : 'skipped';
-      loadAudit.push({ person: src.person, tab: src.tab, rows: parsed.length, profit: tabProfit, status });
-    } catch(e) {
-      loadAudit.push({ person: src.person, tab: src.tab, rows: 0, profit: 0, status: 'error', err: e.message });
-    } finally {
-      doneJobs++;
-      setProgress(doneJobs, totalJobs);
-      setStatus('loading', `Fetching ${doneJobs} / ${totalJobs}…`);
-    }
-  }));
+  // Fetch tab data in batches of 4 with delay between batches to avoid 429s
+  const BATCH = 4;
+  for (let i = 0; i < allSources.length; i += BATCH) {
+    const batch = allSources.slice(i, i + BATCH);
+    await Promise.all(batch.map(async src => {
+      try {
+        const values = await getTabValues(src.id, src.tab);
+        const parsed = parseValues(values, src.person, normSpecial(src.tab));
+        RAW.push(...parsed);
+        const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
+        const status = parsed.length > 0 ? 'ok' : 'skipped';
+        loadAudit.push({ person: src.person, tab: src.tab, rows: parsed.length, profit: tabProfit, status });
+      } catch(e) {
+        loadAudit.push({ person: src.person, tab: src.tab, rows: 0, profit: 0, status: 'error', err: e.message });
+      } finally {
+        doneJobs++;
+        setProgress(doneJobs, totalJobs);
+        setStatus('loading', `Fetching ${doneJobs} / ${totalJobs}…`);
+      }
+    }));
+    if (i + BATCH < allSources.length) await delay(300); // pause between batches
+  }
   window._loadAudit = loadAudit; // expose for audit modal
 
   ri.className=''; ri.textContent='↻';

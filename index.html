@@ -438,14 +438,22 @@
     body.party .orb-2 { animation: drift2 6s ease-in-out infinite, rainbowHue 3s linear infinite reverse !important; opacity: .28 !important; }
     body.party .orb-3 { animation: drift3 4s ease-in-out infinite, rainbowHue 4s linear infinite !important; opacity: .28 !important; }
     body.party .header { animation: partyBg 4s ease infinite; }
-    body.party .kpi-val { animation: pulseBig .8s ease-in-out infinite !important; }
-    body.party .alltime-val { animation: pulseBig 1s ease-in-out infinite !important; }
+    body.party .kpi-val { animation: pulseBig .8s ease-in-out infinite, partyText 1.4s linear infinite !important; position: relative; }
+    body.party .alltime-val { animation: pulseBig 1s ease-in-out infinite, partyText 1.4s linear infinite !important; position: relative; }
+    body.party .kpi-val:hover::after, body.party .alltime-val:hover::after { content: 'SHEESH 🔥'; position:absolute; top:-34px; left:50%; transform:translateX(-50%); background:#1a0a2e; border:1px solid #ec4899; border-radius:8px; padding:3px 10px; font-size:13px; white-space:nowrap; color:#ec4899; font-weight:700; z-index:9999; pointer-events:none; }
     body.party-shake { animation: screenShake .4s ease !important; }
+    @keyframes mrSixWalk { 0%{left:-80px} 48%{left:calc(100vw + 80px)} 49%{left:calc(100vw + 80px);transform:scaleX(-1)} 99%{left:-80px;transform:scaleX(-1)} 100%{left:-80px;transform:scaleX(1)} }
+    @keyframes mrSixBob  { 0%,100%{bottom:18px} 50%{bottom:26px} }
     .disco-ball { display: none; position: fixed; font-size: 52px; z-index: 998; pointer-events: none; top: 70px; right: 20px; animation: discoBounce 2.5s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,200,0,.6)); }
     body.party .disco-ball { display: block; }
+    .mr-six { display:none; position:fixed; font-size:44px; z-index:9996; pointer-events:none; bottom:18px; left:-80px; animation: mrSixWalk 9s linear infinite, mrSixBob .35s ease-in-out infinite; }
+    body.party .mr-six { display:block; }
     .btn-party-on { background: linear-gradient(135deg,#ec4899,#f59e0b,#34d399,#6366f1) !important; background-size: 300% !important; animation: gradShift .8s linear infinite !important; color: #fff !important; border-color: transparent !important; }
+    @keyframes spinWild { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+    body.party #ri { display:inline-block; animation: spinWild .4s linear infinite; }
     .bill { position:fixed; pointer-events:none; z-index:9997; font-size:26px; animation: billFall linear forwards; }
     .cursor-spark { position:fixed; pointer-events:none; z-index:9998; font-size:16px; animation: sparkle .6s ease forwards; }
+    .click-boom { position:fixed; pointer-events:none; z-index:9999; font-size:28px; animation: sparkle .5s ease forwards; }
 
     /* ── Footer ── */
     .footer { text-align: center; font-size: 11px; color: var(--muted); padding: 24px 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -1247,6 +1255,8 @@
 
 <!-- Disco ball (party mode) -->
 <div class="disco-ball" id="disco-ball">🪩</div>
+<!-- Mr. Six (party mode) -->
+<div class="mr-six" id="mr-six">👴</div>
 
 <script>
 // ─── CONFIG ────────────────────────────────────────────────────────────────
@@ -2942,6 +2952,7 @@ function renderAllTimeBanner() {
   banner.style.display='flex';
   $('alltime-val').className  = 'alltime-val shimmer-val';
   $('alltime-val').textContent   = fmt$(allProfit);
+  window._ALLTIME_PROFIT = allProfit;
   $('alltime-sales').textContent = fmtN(RAW.length);
   $('alltime-days').textContent  = fmtN(allDates.length);
   $('alltime-jr').textContent    = fmt$(allJR);
@@ -3310,6 +3321,77 @@ function openAudit() {
   $('audit-modal').classList.add('open');
 }
 
+const SECTION_RENAMES = {
+  'PROFIT DISTRIBUTION':'WHO EATING 🍽️','STORE HEALTH':'STORE VIBES ✨',
+  'MONTHLY GOAL TRACKER':'MONEY GOALS 💰','OPERATIONAL EXPENSES':'THE BILLS 😤',
+  'INSIGHTS & SUGGESTIONS':'THE TEA ☕','HEAD-TO-HEAD':'WHO WINNING 👑',
+  'DATA LOAD AUDIT':'RECEIPTS 🧾',
+};
+const NICKNAMES = {
+  'Austin':'Big Austin 💪','Armando':'Mando 🤙','Russell':'Russ Money 💰',
+  'Johna':'Johna Bucks 💸','Jacob':'Jake 🎯','John Slop':'Slop Dogg 🐕',
+  'Jack R':'Jumpin Jack 🎸','Dolo LLC':'Dolo Empire 🏢','Mariel':'Mari 🌺',
+  'Johna & Russ':'J&R 🤑','Danian':'Dan the Man 😎',
+};
+let partyClickHandler = null;
+let partyEmojiInterval = null;
+let _emojiSwapActive = false;
+
+function applyPartyText() {
+  // rename section titles
+  document.querySelectorAll('.section-title').forEach(el => {
+    const orig = el.dataset.origText || el.textContent.trim();
+    el.dataset.origText = orig;
+    const renamed = Object.entries(SECTION_RENAMES).find(([k]) => orig.toUpperCase().includes(k));
+    if (renamed) el.textContent = renamed[1];
+  });
+  // rename logo sub
+  const sub = document.querySelector('.logo-sub');
+  if (sub && !sub.dataset.orig) { sub.dataset.orig = sub.textContent; sub.textContent = 'WE GETTING RICH DASHBOARD 🤑'; }
+  // nicknames — find text nodes in profit split rows
+  document.querySelectorAll('.split-row-name, .split-person, td').forEach(el => {
+    if (el.children.length) return;
+    const t = el.textContent.trim();
+    if (NICKNAMES[t] && !el.dataset.origName) { el.dataset.origName = t; el.textContent = NICKNAMES[t]; }
+  });
+  // disco ball size based on profit
+  const ball = $('disco-ball');
+  if (ball && window._ALLTIME_PROFIT) {
+    const sz = Math.min(120, 52 + Math.floor(window._ALLTIME_PROFIT / 200));
+    ball.style.fontSize = sz + 'px';
+  }
+}
+
+function revertPartyText() {
+  document.querySelectorAll('.section-title').forEach(el => {
+    if (el.dataset.origText) { el.textContent = el.dataset.origText; delete el.dataset.origText; }
+  });
+  const sub = document.querySelector('.logo-sub');
+  if (sub && sub.dataset.orig) { sub.textContent = sub.dataset.orig; delete sub.dataset.orig; }
+  document.querySelectorAll('[data-orig-name]').forEach(el => {
+    el.textContent = el.dataset.origName; delete el.dataset.origName;
+  });
+  const ball = $('disco-ball');
+  if (ball) ball.style.fontSize = '52px';
+}
+
+function emojiStackSwap() {
+  if (_emojiSwapActive) return;
+  _emojiSwapActive = true;
+  const vals = [...document.querySelectorAll('.kpi-val, .alltime-val')].filter(el => el.textContent.includes('$') || el.textContent.includes('k'));
+  const targets = vals.slice(0, 4);
+  const originals = targets.map(el => el.textContent);
+  targets.forEach(el => {
+    const num = parseFloat(el.textContent.replace(/[$k,]/g,'')) * (el.textContent.includes('k') ? 1000 : 1);
+    const count = Math.max(1, Math.min(10, Math.round(num / 500)));
+    el.textContent = '💵'.repeat(count);
+  });
+  setTimeout(() => {
+    targets.forEach((el, i) => el.textContent = originals[i]);
+    _emojiSwapActive = false;
+  }, 1800);
+}
+
 function toggleParty() {
   const on = document.body.classList.toggle('party');
   const btn  = $('party-btn');
@@ -3318,11 +3400,14 @@ function toggleParty() {
     btn.textContent = '🪩 Party On!';
     btn.classList.add('btn-party-on');
     ball.style.display = 'block';
-    // Change title to something stupid
+    // Stupid title + refresh button
     document.querySelector('.logo-text') && (document.querySelector('.logo-text').textContent = '💰 MONEY MODE 💰');
+    const ri = $('ri'); if (ri) ri.parentElement.innerHTML = '🖨️ PRINTING MONEY';
+    applyPartyText();
     launchConfetti();
     partyInterval      = setInterval(launchConfetti, 2200);
     partyShakeInterval = setInterval(triggerShake, 5500);
+    partyEmojiInterval = setInterval(emojiStackSwap, 6000);
     _hypeIdx = 0;
     partyHypeInterval  = setInterval(()=>{
       const [msg, type] = HYPE_MSGS[_hypeIdx % HYPE_MSGS.length];
@@ -3330,8 +3415,19 @@ function toggleParty() {
       _hypeIdx++;
     }, 4000);
     startCursorTrail();
+    // Click boom handler
+    partyClickHandler = (e) => {
+      const boom = ['💵','💸','🤑','💰','✨','🔥','💎'];
+      const el = document.createElement('div');
+      el.className = 'click-boom';
+      el.textContent = boom[Math.floor(Math.random()*boom.length)];
+      el.style.cssText = `left:${e.clientX-14}px;top:${e.clientY-14}px;`;
+      document.body.appendChild(el);
+      setTimeout(()=>el.remove(), 600);
+    };
+    document.addEventListener('click', partyClickHandler);
     showToast('🪩 Party mode activated!', 'success', '🎉');
-    // Six Flags theme — hidden YouTube iframe (autoplay works after user gesture)
+    // Six Flags / Vengaboys — hidden YouTube iframe
     let yt = document.getElementById('party-yt');
     if (!yt) {
       yt = document.createElement('iframe');
@@ -3346,10 +3442,15 @@ function toggleParty() {
     btn.classList.remove('btn-party-on');
     ball.style.display = 'none';
     document.querySelector('.logo-text') && (document.querySelector('.logo-text').textContent = 'eBay Ops');
-    clearInterval(partyInterval);     partyInterval = null;
-    clearInterval(partyHypeInterval); partyHypeInterval = null;
+    const refreshBtn = document.querySelector('.btn-primary');
+    if (refreshBtn) refreshBtn.innerHTML = '<span id="ri">↻</span> Refresh';
+    revertPartyText();
+    clearInterval(partyInterval);      partyInterval = null;
+    clearInterval(partyHypeInterval);  partyHypeInterval = null;
     clearInterval(partyShakeInterval); partyShakeInterval = null;
+    clearInterval(partyEmojiInterval); partyEmojiInterval = null;
     stopCursorTrail();
+    if (partyClickHandler) { document.removeEventListener('click', partyClickHandler); partyClickHandler = null; }
     const yt = document.getElementById('party-yt');
     if (yt) yt.src = '';
     showToast('Party mode off 😢', 'info', '🌙');

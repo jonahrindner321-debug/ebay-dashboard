@@ -204,6 +204,46 @@
     .s-dot.loading{ background: var(--amber); }
     .s-dot.error  { background: var(--red); }
     @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
+    /* ── Apple-style Scroll Animations ── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(44px);
+      transition: opacity 0.75s cubic-bezier(.22,.68,0,1.2), transform 0.75s cubic-bezier(.22,.68,0,1.2);
+      will-change: opacity, transform;
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .reveal-fast {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.5s cubic-bezier(.22,.68,0,1.2), transform 0.5s cubic-bezier(.22,.68,0,1.2);
+    }
+    .reveal-fast.visible { opacity: 1; transform: translateY(0); }
+
+    /* stagger delays for child cards */
+    .reveal-grid > *:nth-child(1)  { transition-delay: 0ms; }
+    .reveal-grid > *:nth-child(2)  { transition-delay: 70ms; }
+    .reveal-grid > *:nth-child(3)  { transition-delay: 140ms; }
+    .reveal-grid > *:nth-child(4)  { transition-delay: 210ms; }
+    .reveal-grid > *:nth-child(5)  { transition-delay: 280ms; }
+    .reveal-grid > *:nth-child(6)  { transition-delay: 350ms; }
+    .reveal-grid > *:nth-child(7)  { transition-delay: 420ms; }
+    .reveal-grid > *:nth-child(8)  { transition-delay: 490ms; }
+    .reveal-grid > *:nth-child(9)  { transition-delay: 560ms; }
+    .reveal-grid > *:nth-child(10) { transition-delay: 630ms; }
+    .reveal-grid > *:nth-child(11) { transition-delay: 700ms; }
+    .reveal-grid > *:nth-child(12) { transition-delay: 770ms; }
+
+    /* section title reveal */
+    .section-title { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease-out, transform 0.6s ease-out; }
+    .section-title.visible { opacity: 1; transform: translateY(0); }
+
+    /* countup highlight flash */
+    @keyframes countFlash { 0%{color:var(--indigo)} 100%{color:inherit} }
+    .counting { animation: countFlash 1.2s ease-out forwards; }
+
     /* ── Light/Pastel theme card tweaks ── */
     [data-theme="light"] .card, [data-theme="pastel"] .card { box-shadow: 0 2px 16px rgba(0,0,0,.06); }
     [data-theme="light"] .alltime-bar { background: linear-gradient(135deg,#e8edf5,#dde4ef) !important; }
@@ -2014,6 +2054,119 @@ function applyFilters() {
   renderSuggestions(d);
   renderTable(d);
   checkMilestones(r2(d.reduce((s,r)=>s+r.profit,0)));
+  // Apple scroll animations — re-init after every render
+  requestAnimationFrame(() => initScrollAnimations());
+}
+
+// ─── APPLE-STYLE SCROLL ANIMATIONS ───────────────────────────────────────
+let _scrollObserver = null;
+let _parallaxActive = false;
+
+function initScrollAnimations() {
+  // Disconnect previous observer
+  if (_scrollObserver) _scrollObserver.disconnect();
+
+  // Add reveal classes to all major sections + cards
+  document.querySelectorAll('.card').forEach((el, i) => {
+    el.classList.remove('visible');
+    el.classList.add('reveal');
+  });
+  document.querySelectorAll('.section-title').forEach(el => {
+    el.classList.remove('visible');
+  });
+
+  // Add stagger to known grids
+  ['split-grid','health-grid','kpi-grid','suggestion-grid','leaderboard-grid','h2h-grid','expense-grid'].forEach(id => {
+    const el = $(id);
+    if (el) el.classList.add('reveal-grid');
+  });
+
+  // Create IntersectionObserver
+  _scrollObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const el = entry.target;
+        el.classList.add('visible');
+        // CountUp on kpi values inside this card
+        el.querySelectorAll('[data-countup]').forEach(v => animateCountUp(v));
+        _scrollObserver.unobserve(el);
+      }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -30px 0px' });
+
+  // Observe cards + section titles
+  document.querySelectorAll('.card, .section-title').forEach(el => {
+    _scrollObserver.observe(el);
+  });
+
+  // Set up countup targets on KPI values
+  document.querySelectorAll('.kpi-val, .alltime-val').forEach(el => {
+    const txt = el.textContent.trim();
+    if (!el.dataset.countupSet) {
+      el.dataset.original = txt;
+      el.dataset.countup = '1';
+      el.dataset.countupSet = '1';
+    } else {
+      el.dataset.original = txt;
+    }
+  });
+
+  // Parallax on orbs (only once)
+  if (!_parallaxActive) {
+    _parallaxActive = true;
+    window.addEventListener('scroll', _parallaxHandler, { passive: true });
+  }
+}
+
+function _parallaxHandler() {
+  const y = window.scrollY;
+  const o1 = document.querySelector('.orb-1');
+  const o2 = document.querySelector('.orb-2');
+  const o3 = document.querySelector('.orb-3');
+  if (o1) o1.style.transform = `translate(${y*0.06}px, ${y*0.12}px)`;
+  if (o2) o2.style.transform = `translate(${-y*0.05}px, ${-y*0.1}px)`;
+  if (o3) o3.style.transform = `translate(-50%,-50%) scale(${1 + y*0.0003})`;
+}
+
+function animateCountUp(el) {
+  const original = el.dataset.original || el.textContent;
+  const isK = original.includes('k') || original.includes('K');
+  const hasDollar = original.includes('$');
+  const hasPct = original.includes('%');
+  const numMatch = original.replace(/[$,k%\s]/gi, '');
+  const target = parseFloat(numMatch);
+  if (isNaN(target) || target === 0) return;
+
+  const duration = 1100;
+  const start = performance.now();
+  el.classList.add('counting');
+
+  function update(now) {
+    const elapsed = now - start;
+    const p = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - p, 3);
+    const cur = eased * target;
+
+    let display;
+    if (isK) {
+      display = (hasDollar ? '$' : '') + (cur >= 1 ? cur.toFixed(1) + 'k' : (cur * 1000).toFixed(0));
+    } else if (hasPct) {
+      display = cur.toFixed(1) + '%';
+    } else if (hasDollar) {
+      display = '$' + cur.toFixed(2);
+    } else {
+      display = Math.round(cur).toString();
+    }
+    el.textContent = display;
+
+    if (p < 1) {
+      requestAnimationFrame(update);
+    } else {
+      el.textContent = original;
+      el.classList.remove('counting');
+    }
+  }
+  requestAnimationFrame(update);
 }
 
 // ─── PROFIT SPLIT SUMMARY ─────────────────────────────────────────────────

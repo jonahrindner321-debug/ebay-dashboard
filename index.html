@@ -2019,25 +2019,12 @@ function renderSplitSummary(data) {
   const ownerRows = byPerson
     .filter(x => x.split.storeOwner > 0).sort((a, b) => b.split.storeOwner - a.split.storeOwner)
     .map(x => {
-      const exp = getExpenses(x.p); // always use all-time expenses, not filtered by month
-      const net = r2(x.split.storeOwner - exp);
-      const expHtml = exp > 0
-        ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;text-align:right">
-            − ${fmt$(exp)} expenses &nbsp;=&nbsp;
-            <span style="color:${net >= 0 ? 'var(--yellow)' : 'var(--rose)'}">
-              ${fmt$(net)} net
-            </span>
-           </div>`
-        : '';
-      return `<div class="split-row" style="flex-direction:column;align-items:stretch">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span class="split-row-lbl">${x.p}${x.split.type === 'jacob' ? ' <span style="color:var(--muted);font-size:10px">(name fee)</span>' : ''}</span>
-          <span class="split-row-right">
-            <span class="split-row-v" style="color:var(--yellow)">${fmt$(x.split.storeOwner)}</span>
-            <span style="font-size:10px;color:var(--muted)">${ownerPctLabel(x)}</span>
-          </span>
-        </div>
-        ${expHtml}
+      return `<div class="split-row">
+        <span class="split-row-lbl">${x.p}${x.split.type === 'jacob' ? ' <span style="color:var(--muted);font-size:10px">(name fee)</span>' : ''}</span>
+        <span class="split-row-right">
+          <span class="split-row-v" style="color:var(--yellow)">${fmt$(x.split.storeOwner)}</span>
+          <span style="font-size:10px;color:var(--muted)">${ownerPctLabel(x)}</span>
+        </span>
       </div>`;
     }).join('');
 
@@ -3109,38 +3096,6 @@ function renderSuggestions(data) {
       metric:`${best.pct.toFixed(0)}% profitable days` });
   }
 
-  // ── Expense insights — always use all-time expenses, not filtered by month ──
-  personStats.forEach(s => {
-    const exp = getExpenses(s.p);
-    if (exp <= 0) return;
-    const split = getSplit(s.p, s.profit);
-    const ownerTake = split.storeOwner;
-    if (ownerTake <= 0) return; // only store owners pay expenses
-    const expPct = r2(exp / ownerTake * 100);
-    const net = r2(ownerTake - exp);
-    if (net < 0) {
-      insights.push({ type:'warning', icon:'🚨', title:`${s.p}'s expenses exceed their take`,
-        body:`Their ops costs (${fmt$(exp)}) are more than their profit share (${fmt$(ownerTake)}) for this period. They're in the red on ops.`,
-        metric:`${fmt$(net)} net after expenses` });
-    } else if (expPct > 40) {
-      insights.push({ type:'warning', icon:'💸', title:`Expenses eating ${expPct.toFixed(0)}% of ${s.p}'s take`,
-        body:`Ops costs of ${fmt$(exp)} are a large chunk of their ${fmt$(ownerTake)} share. Worth reviewing subscriptions or renegotiating costs.`,
-        metric:`${fmt$(net)} net after expenses` });
-    } else if (expPct > 0) {
-      insights.push({ type:'info', icon:'🧾', title:`${s.p} ops cost: ${fmt$(exp)}`,
-        body:`After ops expenses, their net take is ${fmt$(net)} (${(100-expPct).toFixed(0)}% of gross share).`,
-        metric:`${fmt$(net)} net take` });
-    }
-  });
-
-  // Flag accounts with no expenses logged at all (possible missing data)
-  const partnerPersons = personStats.filter(s => getSplit(s.p, s.profit).type === 'partner' && s.sales > 5);
-  const noExpense = partnerPersons.filter(s => getExpenses(s.p) === 0);
-  if (noExpense.length > 0) {
-    insights.push({ type:'info', icon:'📋', title:`${noExpense.length} account${noExpense.length>1?'s have':' has'} no expenses logged`,
-      body:`${noExpense.map(s=>s.p).join(', ')} ${noExpense.length>1?'have':'has'} no expense data recorded. Add ops costs to their Expense tab so the net take calculation is accurate.`,
-      metric:`${noExpense.map(s=>s.p).join(', ')}` });
-  }
 
   if (!insights.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';

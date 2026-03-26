@@ -1809,15 +1809,22 @@ async function loadAll() {
   // Fetch sheet creation dates from Drive API (fire and forget — non-blocking)
   Promise.all(ids.map(async id => {
     try {
-      const url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime,modifiedTime`;
+      const url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime`;
       const data = await apiFetch(url);
       if (data.createdTime) {
         STORE_CREATED[SHEETS[id]] = data.createdTime.substring(0, 10); // YYYY-MM-DD
       }
-      if (data.modifiedTime) {
-        SHEET_MODIFIED[SHEETS[id]] = data.modifiedTime;
-      }
     } catch(e) { /* ignore — creation date is optional info */ }
+  }));
+
+  // Fetch last-edit timestamps from _meta!A1 (written by Apps Script onEdit trigger)
+  Promise.all(ids.map(async id => {
+    try {
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/_meta!A1?key=${API_KEY}`;
+      const data = await apiFetch(url);
+      const val = data.values && data.values[0] && data.values[0][0];
+      if (val) SHEET_MODIFIED[SHEETS[id]] = val;
+    } catch(e) { /* _meta tab not yet created — sheet hasn't been edited since install */ }
   })).then(() => renderSheetActivity());
 
   if (!allSources.length) {

@@ -889,6 +889,176 @@
       .modal-title { color: #000 !important; }
       .report-sec h4 { color: #666 !important; }
     }
+
+    /* ── Apple Fullscreen Layout ── */
+    .fs {
+      min-height: 100svh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 80px 32px 60px;
+      position: relative;
+      z-index: 1;
+    }
+    .fs-deep {
+      min-height: auto;
+      padding-top: 100px;
+      padding-bottom: 60px;
+      justify-content: flex-start;
+    }
+    .fs-inner {
+      max-width: 900px;
+      width: 100%;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .fs-inner-left {
+      text-align: left;
+      align-items: flex-start;
+      max-width: 1360px;
+    }
+    .fs-eyebrow {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--indigo);
+      margin-bottom: 18px;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.2s forwards;
+    }
+    .fs-headline {
+      font-size: clamp(56px, 10vw, 120px);
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -2px;
+      color: var(--emerald);
+      margin-bottom: 16px;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.35s forwards;
+    }
+    .fs-headline-sm {
+      font-size: clamp(36px, 6vw, 72px);
+      font-weight: 900;
+      line-height: 1.1;
+      letter-spacing: -1.5px;
+      color: var(--text);
+      margin-bottom: 32px;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.35s forwards;
+    }
+    .fs-subtitle {
+      font-size: 22px;
+      font-weight: 400;
+      color: var(--text2);
+      margin-bottom: 40px;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.5s forwards;
+    }
+    .fs-stats-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      background: var(--card);
+      backdrop-filter: blur(16px);
+      padding: 20px 32px;
+      margin-top: 8px;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.65s forwards;
+    }
+    .fs-stat { padding: 0 28px; text-align: center; }
+    .fs-stat-div { width: 1px; height: 36px; background: var(--card-border); flex-shrink: 0; }
+    .fs-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 6px; }
+    .fs-stat-val { font-size: 20px; font-weight: 900; color: var(--text); }
+    .fs-scroll-cue {
+      position: absolute;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      opacity: 0;
+      animation: fadeIn 1s ease 1.2s forwards;
+    }
+    .fs-scroll-line {
+      width: 1px;
+      height: 36px;
+      background: linear-gradient(to bottom, var(--indigo), transparent);
+      animation: scrollPulse 2s ease-in-out infinite;
+    }
+    @keyframes scrollPulse { 0%,100%{opacity:.3;transform:scaleY(1)} 50%{opacity:1;transform:scaleY(1.3)} }
+    @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+
+    /* ── Side Nav Dots ── */
+    .side-nav {
+      position: fixed;
+      right: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+    }
+    .side-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      opacity: 0.4;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+    .side-dot:hover, .side-dot.active {
+      opacity: 1;
+      background: var(--indigo);
+      transform: scale(1.4);
+    }
+    .side-dot.active { box-shadow: 0 0 12px rgba(99,102,241,.6); }
+    .side-dot::before {
+      content: attr(data-label);
+      position: absolute;
+      right: calc(100% + 10px);
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(6,12,24,.95);
+      border: 1px solid var(--glass-border);
+      color: var(--text2);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 8px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .side-dot:hover::before { opacity: 1; }
+
+    /* Responsive fullscreen */
+    @media (max-width: 800px) {
+      .side-nav { display: none; }
+      .fs { padding: 80px 20px 60px; }
+      .fs-stats-row { padding: 16px; }
+      .fs-stat { padding: 0 14px; }
+      .fs-headline { font-size: clamp(42px, 14vw, 80px); }
+      .fs-headline-sm { font-size: clamp(28px, 9vw, 52px); }
+    }
   </style>
 </head>
 <body>
@@ -1048,75 +1218,143 @@
 
 <!-- ── Head-to-Head Modal (for mobile) is inline section ── -->
 
-<!-- ── Main ── -->
-<main class="container">
+<!-- ── Side Nav Dots ── -->
+<nav class="side-nav" id="side-nav">
+  <div class="side-dot active" data-section="fs-activity" data-label="Activity"     onclick="fsScrollTo('fs-activity')"></div>
+  <div class="side-dot"        data-section="fs-hero"     data-label="Overview"     onclick="fsScrollTo('fs-hero')"></div>
+  <div class="side-dot"        data-section="fs-period"   data-label="This Period"  onclick="fsScrollTo('fs-period')"></div>
+  <div class="side-dot"        data-section="fs-money"    data-label="The Money"    onclick="fsScrollTo('fs-money')"></div>
+  <div class="side-dot"        data-section="fs-stores"   data-label="Your Stores"  onclick="fsScrollTo('fs-stores')"></div>
+  <div class="side-dot"        data-section="fs-insights" data-label="Insights"     onclick="fsScrollTo('fs-insights')"></div>
+  <div class="side-dot"        data-section="fs-dive"     data-label="Deep Dive"    onclick="fsScrollTo('fs-dive')"></div>
+</nav>
 
-  <!-- All-Time Banner -->
-  <div class="alltime-banner" id="alltime-banner" style="display:none">
-    <div class="alltime-inner">
-      <div>
-        <div class="alltime-label">🏆 All-Time Total Profit</div>
-        <div class="alltime-val" id="alltime-val">—</div>
-      </div>
-      <div class="alltime-divider"></div>
-      <div class="alltime-stat">
-        <div class="alltime-label">Total Sales</div>
-        <div class="alltime-val" id="alltime-sales" style="color:var(--cyan);font-size:16px">—</div>
-      </div>
-      <div class="alltime-divider"></div>
-      <div class="alltime-stat">
-        <div class="alltime-label">Active Days</div>
-        <div class="alltime-val" id="alltime-days" style="color:var(--violet);font-size:16px">—</div>
-      </div>
-      <div class="alltime-divider"></div>
-      <div class="alltime-stat">
-        <div class="alltime-label">J&amp;R Net Take (All-Time)</div>
-        <div class="alltime-val" id="alltime-jr" style="color:var(--emerald);font-size:16px">—</div>
+<!-- ── Main ── -->
+<main>
+
+  <!-- ── SECTION 0: ACTIVITY ── -->
+  <section class="fs" id="fs-activity">
+    <div class="fs-inner">
+      <div class="fs-eyebrow">SHEET ACTIVITY</div>
+      <div class="fs-headline-sm">Who's keeping up.</div>
+      <div id="sheet-activity-section" style="display:none;width:100%">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--gap)">
+          <span class="section-title">📋 Sheet Activity</span>
+          <span style="font-size:11px;color:var(--muted)" id="sheet-activity-sub"></span>
+        </div>
+        <div id="sheet-activity-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--gap)"></div>
       </div>
     </div>
-    <div class="alltime-sub" id="alltime-meta"></div>
-  </div>
+    <div class="fs-scroll-cue"><div class="fs-scroll-line"></div><span>scroll</span></div>
+  </section>
 
-  <!-- ── Sheet Activity ── -->
-  <div id="sheet-activity-section" style="display:none;margin-bottom:var(--gap)">
-    <div class="section-hdr"><span class="section-title">📋 Sheet Activity</span><span style="font-size:11px;color:var(--muted)" id="sheet-activity-sub"></span></div>
-    <div id="sheet-activity-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--gap)"></div>
-  </div>
+  <!-- ── SECTION 1: HERO ── -->
+  <section class="fs" id="fs-hero">
+    <div class="fs-inner">
+      <div class="fs-eyebrow" id="fs-hero-eyebrow">ALL-TIME PERFORMANCE</div>
+      <div class="fs-headline" id="fs-hero-num">—</div>
+      <div class="fs-subtitle" id="fs-hero-sub">loading your data…</div>
+      <div class="fs-stats-row" id="fs-hero-stats">
+        <div class="fs-stat"><div class="fs-stat-label">Total Sales</div><div class="fs-stat-val" id="alltime-sales">—</div></div>
+        <div class="fs-stat-div"></div>
+        <div class="fs-stat"><div class="fs-stat-label">Active Days</div><div class="fs-stat-val" id="alltime-days">—</div></div>
+        <div class="fs-stat-div"></div>
+        <div class="fs-stat"><div class="fs-stat-label">J&amp;R Net Take</div><div class="fs-stat-val" id="alltime-jr">—</div></div>
+        <div class="fs-stat-div"></div>
+        <div class="fs-stat"><div class="fs-stat-label">Tracked</div><div class="fs-stat-val" id="alltime-meta">—</div></div>
+      </div>
+      <!-- hidden legacy element for compat -->
+      <div id="alltime-banner" style="display:none"><div id="alltime-val"></div></div>
+    </div>
+    <div class="fs-scroll-cue">
+      <div class="fs-scroll-line"></div>
+      <span>scroll</span>
+    </div>
+  </section>
 
-  <!-- Profit Split -->
-  <div class="split-section" id="split-section" style="display:none">
-    <div class="section-hdr"><span class="section-title">💸 Profit Distribution</span></div>
-    <div class="split-grid" id="split-grid"></div>
-  </div>
+  <!-- ── SECTION 2: THIS PERIOD ── -->
+  <section class="fs" id="fs-period">
+    <div class="fs-inner">
+      <div class="fs-eyebrow" id="fs-period-eyebrow">THIS PERIOD</div>
+      <div class="fs-headline" id="fs-period-num">—</div>
+      <div class="fs-subtitle" id="fs-period-sub">in profit</div>
+      <div class="goal-section" id="goal-section" style="display:none;width:100%;margin-bottom:var(--gap)">
+        <div class="section-hdr"><span class="section-title">🎯 Monthly Goal Tracker</span></div>
+        <div class="card goal-card" id="goal-card"></div>
+      </div>
+      <div class="kpi-grid" id="kpi-grid" style="width:100%">
+        <div class="card kpi-card"><div class="kpi-label">Total Profit</div><div class="kpi-val">—</div></div>
+        <div class="card kpi-card"><div class="kpi-label">Avg Daily Profit</div><div class="kpi-val">—</div></div>
+        <div class="card kpi-card"><div class="kpi-label">Latest Day</div><div class="kpi-val">—</div></div>
+        <div class="card kpi-card"><div class="kpi-label">Avg ROI</div><div class="kpi-val">—</div></div>
+        <div class="card kpi-card"><div class="kpi-label">Total Revenue</div><div class="kpi-val">—</div></div>
+        <div class="card kpi-card"><div class="kpi-label">eBay Fees</div><div class="kpi-val">—</div></div>
+      </div>
+    </div>
+    <div class="fs-scroll-cue"><div class="fs-scroll-line"></div><span>scroll</span></div>
+  </section>
 
-  <!-- Goal Tracker -->
-  <div class="goal-section" id="goal-section" style="display:none">
-    <div class="section-hdr"><span class="section-title">🎯 Monthly Goal Tracker</span></div>
-    <div class="card goal-card" id="goal-card"></div>
-  </div>
+  <!-- ── SECTION 3: THE MONEY ── -->
+  <section class="fs" id="fs-money">
+    <div class="fs-inner">
+      <div class="fs-eyebrow">THE MONEY</div>
+      <div class="fs-headline-sm">Who gets what.</div>
+      <div class="split-section" id="split-section" style="display:none;width:100%">
+        <div class="split-grid" id="split-grid"></div>
+      </div>
+    </div>
+    <div class="fs-scroll-cue"><div class="fs-scroll-line"></div><span>scroll</span></div>
+  </section>
 
-  <!-- KPI Grid -->
-  <div class="kpi-grid" id="kpi-grid">
-    <!-- rendered by JS -->
-    <div class="card kpi-card"><div class="kpi-label">Total Profit</div><div class="kpi-val">—</div></div>
-    <div class="card kpi-card"><div class="kpi-label">Avg Daily Profit</div><div class="kpi-val">—</div></div>
-    <div class="card kpi-card"><div class="kpi-label">Latest Day</div><div class="kpi-val">—</div></div>
-    <div class="card kpi-card"><div class="kpi-label">Avg ROI</div><div class="kpi-val">—</div></div>
-    <div class="card kpi-card"><div class="kpi-label">Total Revenue</div><div class="kpi-val">—</div></div>
-    <div class="card kpi-card"><div class="kpi-label">eBay Fees</div><div class="kpi-val">—</div></div>
-  </div>
+  <!-- ── SECTION 4: YOUR STORES ── -->
+  <section class="fs" id="fs-stores">
+    <div class="fs-inner">
+      <div class="fs-eyebrow">YOUR STORES</div>
+      <div class="fs-headline-sm">Health at a glance.</div>
+      <div class="health-section" id="health-section" style="display:none;width:100%">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:var(--gap)">
+          <span class="section-title">💊 Account Health Scores</span>
+          <span style="font-size:11px;color:var(--muted)">Hover for details</span>
+        </div>
+        <div class="health-grid" id="health-grid"></div>
+      </div>
+      <div class="lb-section" id="lb-section" style="display:none;width:100%;margin-top:var(--gap)">
+        <div class="section-hdr"><span class="section-title">🏆 Leaderboard</span></div>
+        <div class="card podium-card"><div class="podium-row" id="podium-row"></div></div>
+        <div class="card lb-list-card" id="lb-list"></div>
+      </div>
+    </div>
+    <div class="fs-scroll-cue"><div class="fs-scroll-line"></div><span>scroll</span></div>
+  </section>
 
-  <!-- Records -->
-  <div class="records-section" id="records-section" style="display:none">
-    <div class="section-hdr"><span class="section-title">🏅 All-Time Records</span></div>
-    <div class="records-grid" id="records-grid"></div>
-  </div>
+  <!-- ── SECTION 5: INSIGHTS ── -->
+  <section class="fs" id="fs-insights">
+    <div class="fs-inner">
+      <div class="fs-eyebrow">INSIGHTS</div>
+      <div class="fs-headline-sm">What the data says.</div>
+      <div class="suggest-section" id="suggest-section" style="display:none;width:100%">
+        <div class="suggest-grid" id="suggest-grid"></div>
+      </div>
+    </div>
+    <div class="fs-scroll-cue"><div class="fs-scroll-line"></div><span>scroll</span></div>
+  </section>
 
-  <!-- Projection -->
-  <div class="proj-wrap" id="proj-wrap" style="display:none"></div>
+  <!-- ── SECTION 6: DEEP DIVE ── -->
+  <section class="fs fs-deep" id="fs-dive">
+    <div class="fs-inner fs-inner-left">
+      <div class="fs-eyebrow" style="text-align:left;margin-bottom:32px">DEEP DIVE</div>
 
-  <!-- Period Comparison -->
-  <div class="comp-strip" id="comp-strip" style="display:none"></div>
+      <!-- Records -->
+      <div class="records-section" id="records-section" style="display:none">
+        <div class="section-hdr"><span class="section-title">🏅 All-Time Records</span></div>
+        <div class="records-grid" id="records-grid"></div>
+      </div>
+
+      <!-- Projection -->
+      <div class="proj-wrap" id="proj-wrap" style="display:none"></div>
+
+      <!-- Period Comparison -->
+      <div class="comp-strip" id="comp-strip" style="display:none"></div>
 
   <!-- Charts Section -->
   <div class="charts-section">
@@ -1180,19 +1418,6 @@
     <div class="card chart-box"><h3>Average profit per weekday (across all history)</h3><canvas id="chart-dow" style="max-height:220px"></canvas></div>
   </div>
 
-  <!-- Leaderboard -->
-  <div class="lb-section" id="lb-section" style="display:none">
-    <div class="section-hdr"><span class="section-title">🏆 Leaderboard</span></div>
-    <div class="card podium-card"><div class="podium-row" id="podium-row"></div></div>
-    <div class="card lb-list-card" id="lb-list"></div>
-  </div>
-
-  <!-- Account Health Scores -->
-  <div class="health-section" id="health-section" style="display:none">
-    <div class="section-hdr"><span class="section-title">💊 Account Health Scores</span><span style="font-size:11px;color:var(--muted)">Hover a card for details</span></div>
-    <div class="health-grid" id="health-grid"></div>
-  </div>
-
   <!-- Head-to-Head -->
   <div class="h2h-section" id="h2h-section" style="display:none">
     <div class="section-hdr"><span class="section-title">⚔️ Head-to-Head</span></div>
@@ -1235,13 +1460,6 @@
         <tbody id="tbody"></tbody>
       </table>
     </div>
-  </div>
-
-
-  <!-- ── Suggestions ── -->
-  <div class="suggest-section" id="suggest-section" style="display:none">
-    <div class="section-hdr"><span class="section-title">💡 Insights & Suggestions</span></div>
-    <div class="suggest-grid" id="suggest-grid"></div>
   </div>
 
 
@@ -1360,6 +1578,10 @@
     <div class="f-dot"></div>
     Live · Auto-refreshes every 5 min · New monthly tabs detected automatically
   </div>
+
+    </div><!-- /fs-inner-left -->
+  </section><!-- /fs-dive -->
+
 </main>
 
 <!-- Disco ball (party mode) -->
@@ -2420,6 +2642,11 @@ function renderKPIs(data) {
     if (latestRows.length > 0) countUp($('kv-today'), todayProfit, 800);
     countUp($('kv-rev'), rev, 1000);
     countUp($('kv-fee'), fee, 900);
+    // ── Apple period headline ──
+    const pNum = $('fs-period-num');
+    if (pNum) { pNum.className = 'fs-headline ' + (profit>=0?'':''); countUp(pNum, profit, 1200); }
+    const pSub = $('fs-period-sub');
+    if (pSub) pSub.textContent = `in profit · ${fmtN(data.length)} sales`;
   }, 60);
 }
 
@@ -3179,6 +3406,11 @@ function renderAllTimeBanner() {
   $('alltime-jr').textContent    = fmt$(allJR);
   $('alltime-meta').textContent  = `${months.length} months tracked`;
   countUp($('alltime-val'), allProfit, 1200);
+  // ── Apple hero headline ──
+  const heroNum = $('fs-hero-num');
+  if (heroNum) { heroNum.className = 'fs-headline shimmer-val'; countUp(heroNum, allProfit, 1400); }
+  const heroSub = $('fs-hero-sub');
+  if (heroSub) heroSub.textContent = 'in profit · all-time';
 }
 
 // ─── CONFETTI / MILESTONES ───────────────────────────────────────────────────
@@ -4139,6 +4371,27 @@ function openWeeklyWrap() {
 
   openModal('wrap-modal');
 }
+
+// ─── APPLE FULLSCREEN NAV ─────────────────────────────────────────────────
+function fsScrollTo(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+(function initFsNav() {
+  const dots = document.querySelectorAll('.side-dot');
+  const sections = document.querySelectorAll('section.fs');
+  if (!dots.length || !sections.length) return;
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        dots.forEach(d => d.classList.toggle('active', d.dataset.section === id));
+      }
+    });
+  }, { threshold: 0.35 });
+  sections.forEach(s => obs.observe(s));
+})();
 
 // ─── BOOT ──────────────────────────────────────────────────────────────────
 setInterval(loadAll, 5 * 60 * 1000);

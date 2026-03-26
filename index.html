@@ -1132,6 +1132,12 @@
     <div class="suggest-grid" id="suggest-grid"></div>
   </div>
 
+  <!-- ── Sheet Activity ── -->
+  <div id="sheet-activity-section" style="display:none;margin-bottom:var(--gap)">
+    <div class="section-hdr"><span class="section-title">📋 Sheet Activity</span><span style="font-size:11px;color:var(--muted)" id="sheet-activity-sub"></span></div>
+    <div id="sheet-activity-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--gap)"></div>
+  </div>
+
   <!-- ── Data Guide ── -->
   <div class="guide-section card" id="guide-section">
     <div class="guide-toggle" onclick="toggleGuide()">
@@ -1274,6 +1280,7 @@ const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i
 
 // Store creation dates fetched from Drive API — populated on load
 const STORE_CREATED = {}; // { person: 'YYYY-MM-DD' }
+const SHEET_MODIFIED = {}; // { person: ISO datetime string }
 
 // Expenses parsed from Expense tabs — populated on load
 // Structure: { person: { 'YYYY-MM': totalAmount, ... } }
@@ -1784,6 +1791,7 @@ async function loadAll() {
   // Clear accumulated state so refreshes don't double-count
   Object.keys(EXPENSES).forEach(k => delete EXPENSES[k]);
   Object.keys(STORE_CREATED).forEach(k => delete STORE_CREATED[k]);
+  Object.keys(SHEET_MODIFIED).forEach(k => delete SHEET_MODIFIED[k]);
 
   const ids = Object.keys(SHEETS);
   let allSources = [], tabErrors = [];
@@ -1801,13 +1809,16 @@ async function loadAll() {
   // Fetch sheet creation dates from Drive API (fire and forget — non-blocking)
   Promise.all(ids.map(async id => {
     try {
-      const url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime`;
+      const url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime,modifiedTime`;
       const data = await apiFetch(url);
       if (data.createdTime) {
         STORE_CREATED[SHEETS[id]] = data.createdTime.substring(0, 10); // YYYY-MM-DD
       }
+      if (data.modifiedTime) {
+        SHEET_MODIFIED[SHEETS[id]] = data.modifiedTime;
+      }
     } catch(e) { /* ignore — creation date is optional info */ }
-  }));
+  })).then(() => renderSheetActivity());
 
   if (!allSources.length) {
     const msg = tabErrors.length ? 'API error: '+tabErrors[0].e : 'No tabs — check sheet sharing';
@@ -3105,6 +3116,49 @@ function renderSuggestions(data) {
 
 // ─── EXPENSES SECTION ─────────────────────────────────────────────────────────
 function renderExpenses() {}
+
+// ─── SHEET ACTIVITY ───────────────────────────────────────────────────────────
+function renderSheetActivity() {
+  const section = $('sheet-activity-section'), grid = $('sheet-activity-grid');
+  const entries = Object.keys(SHEET_MODIFIED);
+  if (!entries.length) { section.style.display = 'none'; return; }
+
+  const now = Date.now();
+  const cards = entries.map(person => {
+    const modTime = new Date(SHEET_MODIFIED[person]).getTime();
+    const hoursAgo = (now - modTime) / 3600000;
+    let color, dot, label;
+    if (hoursAgo < 12) {
+      color = 'var(--green)'; dot = '🟢';
+      label = hoursAgo < 1 ? 'Just now' : `${Math.floor(hoursAgo)}h ago`;
+    } else if (hoursAgo < 24) {
+      color = 'var(--yellow)'; dot = '🟡';
+      label = `${Math.floor(hoursAgo)}h ago`;
+    } else {
+      color = 'var(--rose)'; dot = '🔴';
+      const days = Math.floor(hoursAgo / 24);
+      label = `${days}d ago`;
+    }
+    return { person, hoursAgo, color, dot, label };
+  }).sort((a, b) => b.hoursAgo - a.hoursAgo); // worst first
+
+  const overdue = cards.filter(c => c.hoursAgo >= 12).length;
+  $('sheet-activity-sub').textContent = overdue > 0 ? `${overdue} account${overdue>1?'s':''} overdue` : 'All sheets up to date';
+
+  grid.innerHTML = cards.map(c => `
+    <div class="card" style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-weight:700;font-size:13px">${c.person}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Last updated</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:15px;font-weight:800;color:${c.color}">${c.label}</div>
+        <div style="font-size:13px">${c.dot}</div>
+      </div>
+    </div>`).join('');
+
+  section.style.display = 'block';
+}
 
 // ─── DATA GUIDE ───────────────────────────────────────────────────────────────
 function toggleGuide() {

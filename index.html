@@ -14,6 +14,13 @@
       --bg2: #0a1525;
       --card: rgba(255,255,255,0.04);
       --card-border: rgba(255,255,255,0.08);
+      --header-bg: rgba(6,12,24,.88);
+      --header-border: rgba(255,255,255,.06);
+      --glass: rgba(255,255,255,.06);
+      --glass-border: rgba(255,255,255,.08);
+      --glass-hover: rgba(255,255,255,.11);
+      --input-bg: rgba(255,255,255,.06);
+      --input-border: rgba(255,255,255,.1);
       --indigo: #6366f1;
       --violet: #8b5cf6;
       --cyan: #06b6d4;
@@ -30,6 +37,54 @@
       --gap: 16px;
       --shadow: 0 4px 24px rgba(0,0,0,.4);
       --shadow-lg: 0 8px 48px rgba(0,0,0,.5);
+    }
+
+    /* ── Light Theme ── */
+    [data-theme="light"] {
+      --bg: #f0f4f8;
+      --bg2: #e2e8f0;
+      --card: rgba(255,255,255,.92);
+      --card-border: rgba(0,0,0,.07);
+      --header-bg: rgba(255,255,255,.93);
+      --header-border: rgba(0,0,0,.07);
+      --glass: rgba(0,0,0,.04);
+      --glass-border: rgba(0,0,0,.07);
+      --glass-hover: rgba(0,0,0,.07);
+      --input-bg: rgba(0,0,0,.04);
+      --input-border: rgba(0,0,0,.1);
+      --text: #0f172a;
+      --text2: #334155;
+      --muted: #64748b;
+      --shadow: 0 4px 24px rgba(0,0,0,.08);
+      --shadow-lg: 0 8px 48px rgba(0,0,0,.12);
+    }
+
+    /* ── Pastel Theme ── */
+    [data-theme="pastel"] {
+      --bg: #fdf4ff;
+      --bg2: #f3e8ff;
+      --card: rgba(255,255,255,.88);
+      --card-border: rgba(167,139,250,.2);
+      --header-bg: rgba(253,244,255,.93);
+      --header-border: rgba(167,139,250,.2);
+      --glass: rgba(167,139,250,.07);
+      --glass-border: rgba(167,139,250,.18);
+      --glass-hover: rgba(167,139,250,.13);
+      --input-bg: rgba(167,139,250,.07);
+      --input-border: rgba(167,139,250,.2);
+      --indigo: #7c3aed;
+      --violet: #9333ea;
+      --cyan: #0891b2;
+      --green: #059669;
+      --emerald: #10b981;
+      --red: #dc2626;
+      --rose: #e11d48;
+      --amber: #d97706;
+      --text: #3b0764;
+      --text2: #6b21a8;
+      --muted: #a78bfa;
+      --shadow: 0 4px 24px rgba(139,92,246,.12);
+      --shadow-lg: 0 8px 48px rgba(139,92,246,.18);
     }
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -102,8 +157,8 @@
       z-index: 900; display: flex; flex-direction: column; gap: 8px;
     }
     .toast {
-      background: rgba(12,20,38,.97);
-      border: 1px solid rgba(255,255,255,.1);
+      background: var(--header-bg);
+      border: 1px solid var(--glass-border);
       border-radius: 12px; padding: 12px 18px;
       font-size: 13px; box-shadow: var(--shadow-lg);
       animation: toastIn .3s ease;
@@ -118,9 +173,9 @@
     /* ── Header ── */
     .header {
       position: sticky; top: 0; z-index: 100;
-      background: rgba(6,12,24,.88);
+      background: var(--header-bg);
       backdrop-filter: blur(20px);
-      border-bottom: 1px solid rgba(255,255,255,.06);
+      border-bottom: 1px solid var(--header-border);
       padding: 10px 22px;
       display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     }
@@ -137,8 +192,8 @@
     .status-pill {
       display: flex; align-items: center; gap: 6px;
       padding: 4px 10px; border-radius: 20px;
-      background: rgba(255,255,255,.05);
-      border: 1px solid rgba(255,255,255,.07);
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
       font-size: 11px; color: var(--muted); white-space: nowrap;
     }
     .s-dot {
@@ -149,6 +204,16 @@
     .s-dot.loading{ background: var(--amber); }
     .s-dot.error  { background: var(--red); }
     @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
+    /* ── Light/Pastel theme card tweaks ── */
+    [data-theme="light"] .card, [data-theme="pastel"] .card { box-shadow: 0 2px 16px rgba(0,0,0,.06); }
+    [data-theme="light"] .alltime-bar { background: linear-gradient(135deg,#e8edf5,#dde4ef) !important; }
+    [data-theme="pastel"] .alltime-bar { background: linear-gradient(135deg,#f3e8ff,#ede9fe) !important; }
+    [data-theme="light"] .setup-card, [data-theme="pastel"] .setup-card { background: #fff; border-color: var(--glass-border); }
+    [data-theme="light"] .setup-card input, [data-theme="pastel"] .setup-card input { background: var(--input-bg); border-color: var(--input-border); color: var(--text); }
+    [data-theme="pastel"] .orb-1 { background: radial-gradient(circle,#c4b5fd,transparent); }
+    [data-theme="pastel"] .orb-2 { background: radial-gradient(circle,#f9a8d4,transparent); }
+    [data-theme="pastel"] .orb-3 { background: radial-gradient(circle,#6ee7b7,transparent); }
+
     .progress-bar { height: 3px; width: 90px; background: rgba(255,255,255,.07); border-radius: 99px; overflow: hidden; }
     .progress-fill { height: 100%; background: linear-gradient(90deg,var(--indigo),var(--cyan)); border-radius: 99px; transition: width .3s; }
     .live-clock { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -156,11 +221,11 @@
     .header-right { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
     .filters { display: flex; gap: 6px; }
     select.sf {
-      background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+      background: var(--input-bg); border: 1px solid var(--glass-border);
       color: var(--text); padding: 6px 10px; border-radius: 8px;
       font-size: 12px; cursor: pointer; outline: none; transition: border-color .2s;
     }
-    select.sf:hover { border-color: rgba(255,255,255,.15); }
+    select.sf:hover { border-color: var(--glass-hover); }
     .btn {
       border: none; cursor: pointer;
       padding: 6px 13px; border-radius: 8px;
@@ -170,8 +235,8 @@
     }
     .btn-primary { background: linear-gradient(135deg,var(--indigo),var(--violet)); color:#fff; box-shadow:0 0 14px rgba(99,102,241,.3); }
     .btn-primary:hover { opacity:.88; transform:translateY(-1px); }
-    .btn-ghost { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); color: var(--text2); }
-    .btn-ghost:hover { background: rgba(255,255,255,.1); }
+    .btn-ghost { background: var(--glass); border: 1px solid var(--glass-border); color: var(--text2); }
+    .btn-ghost:hover { background: var(--glass-hover); }
     .btn-export { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.25); color: var(--emerald); }
     .btn-export:hover { background: rgba(16,185,129,.2); }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -854,6 +919,7 @@
     <button class="btn btn-ghost" onclick="openWeeklyWrap()" style="background:linear-gradient(135deg,rgba(52,211,153,.15),rgba(99,102,241,.15));border-color:rgba(52,211,153,.3)">🏆 Wrap</button>
     <button class="btn btn-export" onclick="exportCSV()">⬇ CSV</button>
     <button class="btn btn-primary" onclick="loadAll()"><span id="ri">↻</span> Refresh</button>
+    <button class="btn btn-ghost" id="theme-btn" onclick="cycleTheme()" title="Switch theme">🌙</button>
     <button class="btn btn-ghost" id="party-btn" onclick="toggleParty()">🎉 Party</button>
     <button class="btn btn-ghost" id="destroy-btn" onclick="toggleDestroy()" style="border-color:rgba(239,68,68,.4);color:#ef4444">💥 Destroy</button>
     <button class="btn btn-ghost" onclick="changeKey()">⚙ Key</button>
@@ -3348,6 +3414,33 @@ function emojiStackSwap() {
     _emojiSwapActive = false;
   }, 1800);
 }
+
+// ── Theme Switcher ──────────────────────────────────────────────────────────
+const THEMES = ['dark','light','pastel'];
+const THEME_ICONS = { dark:'🌙', light:'☀️', pastel:'🎨' };
+const THEME_LABELS = { dark:'Dark', light:'Light', pastel:'Pastel' };
+
+function cycleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+  applyTheme(next);
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('ebay-dash-theme', theme);
+  const btn = $('theme-btn');
+  if (btn) btn.textContent = THEME_ICONS[theme] + ' ' + THEME_LABELS[theme];
+  // Update orb visibility for light/pastel
+  document.querySelectorAll('.orb').forEach(o => {
+    o.style.opacity = theme === 'dark' ? '' : (theme === 'pastel' ? '.08' : '.04');
+  });
+}
+
+(function initTheme() {
+  const saved = localStorage.getItem('ebay-dash-theme') || 'dark';
+  applyTheme(saved);
+})();
 
 function toggleParty() {
   const on = document.body.classList.toggle('party');

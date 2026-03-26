@@ -1125,11 +1125,6 @@
     </div>
   </div>
 
-  <!-- ── Expenses Section ── -->
-  <div id="expenses-section" style="display:none;margin-bottom:var(--gap)">
-    <div class="section-hdr"><span class="section-title">🧾 Operational Expenses</span><span style="font-size:11px;color:var(--muted)" id="expenses-sub"></span></div>
-    <div id="expenses-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--gap)"></div>
-  </div>
 
   <!-- ── Suggestions ── -->
   <div class="suggest-section" id="suggest-section" style="display:none">
@@ -1930,7 +1925,7 @@ function applyFilters() {
   renderLeaderboard(d);
   renderHealthScores(d);
   renderH2H();
-  renderExpenses(d);
+
   renderSuggestions(d);
   renderTable(d);
   checkMilestones(r2(d.reduce((s,r)=>s+r.profit,0)));
@@ -3109,63 +3104,7 @@ function renderSuggestions(data) {
 }
 
 // ─── EXPENSES SECTION ─────────────────────────────────────────────────────────
-function renderExpenses(data) {
-  const section = $('expenses-section'), grid = $('expenses-grid');
-  if (!Object.keys(EXPENSES).length) { section.style.display = 'none'; return; }
-
-  const MN = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
-
-  // Show all accounts that have any expense data (not filtered by month selection)
-  const expPersons = Object.keys(EXPENSES).filter(p => Object.keys(EXPENSES[p]).length > 0);
-
-  if (!expPersons.length) { section.style.display = 'none'; return; }
-
-  let grandTotal = 0;
-  const cards = expPersons.sort().map(p => {
-    const pExp = EXPENSES[p] || {};
-    // Always show ALL expense months regardless of the active month filter
-    const relevantKeys = Object.keys(pExp);
-    if (!relevantKeys.length) return null;
-
-    const total = r2(relevantKeys.reduce((s,k) => s + (pExp[k]||0), 0));
-    grandTotal = r2(grandTotal + total);
-
-    // Build month breakdown
-    const monthRows = relevantKeys.sort().map(k => {
-      const [yr, mo] = k.split('-');
-      return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05)">
-        <span style="color:var(--text2)">${MN[parseInt(mo)]} ${yr}</span>
-        <span style="color:var(--yellow);font-weight:600">${fmt$(pExp[k])}</span>
-      </div>`;
-    }).join('');
-
-    // Get their profit split and net
-    const personData = data.filter(r => r.person === p);
-    const profit = r2(personData.reduce((s,r) => s + r.profit, 0));
-    const split = getSplit(p, profit);
-    const ownerTake = split.storeOwner;
-    const net = ownerTake > 0 ? r2(ownerTake - total) : null;
-
-    return `<div class="card" style="padding:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-weight:700;font-size:14px">${p}</div>
-        <div style="font-size:18px;font-weight:800;color:var(--rose)">${fmt$(total)}</div>
-      </div>
-      ${monthRows}
-      ${ownerTake > 0 ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.1);font-size:11px;color:var(--muted)">
-        Take: <span style="color:var(--yellow)">${fmt$(ownerTake)}</span> &nbsp;−&nbsp;
-        Expenses: <span style="color:var(--rose)">${fmt$(total)}</span> &nbsp;=&nbsp;
-        <span style="color:${net>=0?'var(--green)':'var(--rose)'};font-weight:700">${fmt$(net)} net</span>
-      </div>` : ''}
-    </div>`;
-  }).filter(Boolean);
-
-  if (!cards.length) { section.style.display = 'none'; return; }
-
-  $('expenses-sub').textContent = `Total ops costs: ${fmt$(grandTotal)}`;
-  grid.innerHTML = cards.join('');
-  section.style.display = 'block';
-}
+function renderExpenses() {}
 
 // ─── DATA GUIDE ───────────────────────────────────────────────────────────────
 function toggleGuide() {

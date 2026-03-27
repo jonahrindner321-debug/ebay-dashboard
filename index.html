@@ -953,6 +953,7 @@
     <button class="btn btn-ghost" id="destroy-btn" onclick="toggleDestroy()" style="border-color:rgba(239,68,68,.4);color:#ef4444">💥 Destroy</button>
     <button class="btn btn-ghost" onclick="changeKey()">⚙ Key</button>
     <button class="btn btn-ghost" id="audit-btn" onclick="openAudit()" style="display:none">🔍 Audit</button>
+    <button class="btn btn-ghost" onclick="openClientView()" style="border-color:rgba(16,185,129,.4);color:var(--green)">👤 Client View</button>
   </div>
 </header>
 
@@ -1022,6 +1023,22 @@
       <button class="modal-close" onclick="closeModal('audit-modal')">✕</button>
     </div>
     <div id="audit-content" style="padding:20px;max-height:70vh;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- ── Client View Overlay ── -->
+<div id="client-view-overlay" style="display:none;position:fixed;inset:0;z-index:9000;background:var(--bg);overflow-y:auto">
+  <div id="client-view-content"></div>
+</div>
+
+<!-- ── Client Selector Modal ── -->
+<div class="modal-overlay" id="client-select-modal">
+  <div class="modal-card" style="max-width:420px;width:95%">
+    <div class="modal-hdr">
+      <div class="modal-title">👤 Select Your Account</div>
+      <button class="modal-close" onclick="closeModal('client-select-modal')">✕</button>
+    </div>
+    <div id="client-select-list" style="padding:20px;display:flex;flex-direction:column;gap:10px"></div>
   </div>
 </div>
 
@@ -1613,7 +1630,7 @@ function getSplit(person, profit) {
 let RAW = [];
 let CHARTS = {};
 let sortCol = 'profit', sortDir = 'desc';
-let API_KEY = '';
+let API_KEY = 'AIzaSyB7URTxURLa4p7gPpgXCBGiHajWv9rXREw';
 let totalJobs = 0, doneJobs = 0;
 // Per-tab cache so failed tabs fall back to last good data instead of losing it
 // Entries expire after 45 min — stale cache is worse than a fresh fetch
@@ -1970,8 +1987,9 @@ function saveApiKey() {
 function changeKey() { $('api-key-input').value = API_KEY; $('setup-overlay').style.display = 'flex'; }
 function checkApiKey() {
   const k = localStorage.getItem('gsheets_api_key');
-  if (k) { API_KEY = k; $('setup-overlay').style.display = 'none'; return true; }
-  return false;
+  if (k) API_KEY = k; // allow override via setup screen, but default is hardcoded
+  $('setup-overlay').style.display = 'none';
+  return true;
 }
 
 // ─── FETCH ─────────────────────────────────────────────────────────────────
@@ -4450,6 +4468,260 @@ function openAudit() {
 
   $('audit-content').innerHTML = html;
   $('audit-modal').classList.add('open');
+}
+
+// ─── CLIENT VIEW ───────────────────────────────────────────────────────────
+function openClientView() {
+  // Build list of client-facing stores (partner stores + Jacob name-fee stores)
+  const clientStores = Object.values(SHEETS).filter(name => !OWNED_STORES.includes(name));
+  if (!clientStores.length) { showToast('No partner stores loaded yet', 'info', '👤'); return; }
+
+  const listEl = $('client-select-list');
+  listEl.innerHTML = clientStores.map(name => {
+    const isJacob  = JACOB_STORES.includes(name);
+    const pct      = isJacob ? '10%' : '50%';
+    const recs     = RAW.filter(r => r.person === name);
+    const profit   = r2(recs.reduce((s,r) => s + r.profit, 0));
+    const myShare  = isJacob ? r2(profit * 0.10) : r2(profit * 0.50);
+    const displayName = name === 'John Slop' ? 'Sloop' : name;
+    return `<button onclick="closeModal('client-select-modal');renderClientView('${name}')"
+      style="width:100%;text-align:left;padding:14px 16px;background:var(--card);border:1px solid var(--card-border);border-radius:12px;cursor:pointer;transition:background .15s"
+      onmouseover="this.style.background='var(--glass)'" onmouseout="this.style.background='var(--card)'">
+      <div style="font-weight:700;font-size:14px;color:var(--text)">${displayName}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">Your share: ${pct} · All-time earnings: <span style="color:var(--green);font-weight:700">${fmt$(myShare)}</span></div>
+    </button>`;
+  }).join('');
+
+  $('client-select-modal').classList.add('open');
+}
+
+function renderClientView(personName) {
+  const isJacob   = JACOB_STORES.includes(personName);
+  const ownerPct  = isJacob ? 0.10 : 0.50;
+  const ownerPctLabel = isJacob ? '10%' : '50%';
+  const displayName   = personName === 'John Slop' ? 'Sloop' : personName;
+
+  const recs         = RAW.filter(r => r.person === personName);
+  const allTimeProfit = r2(recs.reduce((s,r) => s + r.profit, 0));
+  const myAllTime     = r2(allTimeProfit * ownerPct);
+
+  // Monthly breakdown (my share)
+  const byMonth = {};
+  recs.forEach(r => { if (r.month && monthIndex(r.month) < 900) byMonth[r.month] = r2((byMonth[r.month]||0) + r.profit); });
+  const mKeys = Object.keys(byMonth).filter(m => monthIndex(m) < 900).sort((a,b) => monthIndex(a)-monthIndex(b));
+  const latestMo     = mKeys[mKeys.length-1] || null;
+  const latestProfit = latestMo ? byMonth[latestMo] : 0;
+  const myLatest     = r2(latestProfit * ownerPct);
+  const prevMo       = mKeys[mKeys.length-2] || null;
+  const prevProfit   = prevMo ? byMonth[prevMo] : 0;
+  const myPrev       = r2(prevProfit * ownerPct);
+  const momPct       = myPrev > 0 ? r2((myLatest - myPrev) / myPrev * 100) : null;
+
+  // Listing tracker data for this store
+  const listingKey    = Object.entries(LISTING_NAME_MAP).find(([,v]) => v === personName)?.[0] || personName;
+  const storeSum      = LISTING_DATA.summary?.find(s => s.store === listingKey);
+  const current       = storeSum?.current || 0;
+  const target        = storeSum?.target  || 5000;
+  const dailyGoal     = storeSum?.dailyGoal || 40;
+  const pct           = Math.min(100, Math.round(current / target * 100));
+  const pctColor      = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--cyan)' : 'var(--indigo)';
+
+  // Today's listing count
+  const pd = _growthPersonData?.[listingKey];
+  const todayN = pd?.todayN ?? null;
+
+  // Projected monthly earnings at full target (using monthly rate × target listings × owner pct)
+  const profitPerListMo = pd?.profitPerListMo || 0;
+  const myProjAtTarget  = profitPerListMo > 0 ? r2(target * profitPerListMo * ownerPct) : null;
+  const myProjNow       = profitPerListMo > 0 ? r2(current * profitPerListMo * ownerPct) : null;
+
+  const MN = {'Jan':'January','Feb':'February','Mar':'March','Apr':'April','May':'May','Jun':'June','Jul':'July','Aug':'August','Sep':'September','Oct':'October','Nov':'November','Dec':'December'};
+  const latestLabel = latestMo ? (MN[latestMo.split(' ')[0]] || latestMo.split(' ')[0]) + ' ' + latestMo.split(' ')[1] : null;
+
+  // Fun milestones items list
+  const funItems = [
+    { e:'🍔', name:'Chipotle burritos',       price:10.65  },
+    { e:'☕', name:'Starbucks lattes',         price:7.50   },
+    { e:'🎵', name:'months of Spotify',        price:10.99  },
+    { e:'📺', name:'Netflix subscriptions',    price:22.99  },
+    { e:'⛽', name:'tanks of gas',             price:55     },
+    { e:'🍕', name:'large pizzas delivered',   price:18     },
+    { e:'🎮', name:'new video games',          price:69.99  },
+    { e:'🛫', name:'domestic flight tickets',  price:249    },
+    { e:'🎧', name:'pairs of AirPods',         price:179    },
+    { e:'📱', name:'iPhone 15s',               price:799    },
+  ];
+  const funRows = funItems.filter(i => myLatest >= i.price).map(i => {
+    const qty = Math.floor(myLatest / i.price);
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:rgba(255,255,255,.04);border-radius:8px">
+      <span style="font-size:24px">${i.e}</span>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:13px">${qty.toLocaleString()} ${i.name}</div>
+        <div style="font-size:11px;color:var(--muted)">${fmt$(i.price)} each</div>
+      </div>
+      <div style="font-size:20px;font-weight:900;color:var(--amber)">${qty.toLocaleString()}x</div>
+    </div>`;
+  }).join('');
+
+  // Scale calculator max
+  const calcMax = Math.max(target * 2, current * 3, 10000);
+
+  // Store globals for the interactive slider
+  window._csOwnerPct = ownerPct;
+  window._csProfitPerListMo = profitPerListMo;
+
+  const overlay = $('client-view-overlay');
+  overlay.style.display = 'block';
+
+  $('client-view-content').innerHTML = `
+    <div style="min-height:100vh;background:var(--bg);padding:0 0 60px">
+      <!-- Header -->
+      <div style="background:var(--card);border-bottom:1px solid var(--card-border);padding:16px 24px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--emerald));display:flex;align-items:center;justify-content:center;font-size:18px">📦</div>
+          <div>
+            <div style="font-weight:800;font-size:16px">${displayName}</div>
+            <div style="font-size:11px;color:var(--muted)">Your Store · ${ownerPctLabel} profit share</div>
+          </div>
+        </div>
+        <button onclick="closeClientView()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--rose);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">✕ Exit</button>
+      </div>
+
+      <!-- Expense Warning Banner -->
+      <div style="background:rgba(251,191,36,.12);border-bottom:1px solid rgba(251,191,36,.3);padding:10px 24px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:16px">⚠️</span>
+        <div style="font-size:12px;color:var(--amber);font-weight:600">Earnings shown are <u>before</u> shared expense deductions — VPS, AutoDS & Proxy costs are split evenly across all stores and will reduce your final payout.</div>
+      </div>
+
+      <div style="max-width:800px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:20px">
+
+        <!-- Earnings Hero -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
+          <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(16,185,129,.15),rgba(52,211,153,.08));border:1px solid rgba(16,185,129,.25)">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${latestLabel || 'This Month'} Earnings</div>
+            <div style="font-size:36px;font-weight:900;color:var(--green)">${myLatest > 0 ? fmt$(myLatest) : '—'}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">your ${ownerPctLabel} of ${latestMo} store profit</div>
+            ${momPct !== null ? `<div style="margin-top:8px;display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${momPct>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.1)'};color:${momPct>=0?'var(--green)':'var(--rose)'}">
+              ${momPct>=0?'↑':'↓'} ${Math.abs(momPct).toFixed(0)}% vs ${prevMo}
+            </div>` : ''}
+          </div>
+          <div class="card" style="padding:20px">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">All-Time Earnings</div>
+            <div style="font-size:36px;font-weight:900;color:var(--cyan)">${myAllTime > 0 ? fmt$(myAllTime) : '—'}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">your total since day one</div>
+          </div>
+          ${myProjNow !== null ? `<div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(139,92,246,.1),rgba(99,102,241,.06));border:1px solid rgba(139,92,246,.2)">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Projected Monthly</div>
+            <div style="font-size:36px;font-weight:900;color:var(--violet)">${fmt$(myProjNow)}<span style="font-size:14px;font-weight:400">/mo</span></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">at current ${current.toLocaleString()} listings · ${latestMo || 'recent'} rate</div>
+          </div>` : ''}
+        </div>
+
+        <!-- Listings Progress -->
+        <div class="card" style="padding:20px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:16px">📦 Your Store Listings</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px">
+            <div>
+              <div style="font-size:32px;font-weight:900;color:${pctColor}">${current.toLocaleString()}</div>
+              <div style="font-size:11px;color:var(--muted)">active listings</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:20px;font-weight:700;color:var(--muted)">${target.toLocaleString()}</div>
+              <div style="font-size:11px;color:var(--muted)">target</div>
+            </div>
+          </div>
+          <div style="background:rgba(255,255,255,.08);border-radius:6px;height:10px;overflow:hidden;margin-bottom:8px">
+            <div style="height:100%;border-radius:6px;background:linear-gradient(90deg,${pctColor},var(--emerald));width:${pct}%;transition:width 1s"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)">
+            <span>${pct}% to target</span>
+            <span>${(target-current).toLocaleString()} listings to go</span>
+          </div>
+        </div>
+
+        <!-- Today & Goal -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="card" style="padding:18px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Listings Added Today</div>
+            <div style="font-size:40px;font-weight:900;color:${todayN===null?'var(--muted)':todayN>=dailyGoal?'var(--green)':'var(--amber)'}">${todayN === null ? '—' : todayN}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">daily goal: ${dailyGoal} ${todayN!==null&&todayN>=dailyGoal?'✅':''}</div>
+          </div>
+          <div class="card" style="padding:18px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">At Target (${target.toLocaleString()} listings)</div>
+            <div style="font-size:${myProjAtTarget?'28':'40'}px;font-weight:900;color:var(--emerald)">${myProjAtTarget ? fmt$(myProjAtTarget)+'/mo' : '—'}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">your projected monthly earnings</div>
+          </div>
+        </div>
+
+        <!-- Monthly Breakdown -->
+        ${mKeys.length > 0 ? `<div class="card" style="padding:20px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:14px">📅 Monthly Earnings History</div>
+          ${mKeys.slice().reverse().map(m => {
+            const myShare = r2(byMonth[m] * ownerPct);
+            const barPct  = myAllTime > 0 ? Math.round(myShare/myAllTime*100) : 0;
+            const isLatest = m === latestMo;
+            return `<div style="margin-bottom:12px">
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+                <span style="color:var(--muted)">${m}${isLatest?' <span style="color:var(--amber);font-size:10px">(in progress)</span>':''}</span>
+                <span style="font-weight:700;color:var(--green)">${fmt$(myShare)}</span>
+              </div>
+              <div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;overflow:hidden">
+                <div style="height:100%;border-radius:3px;background:var(--green);width:${barPct}%"></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>` : ''}
+
+        <!-- Scale Calculator -->
+        ${profitPerListMo > 0 ? `<div class="card" style="padding:20px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px">🔢 Scale Calculator</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:16px">Drag to see your projected take-home at any listing count</div>
+          <input type="range" id="scale-slider" min="${Math.max(1,current)}" max="${calcMax}" value="${current}" step="50"
+            oninput="clientScaleCalc(this.value)"
+            style="width:100%;accent-color:var(--violet);cursor:pointer;margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Listings</div>
+              <div id="csc-count" style="font-size:16px;font-weight:800;color:var(--cyan)">${current.toLocaleString()} listings</div>
+            </div>
+            <div style="font-size:28px;color:var(--muted)">→</div>
+            <div style="text-align:right">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Your monthly take-home</div>
+              <div id="csc-result" style="font-size:28px;font-weight:900;color:var(--violet)">${myProjNow ? fmt$(myProjNow)+'/mo' : '—'}</div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:10px">
+            <span>Current: ${current.toLocaleString()}</span>
+            <span>Target: ${target.toLocaleString()}</span>
+            <span>2× Target: ${(target*2).toLocaleString()}</span>
+          </div>
+        </div>` : ''}
+
+        <!-- Fun Milestones -->
+        ${myLatest > 0 && funRows ? `<div class="card" style="padding:20px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px">🎉 This Month You Could Buy...</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:14px">based on ${latestLabel || 'this month'} earnings of ${fmt$(myLatest)} 😂</div>
+          <div style="display:flex;flex-direction:column;gap:8px">${funRows}</div>
+        </div>` : ''}
+
+        <div style="text-align:center;font-size:11px;color:var(--muted);padding-top:8px">
+          Data updates whenever the dashboard refreshes · your ${ownerPctLabel} share is calculated from store profit after eBay fees
+        </div>
+      </div>
+    </div>`;
+}
+
+function closeClientView() {
+  $('client-view-overlay').style.display = 'none';
+}
+
+function clientScaleCalc(n) {
+  n = parseInt(n, 10);
+  const proj = r2(n * (window._csProfitPerListMo || 0) * (window._csOwnerPct || 0.5));
+  const el = $('csc-result');
+  if (el) el.textContent = proj > 0 ? fmt$(proj) + '/mo' : '—';
+  const cnt = $('csc-count');
+  if (cnt) cnt.textContent = n.toLocaleString() + ' listings';
 }
 
 const SECTION_RENAMES = {

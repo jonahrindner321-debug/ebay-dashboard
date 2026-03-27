@@ -1072,15 +1072,7 @@
     <div id="sheet-activity-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--gap)"></div>
   </div>
 
-  <!-- ── Listing Tracker ── -->
-  <div id="listing-tracker-section" style="display:none;margin-bottom:var(--gap)">
-    <div class="section-hdr">
-      <span class="section-title">📦 Listing Tracker</span>
-      <span style="font-size:11px;color:var(--muted)" id="listing-tracker-sub"></span>
-    </div>
-    <div id="listing-tracker-summary" style="margin-bottom:var(--gap)"></div>
-    <div id="listing-tracker-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:var(--gap)"></div>
-  </div>
+  <!-- Listing tracker lives on Growth tab only -->
 
   <!-- Profit Split -->
   <div class="split-section" id="split-section" style="display:none">
@@ -1363,6 +1355,12 @@
 
 <!-- ── Growth / Listings Intelligence Page ── -->
 <div id="growth-page" class="container">
+
+  <!-- Refresh bar -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <span style="font-size:11px;color:var(--muted)" id="listing-last-updated"></span>
+    <button onclick="loadListingTracker(true)" style="background:var(--glass);border:1px solid var(--glass-border);color:var(--text2);cursor:pointer;padding:5px 14px;border-radius:8px;font-size:12px;font-weight:500;transition:all .2s" onmouseover="this.style.background='var(--glass-hover)'" onmouseout="this.style.background='var(--glass)'">↻ Refresh Listings</button>
+  </div>
 
   <!-- Hero KPIs -->
   <div class="growth-kpi-row" id="growth-kpis"></div>
@@ -2141,6 +2139,7 @@ async function loadAll() {
     renderAllTimeBanner();
     applyFilters();
     $('audit-btn').style.display = '';
+    renderGrowthPage(); // refresh Growth tab profit data whenever ops data reloads
     if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
     else showToast('Data refreshed', 'info', '🔄');
   } else {
@@ -3428,7 +3427,6 @@ const LISTING_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 let _listingCacheTime = 0;
 
 async function loadListingTracker(force = false) {
-  if (!API_KEY) return;
   // Serve from cache if fresh enough
   const now = Date.now();
   if (!force && _listingCacheTime && (now - _listingCacheTime) < LISTING_CACHE_TTL && LISTING_DATA.summary.length) {
@@ -3437,40 +3435,58 @@ async function loadListingTracker(force = false) {
     return;
   }
   try {
-    // Get tab names by sheet ID
-    const meta = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${LISTING_TRACKER_ID}?key=${API_KEY}&fields=sheets.properties(title,sheetId)`);
-    const tabs = (meta.sheets || []);
-    const summaryTab = tabs.find(s => s.properties.sheetId === LISTING_TRACKER_SUMMARY_GID);
-    const dailyTab   = tabs.find(s => s.properties.sheetId === LISTING_TRACKER_DAILY_GID);
-    if (!summaryTab || !dailyTab) return;
-
-    const [sumData, dayData] = await Promise.all([
-      apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${LISTING_TRACKER_ID}/values/${encodeURIComponent(summaryTab.properties.title)}!A:F?key=${API_KEY}`),
-      apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${LISTING_TRACKER_ID}/values/${encodeURIComponent(dailyTab.properties.title)}!A:O?key=${API_KEY}`)
+    // Sheet is xlsx format — use CSV export URLs instead of Sheets API
+    function parseCSV(text) {
+      return text.trim().split('\n').map(line => {
+        const fields = []; let cur = ''; let inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          if (line[i] === '"') inQ = !inQ;
+          else if (line[i] === ',' && !inQ) { fields.push(cur.trim()); cur = ''; }
+          else cur += line[i];
+        }
+        fields.push(cur.trim());
+        return fields;
+      });
+    }
+    const base = `https://docs.google.com/spreadsheets/d/${LISTING_TRACKER_ID}/export?format=csv`;
+    const [sumRes, dayRes] = await Promise.all([
+      fetch(`${base}&gid=${LISTING_TRACKER_SUMMARY_GID}`),
+      fetch(`${base}&gid=${LISTING_TRACKER_DAILY_GID}`)
     ]);
+    if (!sumRes.ok || !dayRes.ok) throw new Error('CSV fetch failed');
+    const [sumText, dayText] = await Promise.all([sumRes.text(), dayRes.text()]);
 
     // Parse summary (row 0 = header)
-    const sumRows = sumData.values || [];
+    const sumRows = parseCSV(sumText);
     const summary = [];
     for (let i = 1; i < sumRows.length; i++) {
       const r = sumRows[i];
-      if (!r[0]) continue;
-      summary.push({ store: r[0], operator: r[1]||'', current: parseInt(r[2])||0, target: parseInt(r[3])||5000, remaining: parseInt(r[4])||0, dailyGoal: parseInt(r[5])||40 });
+      if (!r[0] || /^total|^system|^monthly|^month/i.test(r[0].trim())) continue;
+      if (!parseInt(r[2])) continue; // skip rows with no current listing count (headers, labels)
+      summary.push({ store: r[0].trim(), operator: r[1]||'', current: parseInt(r[2])||0, target: parseInt(r[3])||5000, remaining: parseInt(r[4])||0, dailyGoal: parseInt(r[5])||40 });
     }
 
     // Parse daily — find today's row
-    const dayRows = dayData.values || [];
-    const dailyColNames = dayRows[0] || [];
+    const dayRows = parseCSV(dayText);
+    // Sheet has title/empty rows before real headers — find the row starting with "Date"
+    let _hdrIdx = 0;
+    for (let i = 0; i < Math.min(dayRows.length, 6); i++) {
+      if (dayRows[i][0]?.trim() === 'Date') { _hdrIdx = i; break; }
+    }
+    const dailyColNames = dayRows[_hdrIdx].map(c => c.trim()); // trim \r and whitespace
+    const _dataStart = _hdrIdx + 1;
     const today = new Date();
-    const todayStr = `${String(today.getMonth()+1).padStart(2,'0')}/${String(today.getDate()).padStart(2,'0')}`;
-    const todayRow = dayRows.slice(1).find(r => r[0] === todayStr) || null;
+    const todayStrPad   = `${String(today.getMonth()+1).padStart(2,'0')}/${String(today.getDate()).padStart(2,'0')}`;
+    const todayStrShort = `${today.getMonth()+1}/${today.getDate()}`;
+    const todayRow = dayRows.slice(_dataStart).find(r => r[0]?.trim() === todayStrPad || r[0]?.trim() === todayStrShort) || null;
 
     // Parse ALL daily rows for history (skip DAILY TARGET row and empty rows)
     const dailyHistory = []; // [{ dateStr, date, counts:{storeName:n} }]
-    for (let i = 1; i < dayRows.length; i++) {
+    for (let i = _dataStart; i < dayRows.length; i++) {
       const r = dayRows[i];
-      if (!r[0] || r[0].toUpperCase().includes('TARGET')) continue;
-      const parts = r[0].split('/');
+      const r0 = r[0]?.trim() || '';
+      if (!r0 || r0.toUpperCase().includes('TARGET') || r0 === 'Date') continue;
+      const parts = r0.split('/');
       if (parts.length < 2) continue;
       const mm = parseInt(parts[0]), dd = parseInt(parts[1]);
       if (isNaN(mm) || isNaN(dd)) continue;
@@ -3484,7 +3500,7 @@ async function loadListingTracker(force = false) {
         if (v !== undefined && v !== '') counts[name] = parseInt(v) || 0;
       }
       if (Object.keys(counts).length > 0)
-        dailyHistory.push({ dateStr: r[0], date: dateObj, counts });
+        dailyHistory.push({ dateStr: r0, date: dateObj, counts });
     }
 
     LISTING_DATA = { summary, todayRow, dailyColNames, dailyHistory };
@@ -3573,11 +3589,11 @@ function switchPage(page) {
   const growth = $('growth-page');
   const btnOps = $('page-btn-ops'), btnGrowth = $('page-btn-growth');
   if (page === 'growth') {
-    ops.style.display = 'none'; growth.style.display = '';
+    ops.style.display = 'none'; growth.style.display = 'block';
     btnOps.classList.remove('active'); btnGrowth.classList.add('active');
     renderGrowthPage();
   } else {
-    growth.style.display = 'none'; ops.style.display = '';
+    growth.style.display = 'none'; ops.style.display = 'block';
     btnGrowth.classList.remove('active'); btnOps.classList.add('active');
   }
 }
@@ -3596,7 +3612,28 @@ let _growthPersonData = {};
 function renderGrowthPage() {
   const { summary, todayRow, dailyColNames, dailyHistory = [] } = LISTING_DATA;
 
-  if (!summary.length) return;
+  // Pre-compute today's hist entry so all stores use the same source
+  const _todayD = new Date();
+  const _todayS1 = `${String(_todayD.getMonth()+1).padStart(2,'0')}/${String(_todayD.getDate()).padStart(2,'0')}`;
+  const _todayS2 = `${_todayD.getMonth()+1}/${_todayD.getDate()}`;
+  const _todayHist = dailyHistory.find(d => d.dateStr === _todayS1 || d.dateStr === _todayS2);
+
+  // Update last-fetched timestamp
+  const _luEl = $('listing-last-updated');
+  if (_luEl && _listingCacheTime) {
+    const _ago = Math.round((Date.now() - _listingCacheTime) / 1000);
+    _luEl.textContent = `Last synced ${_ago < 60 ? 'just now' : Math.round(_ago/60)+'m ago'} · ${summary.length} stores · ${dailyHistory.length} day${dailyHistory.length!==1?'s':''} of history`;
+  }
+
+  if (!summary.length) {
+    $('growth-kpis').innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">
+      <div style="font-size:36px;margin-bottom:12px">📦</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:8px">Loading listing data…</div>
+      <div style="font-size:12px">Fetching from the listing tracker sheet. If this persists, click Refresh.</div>
+      <button class="btn btn-primary" style="margin-top:16px" onclick="loadListingTracker(true)">↻ Load Now</button>
+    </div>`;
+    return;
+  }
 
   // ════════════════════════════════════════════════════════
   // BUILD MASTER DATA TABLE — one object per store
@@ -3634,9 +3671,13 @@ function renderGrowthPage() {
     const histForStore = dailyHistory.reduce((sum,d) => sum + (d.counts[s.store]||0), 0);
     const avgDailyList = dailyHistory.length > 0 ? histForStore / dailyHistory.length : s.dailyGoal;
 
-    // Today's count
+    // Today's count — use dailyHistory entry for consistency (skips header cols / Daily Total)
     let todayN = null;
-    if (todayRow && dailyColNames.length) {
+    if (_todayHist) {
+      const v = _todayHist.counts[s.store];
+      if (v !== undefined) todayN = v;
+    }
+    if (todayN === null && todayRow && dailyColNames.length) {
       const idx = dailyColNames.indexOf(s.store);
       if (idx >= 0 && todayRow[idx] !== undefined && todayRow[idx] !== '')
         todayN = parseInt(todayRow[idx]) || 0;
@@ -3664,16 +3705,37 @@ function renderGrowthPage() {
   _growthPersonData = pd; // expose for calculators
 
   const all        = Object.values(pd);
+
+  // Global MoM: pin ALL stores to the same two comparison months (exclude non-standard month labels)
+  const _allMoArr = [...new Set(all.flatMap(p => p.mKeys))].filter(m => m && monthIndex(m) < 900).sort((a,b) => monthIndex(a) - monthIndex(b));
+  const gLastMo = _allMoArr[_allMoArr.length-1] || null;
+  const gPrevMo = _allMoArr[_allMoArr.length-2] || null;
+  all.forEach(p => {
+    p.gLastMoP  = gLastMo ? (p.byMonth[gLastMo] || 0) : 0;
+    p.gPrevMoP  = gPrevMo ? (p.byMonth[gPrevMo] || 0) : 0;
+    p.gMomPct   = (gPrevMo && p.gPrevMoP > 0) ? r2((p.gLastMoP - p.gPrevMoP) / p.gPrevMoP * 100) : null;
+    p.gMomDelta = r2(p.gLastMoP - p.gPrevMoP);
+
+    // Monthly profit-per-listing rate (most recent month is the primary projection basis)
+    const recentMoProfit = p.gLastMoP || p.gPrevMoP || 0;
+    p.recentMoLabel     = (p.gLastMoP > 0 && gLastMo) ? gLastMo : (gPrevMo || '');
+    p.recentMoProfit    = recentMoProfit;
+    p.profitPerListMo   = p.current > 0 && recentMoProfit > 0 ? recentMoProfit / p.current : 0;
+    p.proj30mo = r2(p.effDaily * 30 * p.profitPerListMo);
+    p.proj60mo = r2(p.effDaily * 60 * p.profitPerListMo);
+    p.proj90mo = r2(p.effDaily * 90 * p.profitPerListMo);
+  });
+
   const totalList  = all.reduce((s,p) => s + p.current, 0);
   const totalTgt   = all.reduce((s,p) => s + p.target, 0);
   const totalProf  = all.reduce((s,p) => s + p.totalProfit, 0);
-  const proj90All  = all.reduce((s,p) => s + p.proj90, 0);
+  const proj90All  = all.reduce((s,p) => s + (p.proj90mo || p.proj90), 0);
   const avgPer1k   = totalList > 0 && totalProf > 0 ? r2(totalProf / totalList * 1000) : 0;
   const totalToday = all.reduce((s,p) => s + (p.todayN || 0), 0);
 
   const byEff      = [...all].filter(p => p.current > 0).sort((a,b) => b.profitPer1k - a.profitPer1k);
-  const growingCnt = all.filter(p => p.momPct !== null && p.momPct > 0).length;
-  const momCnt     = all.filter(p => p.momPct !== null).length;
+  const growingCnt = all.filter(p => p.gMomPct !== null && p.gMomPct > 0).length;
+  const momCnt     = all.filter(p => p.gMomPct !== null).length;
 
   // ════════════════════════════════════════════════════════
   // HERO KPIs
@@ -3700,9 +3762,9 @@ function renderGrowthPage() {
       <div class="growth-kpi-sub">accounts growing vs last month</div>
     </div>
     <div class="growth-kpi-card">
-      <div class="growth-kpi-label">90-Day Profit Projection</div>
+      <div class="growth-kpi-label">90-Day Monthly Uplift</div>
       <div class="growth-kpi-val" style="color:var(--emerald)">${proj90All > 0 ? fmt$(proj90All) : '—'}</div>
-      <div class="growth-kpi-sub">extra profit from listings being added now</div>
+      <div class="growth-kpi-sub">monthly profit gain from new listings at 90d · ${gLastMo||'recent'} rate</div>
     </div>`;
 
   // ════════════════════════════════════════════════════════
@@ -3718,7 +3780,7 @@ function renderGrowthPage() {
         const barC   = i===0?'var(--green)': p.profitPer1k>=avgPer1k?'var(--indigo)':'var(--muted)';
         const tag    = p.profitPer1k >= avgPer1k*1.4 ? '<span style="background:rgba(16,185,129,.15);color:var(--green);font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">🚀 scale</span>'
                      : p.profitPer1k > 0 && p.profitPer1k <= avgPer1k*0.5 ? '<span style="background:rgba(239,68,68,.1);color:var(--red);font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">⚠️ review</span>' : '';
-        const momT   = p.momPct !== null ? `<span style="font-size:10px;color:${p.momPct>=0?'var(--green)':'var(--red)'}">${p.momPct>=0?'↑':'↓'}${Math.abs(p.momPct).toFixed(0)}% MoM</span>` : '';
+        const momT   = p.gMomPct !== null ? `<span style="font-size:10px;color:${p.gMomPct>=0?'var(--green)':'var(--red)'}">${p.gMomPct>=0?'↑':'↓'}${Math.abs(p.gMomPct).toFixed(0)}% MoM</span>` : '';
         return `<div style="padding:10px 0;border-bottom:1px solid var(--card-border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
             <div style="display:flex;align-items:center;gap:6px">
@@ -3781,44 +3843,57 @@ function renderGrowthPage() {
   // ════════════════════════════════════════════════════════
   // 90-DAY PROJECTIONS
   // ════════════════════════════════════════════════════════
-  $('growth-proj-sub').textContent = proj90All > 0 ? `${fmt$(proj90All)} extra profit projected across all stores in 90 days` : 'Load ops data to see projections';
+  $('growth-proj-sub').textContent = proj90All > 0 ? `${fmt$(proj90All)} monthly profit uplift from new listings at 90d · based on ${gLastMo||'recent'} rate` : 'Load ops data to see projections';
   const byProj = [...all].sort((a,b) => b.proj90 - a.proj90);
-  $('growth-proj-grid').innerHTML = byProj.map(p => `
-    <div class="card" style="padding:16px">
+  const _projHistNote = dailyHistory.length <= 1
+    ? `<span style="color:var(--amber)">⚠ ${dailyHistory.length===1?'1':'No'} day of history — will improve as team logs daily</span>`
+    : `${dailyHistory.length}d avg`;
+  $('growth-proj-grid').innerHTML = byProj.map(p => {
+    const hasMonthly = p.profitPerListMo > 0;
+    const hasAllTime = p.profitPerList > 0;
+    const useMo = hasMonthly;
+    return `<div class="card" style="padding:16px">
       <div style="font-weight:700;font-size:13px;margin-bottom:2px">${p.store}</div>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:12px">+${Math.round(p.effDaily*30).toLocaleString()} listings/mo at current pace</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px">+${Math.round(p.effDaily*30).toLocaleString()} listings/mo · ${_projHistNote}</div>
+      ${useMo ? `<div style="font-size:9px;color:var(--muted);margin-bottom:10px;padding:5px 7px;background:var(--glass);border-radius:5px;line-height:1.7">
+        <strong style="color:var(--text2)">${p.recentMoLabel} profit:</strong> ${fmt$(p.recentMoProfit)} ÷ ${p.current.toLocaleString()} listings = <strong style="color:var(--indigo)">${fmt$(p.profitPerListMo)}/listing/mo</strong>
+        ${hasAllTime ? `<br><span style="opacity:.65">All-time: ${fmt$(p.totalProfit)} ÷ ${p.current.toLocaleString()} = ${fmt$(p.profitPerList)}/listing total</span>` : ''}
+      </div>` : (!hasAllTime ? `<div style="font-size:9px;color:var(--muted);margin-bottom:10px;padding:5px 7px;background:var(--glass);border-radius:5px">No profit data yet — projections unavailable</div>` : '')}
       <div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--card-border)">
-        <span style="color:var(--muted)">+30 days</span><span style="font-weight:600;color:var(--cyan)">${p.proj30>0?'+'+fmt$(p.proj30):'—'}</span>
+        <span style="color:var(--muted)">+30 days</span><span style="font-weight:600;color:var(--cyan)">${useMo&&p.proj30mo>0?'+'+fmt$(p.proj30mo):hasAllTime&&p.proj30>0?'+'+fmt$(p.proj30):'—'}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--card-border)">
-        <span style="color:var(--muted)">+60 days</span><span style="font-weight:600;color:var(--violet)">${p.proj60>0?'+'+fmt$(p.proj60):'—'}</span>
+        <span style="color:var(--muted)">+60 days</span><span style="font-weight:600;color:var(--violet)">${useMo&&p.proj60mo>0?'+'+fmt$(p.proj60mo):hasAllTime&&p.proj60>0?'+'+fmt$(p.proj60):'—'}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0">
-        <span style="color:var(--muted)">+90 days</span><span style="font-weight:800;color:var(--green)">${p.proj90>0?'+'+fmt$(p.proj90):'—'}</span>
+        <span style="color:var(--muted)">+90 days</span><span style="font-weight:800;color:var(--green)">${useMo&&p.proj90mo>0?'+'+fmt$(p.proj90mo):hasAllTime&&p.proj90>0?'+'+fmt$(p.proj90):'—'}</span>
       </div>
-      ${p.daysToTgt?`<div style="font-size:10px;color:var(--muted);border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px">~${p.daysToTgt} days to ${p.target.toLocaleString()} target</div>`:''}
-    </div>`).join('');
+      ${useMo?`<div style="font-size:9px;color:var(--muted);border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px;opacity:.7">monthly profit gain from newly added listings</div>`:''}
+      ${p.daysToTgt?`<div style="font-size:10px;color:var(--muted);${useMo?'':'border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px'}">~${p.daysToTgt} days to ${p.target.toLocaleString()} target</div>`:''}
+    </div>`;
+  }).join('');
 
   // ════════════════════════════════════════════════════════
   // MONTH-OVER-MONTH TREND
   // ════════════════════════════════════════════════════════
-  const withMom = all.filter(p=>p.momPct!==null).sort((a,b)=>(b.momPct||0)-(a.momPct||0));
-  const noMom   = all.filter(p=>p.momPct===null);
-  const growCnt = withMom.filter(p=>p.momPct>0).length;
-  const decCnt  = withMom.filter(p=>p.momPct<=0).length;
-  $('growth-mom-sub').textContent = `${growCnt} growing · ${decCnt} declining · ${noMom.length} need more data`;
+  const withMom = all.filter(p=>p.gMomPct!==null).sort((a,b)=>(b.gMomPct||0)-(a.gMomPct||0));
+  const noMom   = all.filter(p=>p.gMomPct===null);
+  const growCnt = withMom.filter(p=>p.gMomPct>0).length;
+  const decCnt  = withMom.filter(p=>p.gMomPct<=0).length;
+  const momPeriodLabel = (gPrevMo && gLastMo) ? `${gPrevMo} → ${gLastMo}` : '';
+  $('growth-mom-sub').textContent = `${momPeriodLabel}${momPeriodLabel?' · ':''}${growCnt} growing · ${decCnt} declining · ${noMom.length} no prior month`;
   $('growth-mom-grid').innerHTML = [...withMom, ...noMom].map(p => {
-    const has  = p.momPct !== null;
-    const up   = has && p.momPct > 0;
+    const has  = p.gMomPct !== null;
+    const up   = has && p.gMomPct > 0;
     const clr  = has ? (up?'var(--green)':'var(--red)') : 'var(--muted)';
     const icon = has ? (up?'↑':'↓') : '—';
     return `<div class="card" style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
       <div>
         <div style="font-weight:700;font-size:13px">${p.store}</div>
-        <div style="font-size:10px;color:var(--muted);margin-top:2px">${has?fmt$(p.prevMoP)+' → '+fmt$(p.lastMoP):'Need 2+ months of data'}</div>
-        ${has?`<div style="font-size:10px;color:${clr};margin-top:2px">${up?'+':''}${fmt$(p.momDelta)}</div>`:''}
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${has ? fmt$(p.gPrevMoP)+' → '+fmt$(p.gLastMoP) : (gPrevMo ? 'No profit in '+gPrevMo : 'Need prior month data')}</div>
+        ${has?`<div style="font-size:10px;color:${clr};margin-top:2px">${up?'+':''}${fmt$(p.gMomDelta)}</div>`:''}
       </div>
-      <div style="font-size:24px;font-weight:900;color:${clr}">${has?icon+Math.abs(p.momPct).toFixed(0)+'%':icon}</div>
+      <div style="font-size:24px;font-weight:900;color:${clr}">${has?icon+Math.abs(p.gMomPct).toFixed(0)+'%':icon}</div>
     </div>`;
   }).join('');
 
@@ -3935,7 +4010,7 @@ function renderGrowthPage() {
     const todC = p.todayN===null?'var(--muted)':p.todayN>=40?'var(--green)':'var(--amber)';
     const velAvg = dailyHistory.length > 0 ? (p.histForStore/dailyHistory.length).toFixed(1) : '—';
     const effRank = byEff.findIndex(b=>b.store===p.store)+1;
-    const momBadge = p.momPct!==null ? `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:${p.momPct>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.1)'};color:${p.momPct>=0?'var(--green)':'var(--red)'};">${p.momPct>=0?'↑':'↓'}${Math.abs(p.momPct).toFixed(0)}% MoM</span>` : '';
+    const momBadge = p.gMomPct!==null ? `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:${p.gMomPct>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.1)'};color:${p.gMomPct>=0?'var(--green)':'var(--red)'};">${p.gMomPct>=0?'↑':'↓'}${Math.abs(p.gMomPct).toFixed(0)}% MoM</span>` : '';
     return `<div class="growth-account-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
         <div>
@@ -4831,11 +4906,10 @@ function openWeeklyWrap() {
 }
 
 // ─── BOOT ──────────────────────────────────────────────────────────────────
-// Main sheets: refresh every 5 min (profit data needs to be fresh)
-// Listing tracker: 10 min TTL handled inside loadListingTracker()
 setInterval(loadAll, 5 * 60 * 1000);
-// Separate interval for listing tracker — only fires if main data already loaded
-setInterval(() => { if (API_KEY && LISTING_DATA.summary.length) loadListingTracker(); }, 10 * 60 * 1000);
+setInterval(() => loadListingTracker(), 10 * 60 * 1000);
+// Load listing tracker immediately (no API key needed — public CSV export)
+loadListingTracker();
 if (checkApiKey()) loadAll();
 </script>
 </body>

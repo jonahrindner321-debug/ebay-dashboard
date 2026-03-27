@@ -849,6 +849,30 @@
       .modal-title { color: #000 !important; }
       .report-sec h4 { color: #666 !important; }
     }
+
+    /* ── Page Nav ── */
+    .page-nav { display:flex; gap:4px; background:var(--glass); border:1px solid var(--glass-border); border-radius:10px; padding:3px; }
+    .page-nav-btn { background:transparent; border:none; color:var(--text2); cursor:pointer; padding:5px 14px; border-radius:8px; font-size:13px; font-weight:500; transition:all .2s; white-space:nowrap; }
+    .page-nav-btn.active { background:var(--indigo); color:#fff; }
+    .page-nav-btn:hover:not(.active) { background:var(--glass-hover); color:var(--text); }
+
+    /* ── Growth Page ── */
+    #growth-page { display:none; }
+    .growth-section { margin-bottom:var(--gap); }
+    .growth-kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:var(--gap); margin-bottom:var(--gap); }
+    .growth-kpi-card { background:var(--card); border:1px solid var(--card-border); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow); }
+    .growth-kpi-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
+    .growth-kpi-val { font-size:30px; font-weight:800; line-height:1; }
+    .growth-kpi-sub { font-size:11px; color:var(--muted); margin-top:6px; }
+    .growth-account-card { background:var(--card); border:1px solid var(--card-border); border-radius:var(--radius); padding:18px; box-shadow:var(--shadow); }
+    .growth-account-name { font-size:14px; font-weight:700; margin-bottom:2px; }
+    .growth-account-op { font-size:11px; color:var(--muted); margin-bottom:12px; }
+    .growth-stat-row { display:flex; justify-content:space-between; font-size:12px; padding:5px 0; border-bottom:1px solid var(--card-border); }
+    .growth-stat-row:last-child { border-bottom:none; }
+    .growth-stat-label { color:var(--muted); }
+    .growth-stat-val { font-weight:600; }
+    .growth-progress-bar { background:var(--glass); border-radius:4px; height:6px; overflow:hidden; margin:8px 0 4px; }
+    .growth-progress-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--indigo),var(--violet)); transition:width .8s ease; }
   </style>
 </head>
 <body>
@@ -891,6 +915,11 @@
       <div class="logo-text">eBay Ops</div>
       <div class="logo-sub">Operations Dashboard</div>
     </div>
+  </div>
+
+  <div class="page-nav">
+    <button class="page-nav-btn active" id="page-btn-ops" onclick="switchPage('ops')">📊 Operations</button>
+    <button class="page-nav-btn" id="page-btn-growth" onclick="switchPage('growth')">📦 Growth</button>
   </div>
 
   <div class="header-mid">
@@ -1041,6 +1070,16 @@
   <div id="sheet-activity-section" style="display:none;margin-bottom:var(--gap)">
     <div class="section-hdr"><span class="section-title">📋 Sheet Activity</span><span style="font-size:11px;color:var(--muted)" id="sheet-activity-sub"></span></div>
     <div id="sheet-activity-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--gap)"></div>
+  </div>
+
+  <!-- ── Listing Tracker ── -->
+  <div id="listing-tracker-section" style="display:none;margin-bottom:var(--gap)">
+    <div class="section-hdr">
+      <span class="section-title">📦 Listing Tracker</span>
+      <span style="font-size:11px;color:var(--muted)" id="listing-tracker-sub"></span>
+    </div>
+    <div id="listing-tracker-summary" style="margin-bottom:var(--gap)"></div>
+    <div id="listing-tracker-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:var(--gap)"></div>
   </div>
 
   <!-- Profit Split -->
@@ -1322,6 +1361,133 @@
   </div>
 </main>
 
+<!-- ── Growth / Listings Intelligence Page ── -->
+<div id="growth-page" class="container">
+
+  <!-- Hero KPIs -->
+  <div class="growth-kpi-row" id="growth-kpis"></div>
+
+  <!-- Scale Intelligence + Growth Matrix -->
+  <div class="growth-section">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)">
+      <div>
+        <div class="section-hdr"><span class="section-title">🏆 Scale Intelligence</span><span style="font-size:11px;color:var(--muted)">profit per 1,000 listings · who to bet on</span></div>
+        <div class="card" style="padding:4px 20px 8px" id="growth-efficiency-list"></div>
+      </div>
+      <div>
+        <div class="section-hdr"><span class="section-title">📍 Growth Matrix</span><span style="font-size:11px;color:var(--muted)">listing count vs efficiency</span></div>
+        <div class="card" style="padding:16px">
+          <div id="growth-matrix" style="position:relative;width:100%;height:310px;overflow:hidden"></div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:20px;padding:0 4px">
+            <span>fewer listings ←</span><span style="font-weight:600">Listing Count</span><span>→ more listings</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 90-Day Projections -->
+  <div class="growth-section">
+    <div class="section-hdr"><span class="section-title">🔮 90-Day Projection</span><span style="font-size:11px;color:var(--muted)" id="growth-proj-sub"></span></div>
+    <div id="growth-proj-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--gap)"></div>
+  </div>
+
+  <!-- Month-over-Month -->
+  <div class="growth-section">
+    <div class="section-hdr"><span class="section-title">📆 Month-over-Month</span><span style="font-size:11px;color:var(--muted)" id="growth-mom-sub"></span></div>
+    <div id="growth-mom-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:var(--gap)"></div>
+  </div>
+
+  <!-- Operator Intelligence -->
+  <div class="growth-section">
+    <div class="section-hdr"><span class="section-title">👤 Operator Intelligence</span><span style="font-size:11px;color:var(--muted)">who's managing the best accounts</span></div>
+    <div id="growth-operator-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--gap)"></div>
+  </div>
+
+  <!-- Scale Calculator -->
+  <div class="growth-section">
+    <div class="section-hdr"><span class="section-title">🧮 Scale Calculators</span><span style="font-size:11px;color:var(--muted)">model any scenario</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)">
+      <!-- Account Scale Calculator -->
+      <div class="card" style="padding:20px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:4px">📈 Account Scale Model</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:16px">If I scale an account to X listings, what will it make?</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Account</label>
+            <select id="calc-account-sel" style="width:100%;background:var(--input-bg);border:1px solid var(--input-border);color:var(--text);padding:8px 10px;border-radius:8px;font-size:12px;outline:none" onchange="updateScaleCalc()"></select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Target Listing Count</label>
+            <input type="number" id="calc-target-listings" value="5000" min="1" style="width:100%;background:var(--input-bg);border:1px solid var(--input-border);color:var(--text);padding:8px 10px;border-radius:8px;font-size:12px;outline:none" oninput="updateScaleCalc()" />
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Daily Listings Added</label>
+            <input type="number" id="calc-daily-rate" value="40" min="1" style="width:100%;background:var(--input-bg);border:1px solid var(--input-border);color:var(--text);padding:8px 10px;border-radius:8px;font-size:12px;outline:none" oninput="updateScaleCalc()" />
+          </div>
+        </div>
+        <div id="scale-calc-result" style="margin-top:16px;padding:14px;background:var(--glass);border-radius:10px;font-size:12px;line-height:1.8"></div>
+      </div>
+      <!-- Profit Target Calculator -->
+      <div class="card" style="padding:20px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:4px">💰 Profit Target Model</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:16px">How many listings do I need to hit a profit goal?</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Account (for efficiency rate)</label>
+            <select id="calc-profit-account" style="width:100%;background:var(--input-bg);border:1px solid var(--input-border);color:var(--text);padding:8px 10px;border-radius:8px;font-size:12px;outline:none" onchange="updateProfitCalc()"></select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Target Monthly Profit ($)</label>
+            <input type="number" id="calc-target-profit" value="1000" min="1" style="width:100%;background:var(--input-bg);border:1px solid var(--input-border);color:var(--text);padding:8px 10px;border-radius:8px;font-size:12px;outline:none" oninput="updateProfitCalc()" />
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Daily Listings They'll Add</label>
+            <input type="number" id="calc-profit-daily" value="40" min="1" style="width:100%;background:var(--input-bg);border:1px solid var(--input-border);color:var(--text);padding:8px 10px;border-radius:8px;font-size:12px;outline:none" oninput="updateProfitCalc()" />
+          </div>
+        </div>
+        <div id="profit-calc-result" style="margin-top:16px;padding:14px;background:var(--glass);border-radius:10px;font-size:12px;line-height:1.8"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Today's Activity -->
+  <div class="growth-section">
+    <div class="section-hdr"><span class="section-title">📅 Today's Listing Activity</span><span style="font-size:11px;color:var(--muted)" id="growth-today-sub"></span></div>
+    <div class="card chart-box" style="padding:20px;min-height:280px">
+      <canvas id="chart-today-listings"></canvas>
+    </div>
+  </div>
+
+  <!-- Progress to Target -->
+  <div class="growth-section">
+    <div class="section-hdr"><span class="section-title">🎯 Progress to 5,000 Target</span></div>
+    <div id="growth-progress-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:var(--gap)"></div>
+  </div>
+
+  <!-- Velocity Over Time -->
+  <div class="growth-section">
+    <div class="section-hdr"><span class="section-title">📈 Daily Listing Velocity</span><span style="font-size:11px;color:var(--muted)" id="growth-velocity-sub"></span></div>
+    <div class="card chart-box" style="padding:20px;min-height:300px" id="growth-velocity-wrap">
+      <canvas id="chart-velocity"></canvas>
+    </div>
+  </div>
+
+  <!-- Per-Account Intelligence -->
+  <div class="growth-section">
+    <div class="section-hdr"><span class="section-title">🧠 Per-Account Intelligence</span></div>
+    <div id="growth-account-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--gap)"></div>
+  </div>
+
+  <!-- Correlation -->
+  <div class="growth-section">
+    <div class="section-hdr"><span class="section-title">🔗 Listing → Profit Correlation</span><span style="font-size:11px;color:var(--muted)" id="growth-corr-sub"></span></div>
+    <div id="growth-corr-section"></div>
+  </div>
+
+  <div class="footer"><div class="f-dot"></div>Growth Intelligence · Listing tracker refreshes every 10 min</div>
+</div>
+
 <!-- Disco ball (party mode) -->
 <div class="disco-ball" id="disco-ball">🪩</div>
 <!-- Mr. Six (party mode) -->
@@ -1344,6 +1510,26 @@ const SHEETS = {
 };
 
 const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i;
+
+// ─── LISTING TRACKER ───────────────────────────────────────────────────────
+const LISTING_TRACKER_ID   = '1P1k92F_RsQxSE_2qZloA99OiOBEDazch';
+const LISTING_TRACKER_SUMMARY_GID = 1098129568;
+const LISTING_TRACKER_DAILY_GID   = 2077321990;
+// Map listing tracker store names → dashboard person names
+const LISTING_NAME_MAP = {
+  'Russ':         'Russell',
+  'Jonah':        'Johna',
+  'Dolo LLC':     'Dolo LLC',
+  'Jacob':        'Jacob',
+  'Armando':      'Armando',
+  'Sloop':        'John Slop',
+  'Austin':       'Austin',
+  'Paul':         'Paul',
+  'Mariel':       'Mariel',
+  'Huny (delmor)':'Delmor',
+  'Jack':         'Jack R',
+};
+let LISTING_DATA = { summary: [], todayRow: null, dailyColNames: [] };
 
 // Store creation dates fetched from Drive API — populated on load
 const STORE_CREATED = {}; // { person: 'YYYY-MM-DD' }
@@ -1893,6 +2079,9 @@ async function loadAll() {
       if (val) SHEET_MODIFIED[SHEETS[id]] = val;
     } catch(e) { /* _meta tab not yet created — sheet hasn't been edited since install */ }
   })).then(() => renderSheetActivity());
+
+  // Load listing tracker (fire and forget)
+  loadListingTracker();
 
   if (!allSources.length) {
     const msg = tabErrors.length ? 'API error: '+tabErrors[0].e : 'No tabs — check sheet sharing';
@@ -3234,6 +3423,660 @@ function renderSheetActivity() {
   section.style.display = 'block';
 }
 
+// ─── LISTING TRACKER ──────────────────────────────────────────────────────────
+const LISTING_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+let _listingCacheTime = 0;
+
+async function loadListingTracker(force = false) {
+  if (!API_KEY) return;
+  // Serve from cache if fresh enough
+  const now = Date.now();
+  if (!force && _listingCacheTime && (now - _listingCacheTime) < LISTING_CACHE_TTL && LISTING_DATA.summary.length) {
+    renderListingTracker();
+    renderGrowthPage();
+    return;
+  }
+  try {
+    // Get tab names by sheet ID
+    const meta = await apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${LISTING_TRACKER_ID}?key=${API_KEY}&fields=sheets.properties(title,sheetId)`);
+    const tabs = (meta.sheets || []);
+    const summaryTab = tabs.find(s => s.properties.sheetId === LISTING_TRACKER_SUMMARY_GID);
+    const dailyTab   = tabs.find(s => s.properties.sheetId === LISTING_TRACKER_DAILY_GID);
+    if (!summaryTab || !dailyTab) return;
+
+    const [sumData, dayData] = await Promise.all([
+      apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${LISTING_TRACKER_ID}/values/${encodeURIComponent(summaryTab.properties.title)}!A:F?key=${API_KEY}`),
+      apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${LISTING_TRACKER_ID}/values/${encodeURIComponent(dailyTab.properties.title)}!A:O?key=${API_KEY}`)
+    ]);
+
+    // Parse summary (row 0 = header)
+    const sumRows = sumData.values || [];
+    const summary = [];
+    for (let i = 1; i < sumRows.length; i++) {
+      const r = sumRows[i];
+      if (!r[0]) continue;
+      summary.push({ store: r[0], operator: r[1]||'', current: parseInt(r[2])||0, target: parseInt(r[3])||5000, remaining: parseInt(r[4])||0, dailyGoal: parseInt(r[5])||40 });
+    }
+
+    // Parse daily — find today's row
+    const dayRows = dayData.values || [];
+    const dailyColNames = dayRows[0] || [];
+    const today = new Date();
+    const todayStr = `${String(today.getMonth()+1).padStart(2,'0')}/${String(today.getDate()).padStart(2,'0')}`;
+    const todayRow = dayRows.slice(1).find(r => r[0] === todayStr) || null;
+
+    // Parse ALL daily rows for history (skip DAILY TARGET row and empty rows)
+    const dailyHistory = []; // [{ dateStr, date, counts:{storeName:n} }]
+    for (let i = 1; i < dayRows.length; i++) {
+      const r = dayRows[i];
+      if (!r[0] || r[0].toUpperCase().includes('TARGET')) continue;
+      const parts = r[0].split('/');
+      if (parts.length < 2) continue;
+      const mm = parseInt(parts[0]), dd = parseInt(parts[1]);
+      if (isNaN(mm) || isNaN(dd)) continue;
+      const yr = (mm >= 1 && mm <= 12) ? (mm < 9 ? 2026 : 2025) : 2026;
+      const dateObj = new Date(yr, mm-1, dd);
+      const counts = {};
+      for (let c = 2; c < dailyColNames.length; c++) {
+        const name = dailyColNames[c];
+        if (!name || name === 'Daily Total' || name === 'Notes') continue;
+        const v = r[c];
+        if (v !== undefined && v !== '') counts[name] = parseInt(v) || 0;
+      }
+      if (Object.keys(counts).length > 0)
+        dailyHistory.push({ dateStr: r[0], date: dateObj, counts });
+    }
+
+    LISTING_DATA = { summary, todayRow, dailyColNames, dailyHistory };
+    _listingCacheTime = Date.now();
+    renderListingTracker();
+    renderGrowthPage();
+  } catch(e) { console.warn('Listing tracker load failed:', e); }
+}
+
+function renderListingTracker() {
+  const section = $('listing-tracker-section');
+  if (!section) return;
+  const { summary, todayRow, dailyColNames } = LISTING_DATA;
+  if (!summary.length) { section.style.display = 'none'; return; }
+
+  // Build today's counts keyed by tracker store name
+  const todayCounts = {};
+  if (todayRow && dailyColNames.length) {
+    for (let i = 2; i < dailyColNames.length; i++) {
+      const name = dailyColNames[i];
+      if (!name || name === 'Daily Total' || name === 'Notes') continue;
+      const v = todayRow[i];
+      if (v !== undefined && v !== '') todayCounts[name] = parseInt(v) || 0;
+    }
+  }
+
+  const totalToday = Object.values(todayCounts).reduce((s,v)=>s+v, 0);
+  const totalGoal  = summary.reduce((s,r)=>s+(r.dailyGoal||40), 0);
+  const pctToday   = totalGoal > 0 ? Math.round(totalToday / totalGoal * 100) : 0;
+  const logged     = Object.keys(todayCounts).length;
+  const notLogged  = summary.length - logged;
+
+  // Summary bar
+  $('listing-tracker-summary').innerHTML = `
+    <div class="card" style="padding:16px 20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div>
+          <div style="font-size:28px;font-weight:800;line-height:1">${totalToday.toLocaleString()} <span style="font-size:14px;font-weight:500;color:var(--muted)">/ ${totalGoal} today</span></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">${logged} of ${summary.length} accounts logged · ${notLogged > 0 ? `<span style="color:var(--amber)">${notLogged} not yet</span>` : '<span style="color:var(--green)">all in ✓</span>'}</div>
+        </div>
+        <div style="font-size:32px;font-weight:900;color:${pctToday >= 100 ? 'var(--green)' : pctToday >= 60 ? 'var(--amber)' : 'var(--muted)'}">${pctToday}%</div>
+      </div>
+      <div style="background:var(--glass);border-radius:6px;height:8px;overflow:hidden">
+        <div style="width:${Math.min(100,pctToday)}%;height:100%;background:linear-gradient(90deg,var(--indigo),var(--violet));border-radius:6px;transition:width .8s ease"></div>
+      </div>
+    </div>`;
+
+  // Per-store cards
+  $('listing-tracker-grid').innerHTML = summary.map(row => {
+    const todayCount  = todayCounts[row.store];
+    const hasData     = todayCount !== undefined;
+    const hitGoal     = hasData && todayCount >= row.dailyGoal;
+    const pct         = Math.min(100, Math.round(row.current / row.target * 100));
+    const daysLeft    = row.dailyGoal > 0 ? Math.ceil(row.remaining / row.dailyGoal) : '—';
+    const countColor  = hitGoal ? 'var(--green)' : hasData ? 'var(--amber)' : 'var(--muted)';
+    return `
+      <div class="card" style="padding:16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+          <div>
+            <div style="font-weight:700;font-size:13px">${row.store}</div>
+            <div style="font-size:11px;color:var(--muted)">${row.operator}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:22px;font-weight:800;color:${countColor};line-height:1">${hasData ? todayCount : '—'}</div>
+            <div style="font-size:10px;color:var(--muted)">${hasData ? (hitGoal ? '✅ goal hit' : `goal: ${row.dailyGoal}`) : 'not logged'}</div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:5px">
+          <span>${row.current.toLocaleString()} total</span><span>${pct}%</span>
+        </div>
+        <div style="background:var(--glass);border-radius:4px;height:5px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:var(--indigo);border-radius:4px"></div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:6px">~${daysLeft} days to ${row.target.toLocaleString()} target</div>
+      </div>`;
+  }).join('');
+
+  $('listing-tracker-sub').textContent = `${totalToday} added today · ${summary.reduce((s,r)=>s+r.current,0).toLocaleString()} total listings`;
+  section.style.display = 'block';
+}
+
+// ─── PAGE SWITCHER ────────────────────────────────────────────────────────────
+let _growthCharts = {};
+function switchPage(page) {
+  const ops = document.querySelector('main.container');
+  const growth = $('growth-page');
+  const btnOps = $('page-btn-ops'), btnGrowth = $('page-btn-growth');
+  if (page === 'growth') {
+    ops.style.display = 'none'; growth.style.display = '';
+    btnOps.classList.remove('active'); btnGrowth.classList.add('active');
+    renderGrowthPage();
+  } else {
+    growth.style.display = 'none'; ops.style.display = '';
+    btnGrowth.classList.remove('active'); btnOps.classList.add('active');
+  }
+}
+
+// ─── GROWTH PAGE RENDERER ────────────────────────────────────────────────────
+function arrMedian(arr) {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a,b)=>a-b);
+  const m = Math.floor(s.length/2);
+  return s.length%2 ? s[m] : (s[m-1]+s[m])/2;
+}
+
+// Shared personData for calculators
+let _growthPersonData = {};
+
+function renderGrowthPage() {
+  const { summary, todayRow, dailyColNames, dailyHistory = [] } = LISTING_DATA;
+
+  if (!summary.length) return;
+
+  // ════════════════════════════════════════════════════════
+  // BUILD MASTER DATA TABLE — one object per store
+  // ════════════════════════════════════════════════════════
+  const sortedHistDesc = [...dailyHistory].sort((a,b) => b.date - a.date);
+
+  const pd = {}; // personData keyed by tracker store name
+  summary.forEach(s => {
+    const dashName = LISTING_NAME_MAP[s.store] || s.store;
+    const recs = RAW.filter(r => r.person === dashName);
+
+    // Profit / revenue / sales totals
+    const totalProfit  = r2(recs.reduce((sum,r) => sum + r.profit, 0));
+    const totalRevenue = r2(recs.reduce((sum,r) => sum + r.revenue, 0));
+    const totalSales   = recs.reduce((sum,r) => sum + (r.sales || 1), 0);
+    const avgSale      = totalSales > 0 ? r2(totalProfit / totalSales) : 0;
+
+    // Monthly breakdown
+    const byMonth = {};
+    recs.forEach(r => { if (r.month) byMonth[r.month] = r2((byMonth[r.month]||0) + r.profit); });
+    const mKeys = Object.keys(byMonth).sort((a,b) => monthIndex(a) - monthIndex(b));
+    const lastMo = mKeys[mKeys.length-1], prevMo = mKeys[mKeys.length-2];
+    const lastMoP = lastMo ? byMonth[lastMo] : 0;
+    const prevMoP = prevMo ? byMonth[prevMo] : 0;
+    const momPct  = prevMoP > 0 ? r2((lastMoP - prevMoP) / prevMoP * 100) : null;
+    const momDelta = r2(lastMoP - prevMoP);
+
+    // Listing streak (consecutive days with ≥1 listing)
+    let streak = 0;
+    for (const d of sortedHistDesc) {
+      if ((d.counts[s.store]||0) > 0) streak++; else break;
+    }
+
+    // Velocity from history
+    const histForStore = dailyHistory.reduce((sum,d) => sum + (d.counts[s.store]||0), 0);
+    const avgDailyList = dailyHistory.length > 0 ? histForStore / dailyHistory.length : s.dailyGoal;
+
+    // Today's count
+    let todayN = null;
+    if (todayRow && dailyColNames.length) {
+      const idx = dailyColNames.indexOf(s.store);
+      if (idx >= 0 && todayRow[idx] !== undefined && todayRow[idx] !== '')
+        todayN = parseInt(todayRow[idx]) || 0;
+    }
+
+    // Efficiency
+    const profitPer1k    = s.current > 0 && totalProfit > 0 ? r2(totalProfit / s.current * 1000) : 0;
+    const profitPerList  = s.current > 0 && totalProfit > 0 ? totalProfit / s.current : 0;
+
+    // 90-day projection from NEW listings added
+    const effDaily = dailyHistory.length > 0 ? avgDailyList : s.dailyGoal;
+    const proj30   = r2(effDaily * 30 * profitPerList);
+    const proj60   = r2(effDaily * 60 * profitPerList);
+    const proj90   = r2(effDaily * 90 * profitPerList);
+    const daysToTgt = s.dailyGoal > 0 ? Math.ceil(s.remaining / s.dailyGoal) : null;
+
+    pd[s.store] = {
+      ...s, dashName, recs, totalProfit, totalRevenue, totalSales, avgSale,
+      byMonth, mKeys, lastMo, prevMo, lastMoP, prevMoP, momPct, momDelta,
+      streak, avgDailyList, histForStore, todayN,
+      profitPer1k, profitPerList, proj30, proj60, proj90, effDaily, daysToTgt
+    };
+  });
+
+  _growthPersonData = pd; // expose for calculators
+
+  const all        = Object.values(pd);
+  const totalList  = all.reduce((s,p) => s + p.current, 0);
+  const totalTgt   = all.reduce((s,p) => s + p.target, 0);
+  const totalProf  = all.reduce((s,p) => s + p.totalProfit, 0);
+  const proj90All  = all.reduce((s,p) => s + p.proj90, 0);
+  const avgPer1k   = totalList > 0 && totalProf > 0 ? r2(totalProf / totalList * 1000) : 0;
+  const totalToday = all.reduce((s,p) => s + (p.todayN || 0), 0);
+
+  const byEff      = [...all].filter(p => p.current > 0).sort((a,b) => b.profitPer1k - a.profitPer1k);
+  const growingCnt = all.filter(p => p.momPct !== null && p.momPct > 0).length;
+  const momCnt     = all.filter(p => p.momPct !== null).length;
+
+  // ════════════════════════════════════════════════════════
+  // HERO KPIs
+  // ════════════════════════════════════════════════════════
+  $('growth-kpis').innerHTML = `
+    <div class="growth-kpi-card">
+      <div class="growth-kpi-label">Total Listings</div>
+      <div class="growth-kpi-val" style="color:var(--indigo)">${totalList.toLocaleString()}</div>
+      <div class="growth-kpi-sub">${Math.round(totalList/totalTgt*100)}% of ${totalTgt.toLocaleString()} combined target</div>
+    </div>
+    <div class="growth-kpi-card">
+      <div class="growth-kpi-label">Added Today</div>
+      <div class="growth-kpi-val" style="color:var(--green)">${totalToday}</div>
+      <div class="growth-kpi-sub">${Math.round(totalToday/440*100)}% of 440 daily goal</div>
+    </div>
+    <div class="growth-kpi-card">
+      <div class="growth-kpi-label">Avg Profit / 1k Listings</div>
+      <div class="growth-kpi-val" style="color:var(--violet)">${avgPer1k > 0 ? fmt$(avgPer1k) : '—'}</div>
+      <div class="growth-kpi-sub">Best: ${byEff[0] ? byEff[0].store+' '+fmt$(byEff[0].profitPer1k) : '—'}</div>
+    </div>
+    <div class="growth-kpi-card">
+      <div class="growth-kpi-label">Growing MoM</div>
+      <div class="growth-kpi-val" style="color:var(--cyan)">${growingCnt}/${momCnt}</div>
+      <div class="growth-kpi-sub">accounts growing vs last month</div>
+    </div>
+    <div class="growth-kpi-card">
+      <div class="growth-kpi-label">90-Day Profit Projection</div>
+      <div class="growth-kpi-val" style="color:var(--emerald)">${proj90All > 0 ? fmt$(proj90All) : '—'}</div>
+      <div class="growth-kpi-sub">extra profit from listings being added now</div>
+    </div>`;
+
+  // ════════════════════════════════════════════════════════
+  // SCALE INTELLIGENCE — who to bet on
+  // ════════════════════════════════════════════════════════
+  const maxEff = byEff.length ? byEff[0].profitPer1k : 1;
+  $('growth-efficiency-list').innerHTML = byEff.length === 0
+    ? `<p style="color:var(--muted);font-size:12px;padding:16px 0">Profit data loads from your ops sheets after refreshing.</p>`
+    : byEff.map((p, i) => {
+        const bar    = maxEff > 0 ? p.profitPer1k / maxEff * 100 : 0;
+        const medals = ['🥇','🥈','🥉'];
+        const medal  = i < 3 ? medals[i] : `${i+1}.`;
+        const barC   = i===0?'var(--green)': p.profitPer1k>=avgPer1k?'var(--indigo)':'var(--muted)';
+        const tag    = p.profitPer1k >= avgPer1k*1.4 ? '<span style="background:rgba(16,185,129,.15);color:var(--green);font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">🚀 scale</span>'
+                     : p.profitPer1k > 0 && p.profitPer1k <= avgPer1k*0.5 ? '<span style="background:rgba(239,68,68,.1);color:var(--red);font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">⚠️ review</span>' : '';
+        const momT   = p.momPct !== null ? `<span style="font-size:10px;color:${p.momPct>=0?'var(--green)':'var(--red)'}">${p.momPct>=0?'↑':'↓'}${Math.abs(p.momPct).toFixed(0)}% MoM</span>` : '';
+        return `<div style="padding:10px 0;border-bottom:1px solid var(--card-border)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:15px;min-width:22px">${medal}</span>
+              <span style="font-weight:700;font-size:13px">${p.store}</span>
+              <span style="font-size:10px;color:var(--muted)">${p.operator}</span>
+              ${tag}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              ${momT}
+              <span style="font-size:14px;font-weight:800;color:${barC}">${p.profitPer1k>0?fmt$(p.profitPer1k):'—'}<span style="font-size:9px;font-weight:400;color:var(--muted)">/1k</span></span>
+            </div>
+          </div>
+          <div style="background:var(--glass);border-radius:3px;height:4px;overflow:hidden">
+            <div style="width:${bar}%;height:100%;background:${barC};border-radius:3px"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:3px">
+            <span>${p.current.toLocaleString()} listings · ${p.totalProfit>0?fmt$(p.totalProfit)+' total profit':'no profit data yet'}</span>
+            <span>${p.totalSales>0?p.totalSales+' sales':''}</span>
+          </div>
+        </div>`;
+      }).join('');
+
+  // ════════════════════════════════════════════════════════
+  // GROWTH MATRIX — listing count vs efficiency (div-based)
+  // ════════════════════════════════════════════════════════
+  const matrixEl = $('growth-matrix');
+  if (matrixEl && byEff.length > 0) {
+    const xs = byEff.map(p=>p.current), ys = byEff.map(p=>p.profitPer1k);
+    const minX=Math.min(...xs), maxX=Math.max(...xs)||1;
+    const minY=Math.min(...ys), maxY=Math.max(...ys)||1;
+    const rX=maxX-minX||1, rY=maxY-minY||1;
+    matrixEl.innerHTML = `
+      <div style="position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr">
+        <div style="border-right:1px dashed rgba(255,255,255,.1);border-bottom:1px dashed rgba(255,255,255,.1);background:rgba(16,185,129,.05);display:flex;align-items:flex-start;padding:6px">
+          <span style="font-size:9px;color:var(--green);opacity:.8">💎 Hidden Gems<br><span style="opacity:.6">low listings, high efficiency<br>→ add more listings ASAP</span></span>
+        </div>
+        <div style="border-bottom:1px dashed rgba(255,255,255,.1);background:rgba(99,102,241,.07);display:flex;align-items:flex-start;padding:6px;justify-content:flex-end">
+          <span style="font-size:9px;color:var(--indigo);opacity:.8;text-align:right">⭐ Stars<br><span style="opacity:.6">high listings, high efficiency<br>→ keep pushing</span></span>
+        </div>
+        <div style="border-right:1px dashed rgba(255,255,255,.1);background:rgba(100,116,139,.03);display:flex;align-items:flex-end;padding:6px">
+          <span style="font-size:9px;color:var(--muted);opacity:.8">🌱 Build Up<br><span style="opacity:.6">early stage<br>→ coach &amp; support</span></span>
+        </div>
+        <div style="background:rgba(239,68,68,.04);display:flex;align-items:flex-end;padding:6px;justify-content:flex-end">
+          <span style="font-size:9px;color:var(--red);opacity:.8;text-align:right">⚠️ Review<br><span style="opacity:.6">high listings, low return<br>→ investigate</span></span>
+        </div>
+      </div>
+      <div style="position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:9px;color:var(--muted);writing-mode:vertical-rl;text-orientation:mixed;opacity:.5">Profit / 1k listings ↑</div>
+      ${byEff.map((p,i) => {
+        const xPct = rX > 0 ? ((p.current - minX) / rX * 76 + 12) : 50;
+        const yPct = rY > 0 ? ((1 - (p.profitPer1k - minY) / rY) * 76 + 10) : 50;
+        const clr  = COLORS[i % COLORS.length];
+        return `<div title="${p.store}: ${p.current.toLocaleString()} listings · ${fmt$(p.profitPer1k)}/1k" style="position:absolute;left:${xPct}%;top:${yPct}%;transform:translate(-50%,-50%);z-index:2">
+          <div style="width:30px;height:30px;border-radius:50%;background:${clr}cc;border:2px solid ${clr};display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:#fff;cursor:default">${p.store.substring(0,3).toUpperCase()}</div>
+          <div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);font-size:8px;color:var(--text2);white-space:nowrap;background:var(--bg2);padding:1px 4px;border-radius:3px;border:1px solid var(--card-border)">${p.store}</div>
+        </div>`;
+      }).join('')}`;
+  }
+
+  // ════════════════════════════════════════════════════════
+  // 90-DAY PROJECTIONS
+  // ════════════════════════════════════════════════════════
+  $('growth-proj-sub').textContent = proj90All > 0 ? `${fmt$(proj90All)} extra profit projected across all stores in 90 days` : 'Load ops data to see projections';
+  const byProj = [...all].sort((a,b) => b.proj90 - a.proj90);
+  $('growth-proj-grid').innerHTML = byProj.map(p => `
+    <div class="card" style="padding:16px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:2px">${p.store}</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:12px">+${Math.round(p.effDaily*30).toLocaleString()} listings/mo at current pace</div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+        <span style="color:var(--muted)">+30 days</span><span style="font-weight:600;color:var(--cyan)">${p.proj30>0?'+'+fmt$(p.proj30):'—'}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+        <span style="color:var(--muted)">+60 days</span><span style="font-weight:600;color:var(--violet)">${p.proj60>0?'+'+fmt$(p.proj60):'—'}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0">
+        <span style="color:var(--muted)">+90 days</span><span style="font-weight:800;color:var(--green)">${p.proj90>0?'+'+fmt$(p.proj90):'—'}</span>
+      </div>
+      ${p.daysToTgt?`<div style="font-size:10px;color:var(--muted);border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px">~${p.daysToTgt} days to ${p.target.toLocaleString()} target</div>`:''}
+    </div>`).join('');
+
+  // ════════════════════════════════════════════════════════
+  // MONTH-OVER-MONTH TREND
+  // ════════════════════════════════════════════════════════
+  const withMom = all.filter(p=>p.momPct!==null).sort((a,b)=>(b.momPct||0)-(a.momPct||0));
+  const noMom   = all.filter(p=>p.momPct===null);
+  const growCnt = withMom.filter(p=>p.momPct>0).length;
+  const decCnt  = withMom.filter(p=>p.momPct<=0).length;
+  $('growth-mom-sub').textContent = `${growCnt} growing · ${decCnt} declining · ${noMom.length} need more data`;
+  $('growth-mom-grid').innerHTML = [...withMom, ...noMom].map(p => {
+    const has  = p.momPct !== null;
+    const up   = has && p.momPct > 0;
+    const clr  = has ? (up?'var(--green)':'var(--red)') : 'var(--muted)';
+    const icon = has ? (up?'↑':'↓') : '—';
+    return `<div class="card" style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-weight:700;font-size:13px">${p.store}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${has?fmt$(p.prevMoP)+' → '+fmt$(p.lastMoP):'Need 2+ months of data'}</div>
+        ${has?`<div style="font-size:10px;color:${clr};margin-top:2px">${up?'+':''}${fmt$(p.momDelta)}</div>`:''}
+      </div>
+      <div style="font-size:24px;font-weight:900;color:${clr}">${has?icon+Math.abs(p.momPct).toFixed(0)+'%':icon}</div>
+    </div>`;
+  }).join('');
+
+  // ════════════════════════════════════════════════════════
+  // OPERATOR INTELLIGENCE
+  // ════════════════════════════════════════════════════════
+  const ops = {};
+  summary.forEach(s => {
+    const op = s.operator || 'Unassigned';
+    if (!ops[op]) ops[op] = { stores:[], totalList:0, totalProfit:0, effs:[], momGrow:0, momTotal:0 };
+    const p = pd[s.store];
+    ops[op].stores.push(s.store);
+    ops[op].totalList   += s.current;
+    ops[op].totalProfit += p.totalProfit;
+    if (p.profitPer1k > 0) ops[op].effs.push(p.profitPer1k);
+    if (p.momPct !== null) { ops[op].momTotal++; if (p.momPct > 0) ops[op].momGrow++; }
+  });
+  const opList = Object.entries(ops).sort((a,b)=>b[1].totalProfit-a[1].totalProfit);
+  $('growth-operator-grid').innerHTML = opList.map(([op, data]) => {
+    const avgEff = data.effs.length ? r2(data.effs.reduce((s,v)=>s+v,0)/data.effs.length) : 0;
+    const bestStore = data.stores.reduce((best, s) => (pd[s].profitPer1k > (pd[best]?.profitPer1k||0)) ? s : best, data.stores[0]);
+    return `<div class="card" style="padding:16px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:2px">${op}</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:12px">${data.stores.join(' · ')}</div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Stores managed</span><span style="font-weight:600">${data.stores.length}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Total listings</span><span style="font-weight:600">${data.totalList.toLocaleString()}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Total profit</span><span style="font-weight:600;color:var(--green)">${data.totalProfit>0?fmt$(data.totalProfit):'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Avg efficiency</span><span style="font-weight:600;color:var(--violet)">${avgEff>0?fmt$(avgEff)+'/1k':'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">MoM growth</span><span style="font-weight:600">${data.momTotal>0?data.momGrow+'/'+data.momTotal+' growing':'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0"><span style="color:var(--muted)">Best account</span><span style="font-weight:600;color:var(--cyan)">${bestStore||'—'}</span></div>
+    </div>`;
+  }).join('');
+
+  // ════════════════════════════════════════════════════════
+  // SCALE CALCULATORS — populate dropdowns
+  // ════════════════════════════════════════════════════════
+  const selOpts = summary.map(s=>`<option value="${s.store}">${s.store}</option>`).join('');
+  ['calc-account-sel','calc-profit-account'].forEach(id => {
+    const el = $(id); if (el) { el.innerHTML = selOpts; }
+  });
+  updateScaleCalc();
+  updateProfitCalc();
+
+  // ════════════════════════════════════════════════════════
+  // TODAY'S ACTIVITY CHART
+  // ════════════════════════════════════════════════════════
+  const storeNames  = summary.map(r=>r.store);
+  const todayCounts = storeNames.map(name => pd[name]?.todayN || 0);
+  const goalLine    = storeNames.map(() => 40);
+  $('growth-today-sub').textContent = `${totalToday} total · ${storeNames.filter((_,i)=>todayCounts[i]>0).length}/${storeNames.length} accounts logged`;
+  if (_growthCharts.today) _growthCharts.today.destroy();
+  const ctx1 = document.getElementById('chart-today-listings');
+  if (ctx1) _growthCharts.today = new Chart(ctx1, {
+    type:'bar',
+    data:{ labels:storeNames, datasets:[
+      { label:'Listings Added', data:todayCounts, backgroundColor:todayCounts.map(v=>v>=40?'rgba(16,185,129,.75)':v>0?'rgba(99,102,241,.75)':'rgba(100,116,139,.3)'), borderRadius:6 },
+      { label:'Daily Goal (40)', data:goalLine, type:'line', borderColor:'rgba(251,191,36,.7)', borderWidth:2, borderDash:[4,4], pointRadius:0, fill:false }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'var(--text2)',font:{size:11}}}},
+      scales:{ x:{ticks:{color:'var(--text2)',font:{size:11}},grid:{color:'rgba(255,255,255,.04)'}}, y:{ticks:{color:'var(--text2)',font:{size:11}},grid:{color:'rgba(255,255,255,.06)'},beginAtZero:true} }
+    }
+  });
+
+  // ════════════════════════════════════════════════════════
+  // PROGRESS TO TARGET
+  // ════════════════════════════════════════════════════════
+  const byPct = [...summary].sort((a,b)=>(b.current/b.target)-(a.current/a.target));
+  $('growth-progress-grid').innerHTML = byPct.map(r => {
+    const pct = Math.min(100,Math.round(r.current/r.target*100));
+    const pctC = pct>=80?'var(--green)':pct>=50?'var(--cyan)':'var(--indigo)';
+    const days = r.dailyGoal>0 ? Math.ceil(r.remaining/r.dailyGoal) : '—';
+    return `<div class="card" style="padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div><div style="font-weight:700;font-size:13px">${r.store}</div><div style="font-size:10px;color:var(--muted)">${r.operator}</div></div>
+        <div style="font-size:24px;font-weight:800;color:${pctC}">${pct}%</div>
+      </div>
+      <div class="growth-progress-bar"><div class="growth-progress-fill" style="width:${pct}%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px">
+        <span>${r.current.toLocaleString()} / ${r.target.toLocaleString()}</span><span>~${days} days</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  // ════════════════════════════════════════════════════════
+  // DAILY VELOCITY CHART
+  // ════════════════════════════════════════════════════════
+  if (_growthCharts.velocity) _growthCharts.velocity.destroy();
+  const velWrap = $('growth-velocity-wrap');
+  if (dailyHistory.length === 0) {
+    $('growth-velocity-sub').textContent = 'Collecting data — chart appears as team logs daily';
+    if (velWrap) velWrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:220px;color:var(--muted);font-size:13px;flex-direction:column;gap:8px"><span style="font-size:32px">📊</span>Chart appears once daily listing data is logged</div>`;
+  } else {
+    $('growth-velocity-sub').textContent = `${dailyHistory.length} days tracked`;
+    if (velWrap && !velWrap.querySelector('canvas')) velWrap.innerHTML = `<canvas id="chart-velocity"></canvas>`;
+    const ctx2 = document.getElementById('chart-velocity');
+    if (ctx2) _growthCharts.velocity = new Chart(ctx2, {
+      type:'bar',
+      data:{ labels:dailyHistory.map(d=>d.dateStr), datasets:[
+        { label:'Total Added', data:dailyHistory.map(d=>Object.values(d.counts).reduce((s,v)=>s+v,0)), backgroundColor:'rgba(99,102,241,.6)', borderColor:'rgba(99,102,241,1)', borderWidth:1, borderRadius:4 }
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:'var(--text2)',font:{size:11}}}},
+        scales:{ x:{ticks:{color:'var(--text2)',font:{size:10}},grid:{display:false}}, y:{ticks:{color:'var(--text2)',font:{size:11}},grid:{color:'rgba(255,255,255,.05)'},beginAtZero:true} }
+      }
+    });
+  }
+
+  // ════════════════════════════════════════════════════════
+  // PER-ACCOUNT INTELLIGENCE CARDS
+  // ════════════════════════════════════════════════════════
+  $('growth-account-grid').innerHTML = all.map(p => {
+    const pct  = Math.min(100,Math.round(p.current/p.target*100));
+    const todC = p.todayN===null?'var(--muted)':p.todayN>=40?'var(--green)':'var(--amber)';
+    const velAvg = dailyHistory.length > 0 ? (p.histForStore/dailyHistory.length).toFixed(1) : '—';
+    const effRank = byEff.findIndex(b=>b.store===p.store)+1;
+    const momBadge = p.momPct!==null ? `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:${p.momPct>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.1)'};color:${p.momPct>=0?'var(--green)':'var(--red)'};">${p.momPct>=0?'↑':'↓'}${Math.abs(p.momPct).toFixed(0)}% MoM</span>` : '';
+    return `<div class="growth-account-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        <div>
+          <div class="growth-account-name">${p.store} ${momBadge}</div>
+          <div class="growth-account-op">${p.operator}</div>
+        </div>
+        ${effRank>0?`<div style="font-size:10px;color:var(--muted);text-align:right">#${effRank} efficiency</div>`:''}
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px"><span>${p.current.toLocaleString()} listings</span><span>${pct}% to target</span></div>
+        <div class="growth-progress-bar"><div class="growth-progress-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Today</span><span class="growth-stat-val" style="color:${todC}">${p.todayN===null?'—':p.todayN} ${p.todayN!==null&&p.todayN>=40?'✅':''}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Daily avg</span><span class="growth-stat-val">${velAvg}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Streak</span><span class="growth-stat-val">${p.streak>0?'🔥 '+p.streak+'d':'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Days to target</span><span class="growth-stat-val">${p.daysToTgt?'~'+p.daysToTgt+'d':'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Total profit</span><span class="growth-stat-val" style="color:var(--green)">${p.totalProfit>0?fmt$(p.totalProfit):'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Avg profit / sale</span><span class="growth-stat-val">${p.avgSale>0?fmt$(p.avgSale):'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Profit / 1k listings</span><span class="growth-stat-val" style="color:var(--violet)">${p.profitPer1k>0?fmt$(p.profitPer1k):'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">90-day projection</span><span class="growth-stat-val" style="color:var(--cyan)">${p.proj90>0?'+'+fmt$(p.proj90):'—'}</span></div>
+    </div>`;
+  }).join('');
+
+  // ════════════════════════════════════════════════════════
+  // CORRELATION SECTION
+  // ════════════════════════════════════════════════════════
+  if (dailyHistory.length < 14) {
+    const need = 14 - dailyHistory.length;
+    $('growth-corr-sub').textContent = `${need} more days of listing data needed`;
+    $('growth-corr-section').innerHTML = `
+      <div class="card" style="padding:32px;text-align:center">
+        <div style="font-size:48px;margin-bottom:12px">📊</div>
+        <div style="font-size:16px;font-weight:700;margin-bottom:8px">Correlation engine warming up…</div>
+        <div style="font-size:13px;color:var(--muted);max-width:460px;margin:0 auto;line-height:1.7">
+          Need ~2 weeks of daily listing logs to find patterns.
+          You have <strong style="color:var(--indigo)">${dailyHistory.length} day${dailyHistory.length!==1?'s':''}</strong> so far.
+          Once populated, this will show you exactly how many days after adding listings before profit moves.
+        </div>
+        <div style="margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+          ${['🎯 Listings week N vs profit week N+2','📉 Lag days per account','💡 Personalized projection engine'].map(t=>`<div style="background:var(--glass);border-radius:8px;padding:10px 16px;font-size:11px;color:var(--muted)">${t}</div>`).join('')}
+        </div>
+      </div>`;
+  } else {
+    $('growth-corr-sub').textContent = `${dailyHistory.length} days · building correlation`;
+    const weekBuckets = {};
+    summary.forEach(s => {
+      const personRaw = RAW.filter(r=>r.person===(LISTING_NAME_MAP[s.store]||s.store));
+      const weeks = {};
+      dailyHistory.forEach(d => {
+        const wk = `${d.date.getFullYear()}-W${Math.ceil(d.date.getDate()/7)}`;
+        if (!weeks[wk]) weeks[wk] = { listings:0, dateStart:d.date };
+        weeks[wk].listings += d.counts[s.store] || 0;
+      });
+      const pts = [];
+      Object.values(weeks).forEach(wd => {
+        const fDate = new Date(wd.dateStart.getTime() + 14*86400000);
+        const fKey  = fDate.toISOString().substring(0,7);
+        const fProf = personRaw.filter(r=>r.date&&r.date.substring(0,7)===fKey).reduce((s,r)=>s+r.profit,0);
+        if (wd.listings > 0 && fProf > 0) pts.push({ x:wd.listings, y:fProf });
+      });
+      if (pts.length > 0) weekBuckets[s.store] = pts;
+    });
+    const datasets = Object.entries(weekBuckets).map(([name,pts],i) => ({
+      label:name, data:pts, backgroundColor:COLORS[i%COLORS.length]+'99', pointRadius:7
+    }));
+    if (!datasets.length) {
+      $('growth-corr-section').innerHTML = `<div class="card" style="padding:24px;text-align:center;color:var(--muted)">More data accumulating — check back soon</div>`;
+    } else {
+      $('growth-corr-section').innerHTML = `<div class="card chart-box" style="padding:20px;min-height:320px"><canvas id="chart-corr"></canvas></div>`;
+      if (_growthCharts.corr) _growthCharts.corr.destroy();
+      const ctx3 = document.getElementById('chart-corr');
+      if (ctx3) _growthCharts.corr = new Chart(ctx3, {
+        type:'scatter', data:{ datasets },
+        options:{ responsive:true, maintainAspectRatio:false,
+          plugins:{ legend:{labels:{color:'var(--text2)',font:{size:11}}},
+            title:{display:true,text:'Listings Added (Week N) vs Profit 2 Weeks Later',color:'var(--text2)',font:{size:12}} },
+          scales:{ x:{title:{display:true,text:'Listings Added',color:'var(--muted)'},ticks:{color:'var(--text2)'},grid:{color:'rgba(255,255,255,.05)'}},
+            y:{title:{display:true,text:'Profit ($)',color:'var(--muted)'},ticks:{color:'var(--text2)',callback:v=>'$'+v},grid:{color:'rgba(255,255,255,.05)'}} }
+        }
+      });
+    }
+  }
+}
+
+// ─── SCALE CALCULATORS ────────────────────────────────────────────────────────
+function updateScaleCalc() {
+  const store    = $('calc-account-sel')?.value;
+  const targetL  = parseInt($('calc-target-listings')?.value) || 5000;
+  const dailyR   = parseInt($('calc-daily-rate')?.value) || 40;
+  const res      = $('scale-calc-result');
+  if (!res || !store || !_growthPersonData[store]) return;
+  const p = _growthPersonData[store];
+  const newListings = Math.max(0, targetL - p.current);
+  const daysNeeded  = dailyR > 0 ? Math.ceil(newListings / dailyR) : null;
+  const extraProfit = r2(newListings * p.profitPerList);
+  const totalAtTarget = r2(targetL * p.profitPerList);
+  const monthlyAtTarget = r2(totalAtTarget / Math.max(1, p.mKeys.length));
+  res.innerHTML = p.profitPerList > 0 ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><div style="color:var(--muted);font-size:10px">Current listings</div><div style="font-weight:700;font-size:16px">${p.current.toLocaleString()}</div></div>
+      <div><div style="color:var(--muted);font-size:10px">Target listings</div><div style="font-weight:700;font-size:16px">${targetL.toLocaleString()}</div></div>
+      <div><div style="color:var(--muted);font-size:10px">Listings to add</div><div style="font-weight:700;font-size:16px">${newListings.toLocaleString()}</div></div>
+      <div><div style="color:var(--muted);font-size:10px">Days at ${dailyR}/day</div><div style="font-weight:700;font-size:16px;color:var(--cyan)">${daysNeeded !== null ? '~'+daysNeeded : '—'}</div></div>
+      <div><div style="color:var(--muted);font-size:10px">Extra profit from growth</div><div style="font-weight:700;font-size:16px;color:var(--green)">${fmt$(extraProfit)}</div></div>
+      <div><div style="color:var(--muted);font-size:10px">Total profit at target</div><div style="font-weight:700;font-size:16px;color:var(--violet)">${fmt$(totalAtTarget)}</div></div>
+    </div>
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--card-border);font-size:11px;color:var(--muted)">
+      Based on ${fmt$(p.profitPer1k)}/1k listings efficiency rate from ${p.totalSales} historical sales
+    </div>` : `<div style="color:var(--muted)">No profit data yet for ${store} — load ops data first</div>`;
+}
+
+function updateProfitCalc() {
+  const store   = $('calc-profit-account')?.value;
+  const targetP = parseFloat($('calc-target-profit')?.value) || 1000;
+  const dailyR  = parseInt($('calc-profit-daily')?.value) || 40;
+  const res     = $('profit-calc-result');
+  if (!res || !store || !_growthPersonData[store]) return;
+  const p = _growthPersonData[store];
+  if (p.profitPer1k <= 0) {
+    res.innerHTML = `<div style="color:var(--muted)">No profit data yet for ${store} — load ops data first</div>`;
+    return;
+  }
+  const listingsNeeded = Math.ceil(targetP / p.profitPerList);
+  const newListingsNeeded = Math.max(0, listingsNeeded - p.current);
+  const daysToGet  = dailyR > 0 ? Math.ceil(newListingsNeeded / dailyR) : null;
+  const alreadyAt  = r2(p.current * p.profitPerList);
+  const gapProfit  = r2(targetP - alreadyAt);
+  res.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><div style="color:var(--muted);font-size:10px">Listings needed total</div><div style="font-weight:700;font-size:16px">${listingsNeeded.toLocaleString()}</div></div>
+      <div><div style="color:var(--muted);font-size:10px">You already have</div><div style="font-weight:700;font-size:16px">${p.current.toLocaleString()}</div></div>
+      <div><div style="color:var(--muted);font-size:10px">Still need to add</div><div style="font-weight:700;font-size:16px;color:var(--amber)">${newListingsNeeded.toLocaleString()}</div></div>
+      <div><div style="color:var(--muted);font-size:10px">Time at ${dailyR}/day</div><div style="font-weight:700;font-size:16px;color:var(--cyan)">${daysToGet!==null?'~'+daysToGet+'d':'—'}</div></div>
+      <div><div style="color:var(--muted);font-size:10px">Profit at current listings</div><div style="font-weight:700;font-size:16px;color:var(--green)">${fmt$(alreadyAt)}</div></div>
+      <div><div style="color:var(--muted);font-size:10px">Profit gap to close</div><div style="font-weight:700;font-size:16px;color:var(--violet)">${gapProfit>0?fmt$(gapProfit):'Already there 🎉'}</div></div>
+    </div>
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--card-border);font-size:11px;color:var(--muted)">
+      Based on ${fmt$(p.profitPer1k)}/1k listings · target ${fmt$(targetP)} profit
+    </div>`;
+}
+
 // ─── DATA GUIDE ───────────────────────────────────────────────────────────────
 function toggleGuide() {
   $('guide-section').classList.toggle('open');
@@ -3988,7 +4831,11 @@ function openWeeklyWrap() {
 }
 
 // ─── BOOT ──────────────────────────────────────────────────────────────────
+// Main sheets: refresh every 5 min (profit data needs to be fresh)
+// Listing tracker: 10 min TTL handled inside loadListingTracker()
 setInterval(loadAll, 5 * 60 * 1000);
+// Separate interval for listing tracker — only fires if main data already loaded
+setInterval(() => { if (API_KEY && LISTING_DATA.summary.length) loadListingTracker(); }, 10 * 60 * 1000);
 if (checkApiKey()) loadAll();
 </script>
 </body>

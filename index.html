@@ -2239,6 +2239,8 @@ function applyFilters() {
   renderSuggestions(d);
   renderTable(d);
   checkMilestones(r2(d.reduce((s,r)=>s+r.profit,0)));
+  // Re-render Growth tab so month filter affects efficiency/profit views there too
+  if (LISTING_DATA.summary && LISTING_DATA.summary.length) renderGrowthPage();
 }
 
 // ─── PROFIT SPLIT SUMMARY ─────────────────────────────────────────────────
@@ -3677,12 +3679,15 @@ function renderGrowthPage() {
   // ════════════════════════════════════════════════════════
   const sortedHistDesc = [...dailyHistory].sort((a,b) => b.date - a.date);
 
+  // Respect the global month filter — when a specific month is selected, show that month's efficiency
+  const _growthMonthFilter = ($('filter-month') && $('filter-month').value !== 'all') ? $('filter-month').value : null;
+
   const pd = {}; // personData keyed by tracker store name
   summary.forEach(s => {
     const dashName = LISTING_NAME_MAP[s.store] || s.store;
     const recs = RAW.filter(r => r.person === dashName);
 
-    // Profit / revenue / sales totals
+    // Profit / revenue / sales totals (always all-time for reference)
     const totalProfit  = r2(recs.reduce((sum,r) => sum + r.profit, 0));
     const totalRevenue = r2(recs.reduce((sum,r) => sum + r.revenue, 0));
     const totalSales   = recs.reduce((sum,r) => sum + (r.sales || 1), 0);
@@ -3720,9 +3725,10 @@ function renderGrowthPage() {
         todayN = parseInt(todayRow[idx]) || 0;
     }
 
-    // Efficiency
-    const profitPer1k    = s.current > 0 && totalProfit > 0 ? r2(totalProfit / s.current * 1000) : 0;
-    const profitPerList  = s.current > 0 && totalProfit > 0 ? totalProfit / s.current : 0;
+    // Efficiency — use selected month's profit if filter is active, else all-time
+    const viewProfit     = _growthMonthFilter ? (byMonth[_growthMonthFilter] || 0) : totalProfit;
+    const profitPer1k    = s.current > 0 && viewProfit > 0 ? r2(viewProfit / s.current * 1000) : 0;
+    const profitPerList  = s.current > 0 && viewProfit > 0 ? viewProfit / s.current : 0;
 
     // 90-day projection from NEW listings added
     // Use goal-based projection when history is too sparse (< 7 days) — avoids noisy 1-day averages
@@ -3809,6 +3815,11 @@ function renderGrowthPage() {
   // ════════════════════════════════════════════════════════
   // SCALE INTELLIGENCE — who to bet on
   // ════════════════════════════════════════════════════════
+  // Update Scale Intelligence subtitle to show which period efficiency is based on
+  const _effLabel = _growthMonthFilter ? _growthMonthFilter : 'all-time';
+  const _effSubEl = document.querySelector('#growth-efficiency-list')?.closest('.growth-section')?.querySelector('.section-hdr span:last-child');
+  if (_effSubEl) _effSubEl.textContent = `profit per 1,000 listings · ${_effLabel} · who to bet on`;
+
   const maxEff = byEff.length ? byEff[0].profitPer1k : 1;
   $('growth-efficiency-list').innerHTML = byEff.length === 0
     ? `<p style="color:var(--muted);font-size:12px;padding:16px 0">Profit data loads from your ops sheets after refreshing.</p>`
@@ -3830,7 +3841,7 @@ function renderGrowthPage() {
             </div>
             <div style="display:flex;align-items:center;gap:8px">
               ${momT}
-              <span style="font-size:14px;font-weight:800;color:${barC}">${p.profitPer1k>0?fmt$(p.profitPer1k):'—'}<span style="font-size:9px;font-weight:400;color:var(--muted)">/1k all-time</span></span>
+              <span style="font-size:14px;font-weight:800;color:${barC}">${p.profitPer1k>0?fmt$(p.profitPer1k):'—'}<span style="font-size:9px;font-weight:400;color:var(--muted)">/1k ${_effLabel}</span></span>
             </div>
           </div>
           <div style="background:var(--glass);border-radius:3px;height:4px;overflow:hidden">
@@ -3934,7 +3945,7 @@ function renderGrowthPage() {
         <div style="font-weight:700;font-size:13px">${p.store}</div>
         <div style="font-size:10px;color:var(--muted);margin-top:2px">${has ? fmt$(p.gPrevMoP)+' → '+fmt$(p.gLastMoP) : (gPrevMo ? 'No profit in '+gPrevMo : 'Need prior month data')}</div>
         ${has?`<div style="font-size:10px;color:${clr};margin-top:2px">${up?'+':''}${fmt$(p.gMomDelta)}</div>`:''}
-        ${noData ? `<div style="font-size:9px;color:var(--amber);margin-top:2px">⚠ 0 transactions loaded — try refreshing</div>` : `<div style="font-size:9px;color:var(--muted);margin-top:1px">${p.recs.length} txns · ${p.dashName}</div>`}
+        ${noData ? `<div style="font-size:9px;color:var(--amber);margin-top:2px">⚠ 0 transactions loaded — try refreshing</div>` : `<div style="font-size:9px;color:var(--muted);margin-top:1px">${p.recs.length} sales transactions loaded (all-time)</div>`}
       </div>
       <div style="font-size:24px;font-weight:900;color:${clr}">${has?icon+Math.abs(p.gMomPct).toFixed(0)+'%':icon}</div>
     </div>`;
@@ -4183,7 +4194,7 @@ function renderGrowthPage() {
       <div class="growth-stat-row"><span class="growth-stat-label">Days to listing target</span><span class="growth-stat-val">${p.daysToTgt?'~'+p.daysToTgt+'d':'—'}</span></div>
       <div class="growth-stat-row"><span class="growth-stat-label">All-time profit</span><span class="growth-stat-val" style="color:var(--green)">${p.totalProfit>0?fmt$(p.totalProfit):'—'}</span></div>
       <div class="growth-stat-row"><span class="growth-stat-label">Avg profit/sale</span><span class="growth-stat-val">${p.avgSale>0?fmt$(p.avgSale):'—'}</span></div>
-      <div class="growth-stat-row"><span class="growth-stat-label">All-time profit/1k listings</span><span class="growth-stat-val" style="color:var(--violet)">${p.profitPer1k>0?fmt$(p.profitPer1k):'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Profit/1k listings (${_effLabel})</span><span class="growth-stat-val" style="color:var(--violet)">${p.profitPer1k>0?fmt$(p.profitPer1k):'—'}</span></div>
       <div class="growth-stat-row"><span class="growth-stat-label">Extra profit/mo (90d adds)</span><span class="growth-stat-val" style="color:var(--cyan)">${p.proj90mo>0?'+'+fmt$(p.proj90mo)+'/mo':p.proj90>0?'+'+fmt$(p.proj90)+'/mo':'—'}</span></div>
     </div>`;
   }).join('');

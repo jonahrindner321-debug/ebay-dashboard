@@ -2188,7 +2188,7 @@ async function loadAll() {
 // ─── FILTERS ───────────────────────────────────────────────────────────────
 function populateFilters() {
   const persons = [...new Set(RAW.map(r=>r.person))].sort();
-  const months  = [...new Set(RAW.map(r=>r.month))].sort((a,b)=>monthIndex(a)-monthIndex(b));
+  const months  = [...new Set(RAW.map(r=>r.month))].filter(m => monthIndex(m) < 900).sort((a,b)=>monthIndex(a)-monthIndex(b));
   const pSel = $('filter-person'), mSel = $('filter-month');
   const pv = pSel.value, mv = mSel.value;
   pSel.innerHTML = '<option value="all">All Accounts</option>' + persons.map(p=>`<option value="${p}">${p}</option>`).join('');
@@ -2386,8 +2386,8 @@ function renderKPIs(data) {
   const todayRev    = r2(latestRows.reduce((s,r)=>s+r.price,0));
   const latestLabel = latestDate ? fmtDayLabel(latestDate) : null;
 
-  // Month-over-month delta for profit
-  const months = [...new Set(data.map(r=>r.month))].sort((a,b)=>monthIndex(a)-monthIndex(b));
+  // Month-over-month delta for profit — exclude non-standard labels like "Dec/Jan 2025" (index 999)
+  const months = [...new Set(data.map(r=>r.month))].filter(m => monthIndex(m) < 900).sort((a,b)=>monthIndex(a)-monthIndex(b));
   let momDelta = null;
   if (months.length >= 2) {
     const curP  = r2(data.filter(r=>r.month===months[months.length-1]).reduce((s,r)=>s+r.profit,0));
@@ -3350,8 +3350,8 @@ function renderSuggestions(data) {
       metric:`Avg ${fmt$(bestDowAvg)} profit` });
   }
 
-  // Month over month
-  const months = [...new Set(data.map(r => r.month))].sort((a,b) => monthIndex(a)-monthIndex(b));
+  // Month over month — exclude non-standard labels (index 999) so "Dec/Jan 2025" doesn't poison last/prev
+  const months = [...new Set(data.map(r => r.month))].filter(m => monthIndex(m) < 900).sort((a,b) => monthIndex(a)-monthIndex(b));
   if (months.length >= 2) {
     const lastM  = months[months.length-1], prevM = months[months.length-2];
     const lastMp = r2(data.filter(r=>r.month===lastM).reduce((s,r)=>s+r.profit,0));
@@ -3691,7 +3691,7 @@ function renderGrowthPage() {
     // Monthly breakdown
     const byMonth = {};
     recs.forEach(r => { if (r.month) byMonth[r.month] = r2((byMonth[r.month]||0) + r.profit); });
-    const mKeys = Object.keys(byMonth).sort((a,b) => monthIndex(a) - monthIndex(b));
+    const mKeys = Object.keys(byMonth).filter(m => monthIndex(m) < 900).sort((a,b) => monthIndex(a) - monthIndex(b));
     const lastMo = mKeys[mKeys.length-1], prevMo = mKeys[mKeys.length-2];
     const lastMoP = lastMo ? byMonth[lastMo] : 0;
     const prevMoP = prevMo ? byMonth[prevMo] : 0;
@@ -3796,14 +3796,14 @@ function renderGrowthPage() {
       <div class="growth-kpi-sub">Best: ${byEff[0] ? byEff[0].store+' '+fmt$(byEff[0].profitPer1k) : '—'}</div>
     </div>
     <div class="growth-kpi-card">
-      <div class="growth-kpi-label">Growing MoM</div>
+      <div class="growth-kpi-label">Growing MoM (profit)</div>
       <div class="growth-kpi-val" style="color:var(--cyan)">${growingCnt}/${all.length}</div>
       <div class="growth-kpi-sub">${noMomCnt > 0 ? `${growingCnt} growing · ${noMomCnt} no prior month data` : 'accounts growing vs last month'}</div>
     </div>
     <div class="growth-kpi-card">
-      <div class="growth-kpi-label">90-Day Monthly Uplift</div>
+      <div class="growth-kpi-label">Extra Monthly Profit (90d adds)</div>
       <div class="growth-kpi-val" style="color:var(--emerald)">${proj90All > 0 ? fmt$(proj90All) : '—'}</div>
-      <div class="growth-kpi-sub">monthly profit gain from new listings at 90d · ${gLastMo||'recent'} rate</div>
+      <div class="growth-kpi-sub">extra profit/mo from listings added over next 90 days · ${gLastMo||'recent'} rate</div>
     </div>`;
 
   // ════════════════════════════════════════════════════════
@@ -3819,7 +3819,7 @@ function renderGrowthPage() {
         const barC   = i===0?'var(--green)': p.profitPer1k>=avgPer1k?'var(--indigo)':'var(--muted)';
         const tag    = p.profitPer1k >= avgPer1k*1.4 ? '<span style="background:rgba(16,185,129,.15);color:var(--green);font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">🚀 scale</span>'
                      : p.profitPer1k > 0 && p.profitPer1k <= avgPer1k*0.5 ? '<span style="background:rgba(239,68,68,.1);color:var(--red);font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">⚠️ review</span>' : '';
-        const momT   = p.gMomPct !== null ? `<span style="font-size:10px;color:${p.gMomPct>=0?'var(--green)':'var(--red)'}">${p.gMomPct>=0?'↑':'↓'}${Math.abs(p.gMomPct).toFixed(0)}% MoM</span>` : '';
+        const momT   = p.gMomPct !== null ? `<span style="font-size:10px;color:${p.gMomPct>=0?'var(--green)':'var(--red)'}">${p.gMomPct>=0?'↑':'↓'}${Math.abs(p.gMomPct).toFixed(0)}% profit MoM</span>` : '';
         return `<div style="padding:10px 0;border-bottom:1px solid var(--card-border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
             <div style="display:flex;align-items:center;gap:6px">
@@ -3830,14 +3830,14 @@ function renderGrowthPage() {
             </div>
             <div style="display:flex;align-items:center;gap:8px">
               ${momT}
-              <span style="font-size:14px;font-weight:800;color:${barC}">${p.profitPer1k>0?fmt$(p.profitPer1k):'—'}<span style="font-size:9px;font-weight:400;color:var(--muted)">/1k</span></span>
+              <span style="font-size:14px;font-weight:800;color:${barC}">${p.profitPer1k>0?fmt$(p.profitPer1k):'—'}<span style="font-size:9px;font-weight:400;color:var(--muted)">/1k all-time</span></span>
             </div>
           </div>
           <div style="background:var(--glass);border-radius:3px;height:4px;overflow:hidden">
             <div style="width:${bar}%;height:100%;background:${barC};border-radius:3px"></div>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:3px">
-            <span>${p.current.toLocaleString()} listings · ${p.totalProfit>0?fmt$(p.totalProfit)+' total profit':'no profit data yet'}</span>
+            <span>${p.current.toLocaleString()} listings · ${p.totalProfit>0?fmt$(p.totalProfit)+' all-time profit':'no profit data yet'}</span>
             <span>${p.totalSales>0?p.totalSales+' sales':''}</span>
           </div>
         </div>`;
@@ -3901,15 +3901,15 @@ function renderGrowthPage() {
         ${hasAllTime ? `<br><span style="opacity:.65">All-time: ${fmt$(p.totalProfit)} ÷ ${p.current.toLocaleString()} = ${fmt$(p.profitPerList)}/listing total</span>` : ''}
       </div>` : (!hasAllTime ? `<div style="font-size:9px;color:var(--muted);margin-bottom:10px;padding:5px 7px;background:var(--glass);border-radius:5px">No profit data yet — projections unavailable</div>` : '')}
       <div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--card-border)">
-        <span style="color:var(--muted)">+30 days</span><span style="font-weight:600;color:var(--cyan)">${useMo&&p.proj30mo>0?'+'+fmt$(p.proj30mo):hasAllTime&&p.proj30>0?'+'+fmt$(p.proj30):'—'}</span>
+        <span style="color:var(--muted)">Add 30 days of listings →</span><span style="font-weight:600;color:var(--cyan)">${useMo&&p.proj30mo>0?'+'+fmt$(p.proj30mo)+'/mo':hasAllTime&&p.proj30>0?'+'+fmt$(p.proj30)+'/mo':'—'}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--card-border)">
-        <span style="color:var(--muted)">+60 days</span><span style="font-weight:600;color:var(--violet)">${useMo&&p.proj60mo>0?'+'+fmt$(p.proj60mo):hasAllTime&&p.proj60>0?'+'+fmt$(p.proj60):'—'}</span>
+        <span style="color:var(--muted)">Add 60 days of listings →</span><span style="font-weight:600;color:var(--violet)">${useMo&&p.proj60mo>0?'+'+fmt$(p.proj60mo)+'/mo':hasAllTime&&p.proj60>0?'+'+fmt$(p.proj60)+'/mo':'—'}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0">
-        <span style="color:var(--muted)">+90 days</span><span style="font-weight:800;color:var(--green)">${useMo&&p.proj90mo>0?'+'+fmt$(p.proj90mo):hasAllTime&&p.proj90>0?'+'+fmt$(p.proj90):'—'}</span>
+        <span style="color:var(--muted)">Add 90 days of listings →</span><span style="font-weight:800;color:var(--green)">${useMo&&p.proj90mo>0?'+'+fmt$(p.proj90mo)+'/mo':hasAllTime&&p.proj90>0?'+'+fmt$(p.proj90)+'/mo':'—'}</span>
       </div>
-      ${useMo?`<div style="font-size:9px;color:var(--muted);border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px;opacity:.7">monthly profit gain from newly added listings</div>`:''}
+      ${useMo?`<div style="font-size:9px;color:var(--muted);border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px;opacity:.7">extra profit/mo you gain each month from those newly added listings</div>`:''}
       ${p.daysToTgt?`<div style="font-size:10px;color:var(--muted);${useMo?'':'border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px'}">~${p.daysToTgt} days to ${p.target.toLocaleString()} target</div>`:''}
     </div>`;
   }).join('');
@@ -3963,10 +3963,10 @@ function renderGrowthPage() {
       <div style="font-size:10px;color:var(--muted);margin-bottom:12px">${data.stores.join(' · ')}</div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Stores managed</span><span style="font-weight:600">${data.stores.length}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Total listings</span><span style="font-weight:600">${data.totalList.toLocaleString()}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Total profit</span><span style="font-weight:600;color:var(--green)">${data.totalProfit>0?fmt$(data.totalProfit):'—'}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Avg efficiency</span><span style="font-weight:600;color:var(--violet)">${avgEff>0?fmt$(avgEff)+'/1k':'—'}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">MoM growth</span><span style="font-weight:600">${data.momTotal>0?data.momGrow+'/'+data.momTotal+' growing':'—'}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0"><span style="color:var(--muted)">Best account</span><span style="font-weight:600;color:var(--cyan)">${bestStore||'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">All-time profit</span><span style="font-weight:600;color:var(--green)">${data.totalProfit>0?fmt$(data.totalProfit):'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Avg profit/1k listings (all-time)</span><span style="font-weight:600;color:var(--violet)">${avgEff>0?fmt$(avgEff):'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Profit MoM growth</span><span style="font-weight:600">${data.momTotal>0?data.momGrow+'/'+data.momTotal+' growing':'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0"><span style="color:var(--muted)">Best profit/1k account</span><span style="font-weight:600;color:var(--cyan)">${bestStore||'—'}</span></div>
     </div>`;
   }).join('');
 
@@ -4127,7 +4127,7 @@ function renderGrowthPage() {
       </div>
       <div class="growth-progress-bar"><div class="growth-progress-fill" style="width:${pct}%"></div></div>
       <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px">
-        <span>${r.current.toLocaleString()} / ${r.target.toLocaleString()}</span><span>~${days} days</span>
+        <span>${r.current.toLocaleString()} / ${r.target.toLocaleString()} listings</span><span>~${days} days to target</span>
       </div>
     </div>`;
   }).join('');
@@ -4164,7 +4164,7 @@ function renderGrowthPage() {
     const todC = p.todayN===null?'var(--muted)':p.todayN>=40?'var(--green)':'var(--amber)';
     const velAvg = dailyHistory.length > 0 ? (p.histForStore/dailyHistory.length).toFixed(1) : '—';
     const effRank = byEff.findIndex(b=>b.store===p.store)+1;
-    const momBadge = p.gMomPct!==null ? `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:${p.gMomPct>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.1)'};color:${p.gMomPct>=0?'var(--green)':'var(--red)'};">${p.gMomPct>=0?'↑':'↓'}${Math.abs(p.gMomPct).toFixed(0)}% MoM</span>` : '';
+    const momBadge = p.gMomPct!==null ? `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:${p.gMomPct>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.1)'};color:${p.gMomPct>=0?'var(--green)':'var(--red)'};">${p.gMomPct>=0?'↑':'↓'}${Math.abs(p.gMomPct).toFixed(0)}% profit MoM</span>` : '';
     return `<div class="growth-account-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
         <div>
@@ -4177,14 +4177,14 @@ function renderGrowthPage() {
         <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px"><span>${p.current.toLocaleString()} listings</span><span>${pct}% to target</span></div>
         <div class="growth-progress-bar"><div class="growth-progress-fill" style="width:${pct}%"></div></div>
       </div>
-      <div class="growth-stat-row"><span class="growth-stat-label">Today</span><span class="growth-stat-val" style="color:${todC}">${p.todayN===null?'—':p.todayN} ${p.todayN!==null&&p.todayN>=40?'✅':''}</span></div>
-      <div class="growth-stat-row"><span class="growth-stat-label">Daily avg</span><span class="growth-stat-val">${velAvg}</span></div>
-      <div class="growth-stat-row"><span class="growth-stat-label">Streak</span><span class="growth-stat-val">${p.streak>0?'🔥 '+p.streak+'d':'—'}</span></div>
-      <div class="growth-stat-row"><span class="growth-stat-label">Days to target</span><span class="growth-stat-val">${p.daysToTgt?'~'+p.daysToTgt+'d':'—'}</span></div>
-      <div class="growth-stat-row"><span class="growth-stat-label">Total profit</span><span class="growth-stat-val" style="color:var(--green)">${p.totalProfit>0?fmt$(p.totalProfit):'—'}</span></div>
-      <div class="growth-stat-row"><span class="growth-stat-label">Avg profit / sale</span><span class="growth-stat-val">${p.avgSale>0?fmt$(p.avgSale):'—'}</span></div>
-      <div class="growth-stat-row"><span class="growth-stat-label">Profit / 1k listings</span><span class="growth-stat-val" style="color:var(--violet)">${p.profitPer1k>0?fmt$(p.profitPer1k):'—'}</span></div>
-      <div class="growth-stat-row"><span class="growth-stat-label">90-day projection</span><span class="growth-stat-val" style="color:var(--cyan)">${p.proj90>0?'+'+fmt$(p.proj90):'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Listings added today</span><span class="growth-stat-val" style="color:${todC}">${p.todayN===null?'—':p.todayN} ${p.todayN!==null&&p.todayN>=40?'✅':''}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Avg listings/day</span><span class="growth-stat-val">${velAvg}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Listing streak</span><span class="growth-stat-val">${p.streak>0?'🔥 '+p.streak+'d':'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Days to listing target</span><span class="growth-stat-val">${p.daysToTgt?'~'+p.daysToTgt+'d':'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">All-time profit</span><span class="growth-stat-val" style="color:var(--green)">${p.totalProfit>0?fmt$(p.totalProfit):'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Avg profit/sale</span><span class="growth-stat-val">${p.avgSale>0?fmt$(p.avgSale):'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">All-time profit/1k listings</span><span class="growth-stat-val" style="color:var(--violet)">${p.profitPer1k>0?fmt$(p.profitPer1k):'—'}</span></div>
+      <div class="growth-stat-row"><span class="growth-stat-label">Extra profit/mo (90d adds)</span><span class="growth-stat-val" style="color:var(--cyan)">${p.proj90mo>0?'+'+fmt$(p.proj90mo)+'/mo':p.proj90>0?'+'+fmt$(p.proj90)+'/mo':'—'}</span></div>
     </div>`;
   }).join('');
 
@@ -4367,15 +4367,27 @@ function openAudit() {
   const skipped     = audit.filter(a=>a.status==='skipped');
 
   let html = `
-    <div style="margin-bottom:16px;padding:14px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.3);border-radius:12px;display:flex;gap:32px;flex-wrap:wrap">
-      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Total Rows Loaded</div>
-           <div style="font-size:24px;font-weight:800;color:var(--cyan)">${grandRows.toLocaleString()}</div></div>
-      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Total Profit Loaded</div>
-           <div style="font-size:24px;font-weight:800;color:var(--green)">$${grandProfit.toFixed(2)}</div></div>
-      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Truly Failed</div>
-           <div style="font-size:24px;font-weight:800;color:${errors.length?'var(--rose)':'var(--green)'}">${errors.length}</div></div>
-      <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Served from Cache</div>
-           <div style="font-size:24px;font-weight:800;color:${cached.length?'var(--amber)':'var(--muted)'}">${cached.length}</div></div>
+    <div style="margin-bottom:16px;padding:14px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.3);border-radius:12px">
+      <div style="display:flex;gap:32px;flex-wrap:wrap;margin-bottom:14px">
+        <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Total Rows Loaded</div>
+             <div style="font-size:24px;font-weight:800;color:var(--cyan)">${grandRows.toLocaleString()}</div></div>
+        <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Total Profit Loaded</div>
+             <div style="font-size:24px;font-weight:800;color:var(--green)">$${grandProfit.toFixed(2)}</div></div>
+        <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Truly Failed</div>
+             <div style="font-size:24px;font-weight:800;color:${errors.length?'var(--rose)':'var(--green)'}">${errors.length}</div></div>
+        <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Served from Cache</div>
+             <div style="font-size:24px;font-weight:800;color:${cached.length?'var(--amber)':'var(--muted)'}">${cached.length}</div></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;border-top:1px solid rgba(99,102,241,.2);padding-top:12px">
+        <button onclick="closeModal('audit-modal'); _tabDataCache={}; _expDataCache={}; loadAll(); showToast('Cache cleared — reloading all data fresh','success','🗑️')"
+          style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:var(--rose);padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+          🗑️ Clear Cache &amp; Force Reload
+        </button>
+        <button onclick="closeModal('audit-modal'); loadAll(); showToast('Reloading (using valid cache)','info','↻')"
+          style="background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);color:var(--indigo);padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+          ↻ Reload (keep cache)
+        </button>
+      </div>
     </div>`;
 
   if (cached.length) {

@@ -2060,11 +2060,11 @@ async function loadAll() {
   const ids = Object.keys(SHEETS);
   let allSources = [], tabErrors = [];
 
-  // Fetch tab lists with small stagger to avoid 429 rate limiting
+  // Fetch tab lists with stagger to avoid 429 rate limiting — 400ms between each sheet
   const delay = ms => new Promise(r => setTimeout(r, ms));
   const tabLists = [];
   for (let i = 0; i < ids.length; i++) {
-    if (i > 0) await delay(120);
+    if (i > 0) await delay(400);
     const list = await getDataTabs(ids[i]).catch(e => { tabErrors.push({id: ids[i], e: e.message}); return []; });
     tabLists.push(list);
   }
@@ -2084,7 +2084,7 @@ async function loadAll() {
   // Fetch last-edit timestamps from _meta!A1 — staggered to avoid 429
   (async () => {
     for (let i = 0; i < ids.length; i++) {
-      if (i > 0) await delay(200);
+      if (i > 0) await delay(400);
       try {
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${ids[i]}/values/_meta!A1?key=${API_KEY}`;
         const data = await apiFetch(url);

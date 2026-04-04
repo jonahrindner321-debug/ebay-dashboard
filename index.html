@@ -4152,9 +4152,13 @@ function renderGrowthPage() {
   // Monthly profit at full target (target listings × monthly rate per store)
   const netMonthlyFullScale = r2(all.reduce((s,p) => s + (p.profitPerListMo > 0 ? p.target * p.profitPerListMo : 0), 0));
   const netUplift       = r2(netMonthlyFullScale - netMonthlyNow);
-  // J&R network take-home
+  // Network split take-homes (all three parties)
   const jrNetNow        = r2(all.reduce((s,p) => s + (p.profitPerListMo > 0 ? getSplit(p.dashName, p.current * p.profitPerListMo).jr : 0), 0));
   const jrNetAtScale    = r2(all.reduce((s,p) => s + (p.profitPerListMo > 0 ? getSplit(p.dashName, p.target * p.profitPerListMo).jr : 0), 0));
+  const danianNetNow    = r2(all.reduce((s,p) => s + (p.profitPerListMo > 0 ? getSplit(p.dashName, p.current * p.profitPerListMo).danian : 0), 0));
+  const danianNetScale  = r2(all.reduce((s,p) => s + (p.profitPerListMo > 0 ? getSplit(p.dashName, p.target * p.profitPerListMo).danian : 0), 0));
+  const clientNetNow    = r2(all.reduce((s,p) => s + (p.profitPerListMo > 0 ? getSplit(p.dashName, p.current * p.profitPerListMo).storeOwner : 0), 0));
+  const clientNetScale  = r2(all.reduce((s,p) => s + (p.profitPerListMo > 0 ? getSplit(p.dashName, p.target * p.profitPerListMo).storeOwner : 0), 0));
   // Days until each store hits target at current pace
   const storeETAs = all.map(p => {
     const remaining = Math.max(0, p.target - p.current);
@@ -4197,16 +4201,35 @@ function renderGrowthPage() {
           <div style="font-size:11px;color:var(--muted)">critical path: ${critPath?.store||'—'}</div>
         </div>` : ''}
       </div>
-      ${jrNetNow > 0 ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)">
-        <div style="padding:10px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:8px">
-          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">J&R Take-Home Now</div>
-          <div style="font-size:22px;font-weight:900;color:var(--green)">${fmt$(jrNetNow)}<span style="font-size:11px;font-weight:400;color:var(--muted)">/mo</span></div>
-          <div style="font-size:10px;color:var(--muted)">across all stores · current listings</div>
+      ${jrNetNow > 0 ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:8px;font-weight:600">NETWORK TAKE-HOME — ALL PARTIES</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+          ${clientNetNow>0?`<div style="padding:10px;background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.15);border-radius:8px">
+            <div style="font-size:9px;color:var(--muted);margin-bottom:3px">Clients (all) now</div>
+            <div style="font-size:18px;font-weight:900;color:var(--yellow)">${fmt$(clientNetNow)}<span style="font-size:10px;font-weight:400">/mo</span></div>
+          </div>`:''}
+          <div style="padding:10px;background:rgba(129,140,248,.06);border:1px solid rgba(129,140,248,.15);border-radius:8px">
+            <div style="font-size:9px;color:var(--muted);margin-bottom:3px">Danian now</div>
+            <div style="font-size:18px;font-weight:900;color:#818cf8">${fmt$(danianNetNow)}<span style="font-size:10px;font-weight:400">/mo</span></div>
+          </div>
+          <div style="padding:10px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:8px">
+            <div style="font-size:9px;color:var(--muted);margin-bottom:3px">J&R now</div>
+            <div style="font-size:18px;font-weight:900;color:var(--green)">${fmt$(jrNetNow)}<span style="font-size:10px;font-weight:400">/mo</span></div>
+          </div>
         </div>
-        <div style="padding:10px;background:rgba(16,185,129,.04);border:1px solid rgba(16,185,129,.12);border-radius:8px">
-          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">J&R Take-Home at Full Scale</div>
-          <div style="font-size:22px;font-weight:900;color:var(--emerald)">${fmt$(jrNetAtScale)}<span style="font-size:11px;font-weight:400;color:var(--muted)">/mo</span></div>
-          <div style="font-size:10px;color:var(--muted)">at ${netTotalTarget.toLocaleString()} listings across all stores</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+          ${clientNetScale>0?`<div style="padding:10px;background:rgba(251,191,36,.04);border:1px solid rgba(251,191,36,.1);border-radius:8px">
+            <div style="font-size:9px;color:var(--muted);margin-bottom:3px">Clients @ ${netTotalTarget.toLocaleString()}</div>
+            <div style="font-size:18px;font-weight:900;color:var(--yellow)">${fmt$(clientNetScale)}<span style="font-size:10px;font-weight:400">/mo</span></div>
+          </div>`:''}
+          <div style="padding:10px;background:rgba(129,140,248,.04);border:1px solid rgba(129,140,248,.1);border-radius:8px">
+            <div style="font-size:9px;color:var(--muted);margin-bottom:3px">Danian @ ${netTotalTarget.toLocaleString()}</div>
+            <div style="font-size:18px;font-weight:900;color:#818cf8">${fmt$(danianNetScale)}<span style="font-size:10px;font-weight:400">/mo</span></div>
+          </div>
+          <div style="padding:10px;background:rgba(16,185,129,.04);border:1px solid rgba(16,185,129,.12);border-radius:8px">
+            <div style="font-size:9px;color:var(--muted);margin-bottom:3px">J&R @ ${netTotalTarget.toLocaleString()}</div>
+            <div style="font-size:18px;font-weight:900;color:var(--emerald)">${fmt$(jrNetAtScale)}<span style="font-size:10px;font-weight:400">/mo</span></div>
+          </div>
         </div>
       </div>` : ''}
       <div style="font-size:10px;color:var(--muted);border-top:1px solid rgba(255,255,255,.06);padding-top:10px;margin-top:12px">

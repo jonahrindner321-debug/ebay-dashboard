@@ -3743,32 +3743,78 @@ function renderGrowthPage() {
         todayN = parseInt(todayRow[idx]) || 0;
     }
 
-    // Efficiency — use selected month's profit if filter is active, else all-time
-    const viewProfit     = _growthMonthFilter ? (byMonth[_growthMonthFilter] || 0) : totalProfit;
-    const profitPer1k    = s.current > 0 && viewProfit > 0 ? r2(viewProfit / s.current * 1000) : 0;
-    const profitPerList  = s.current > 0 && viewProfit > 0 ? viewProfit / s.current : 0;
-
-    // 90-day projection from NEW listings added
-    // Use goal-based projection when history is too sparse (< 7 days) — avoids noisy 1-day averages
-    const effDaily = dailyHistory.length >= 7 ? avgDailyList : s.dailyGoal;
-    const proj30   = r2(effDaily * 30 * profitPerList);
-    const proj60   = r2(effDaily * 60 * profitPerList);
-    const proj90   = r2(effDaily * 90 * profitPerList);
-    const daysToTgt = s.dailyGoal > 0 ? Math.ceil(s.remaining / s.dailyGoal) : null;
-
-    // Rolling 30-day and 30-60-day profit windows — stable across month boundaries
+    // Rolling 30-day and 30-60-day profit windows — computed first, used for stable efficiency ranking
     const _now = new Date();
     const _cut30 = new Date(_now); _cut30.setDate(_now.getDate() - 30);
     const _cut60 = new Date(_now); _cut60.setDate(_now.getDate() - 60);
     const rolling30P     = r2(recs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).reduce((s,r) => s+r.profit, 0));
     const rolling30PrevP = r2(recs.filter(r => { const d=new Date(r.date+'T00:00:00'); return r.date && d>=_cut60 && d<_cut30; }).reduce((s,r) => s+r.profit, 0));
 
+    // Order analytics — from actual transaction data
+    const totalGross      = r2(recs.reduce((s,r) => s+(r.price||0), 0));
+    const avgSalePrice    = totalSales > 0 ? r2(totalGross / totalSales) : 0;
+    const avgProfitPerSale = totalSales > 0 ? r2(totalProfit / totalSales) : 0;
+    const marginPct       = totalGross > 0 ? r2(totalProfit / totalGross * 100) : 0;
+    const sellThrough     = s.current > 0 && totalSales > 0 ? r2(totalSales / s.current) : 0;
+
+    // Days since last sale
+    const _lastSaleTs = recs.reduce((mx,r) => { const d=r.date?new Date(r.date+'T00:00:00').getTime():0; return d>mx?d:mx; }, 0);
+    const daysSinceLastSale = _lastSaleTs > 0 ? Math.floor((_now - _lastSaleTs) / 86400000) : null;
+
+    // Listing consistency — % of last 14 days where store hit its daily goal
+    const _last14 = dailyHistory.filter(d => (_now - d.date) / 86400000 <= 14);
+    const consistencyDays = _last14.filter(d => (d.counts[s.store]||0) >= s.dailyGoal).length;
+    const consistencyPct  = _last14.length > 0 ? Math.round(consistencyDays / _last14.length * 100) : null;
+
+    // Actual listing pace (last 14 days avg) — separate from goal-based pace
+    const _last14Total = _last14.reduce((sum,d) => sum + (d.counts[s.store]||0), 0);
+    const actualPace14 = _last14.length > 0 ? r2(_last14Total / _last14.length) : null;
+
+    // Last 7-day avg for momentum detection
+    const _last7 = dailyHistory.filter(d => (_now - d.date) / 86400000 <= 7);
+    const _last7Total = _last7.reduce((sum,d) => sum + (d.counts[s.store]||0), 0);
+    const last7Avg = _last7.length > 0 ? r2(_last7Total / _last7.length) : null;
+    // Momentum: last7 vs last14 avg — >1 accelerating, <1 slowing
+    const momentum = (last7Avg !== null && actualPace14 > 0) ? r2(last7Avg / actualPace14) : 1;
+
+    // Weekly pacing — are they on track for the week?
+    const weeklyGoal   = s.dailyGoal * 7;
+    const weekActual   = _last7.reduce((sum,d) => sum + (d.counts[s.store]||0), 0);
+    const weeklyGap    = weeklyGoal - weekActual; // positive = behind
+    const weeklyOnTrack = weeklyGap <= 0;
+
+    // Rolling 30d transaction counts (for per-sale trend)
+    const roll30Sales     = recs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).length;
+    const roll30PrevSales = recs.filter(r => { const d=new Date(r.date+'T00:00:00'); return r.date && d>=_cut60 && d<_cut30; }).length;
+    const roll30AvgProfit     = roll30Sales > 0 ? r2(rolling30P / roll30Sales) : 0;
+    const roll30PrevAvgProfit = roll30PrevSales > 0 ? r2(rolling30PrevP / roll30PrevSales) : 0;
+    // Margin trend: profit/sale improving or compressing?
+    const marginTrendPct = roll30PrevAvgProfit > 0 ? r2((roll30AvgProfit - roll30PrevAvgProfit) / roll30PrevAvgProfit * 100) : null;
+
+    // Efficiency — Scale Intelligence always uses rolling 30d (avoids partial-month noise)
+    // Month filter still respected for projection math via viewProfit
+    const profitPer1k   = s.current > 0 && rolling30P > 0 ? r2(rolling30P / s.current * 1000)
+                        : s.current > 0 && totalProfit > 0 ? r2(totalProfit / s.current * 1000) : 0;
+    const viewProfit    = _growthMonthFilter ? (byMonth[_growthMonthFilter] || 0) : totalProfit;
+    const profitPerList = s.current > 0 && viewProfit > 0 ? viewProfit / s.current : 0;
+
+    // 90-day projection from NEW listings added (goal pace)
+    const effDaily = dailyHistory.length >= 7 ? avgDailyList : s.dailyGoal;
+    const proj30   = r2(effDaily * 30 * profitPerList);
+    const proj60   = r2(effDaily * 60 * profitPerList);
+    const proj90   = r2(effDaily * 90 * profitPerList);
+    const daysToTgt = s.dailyGoal > 0 ? Math.ceil(s.remaining / s.dailyGoal) : null;
+
     pd[s.store] = {
       ...s, dashName, recs, totalProfit, totalRevenue, totalSales, avgSale,
       byMonth, mKeys, lastMo, prevMo, lastMoP, prevMoP, momPct, momDelta,
       streak, avgDailyList, histForStore, todayN,
       profitPer1k, profitPerList, proj30, proj60, proj90, effDaily, daysToTgt,
-      rolling30P, rolling30PrevP
+      rolling30P, rolling30PrevP,
+      totalGross, avgSalePrice, avgProfitPerSale, marginPct, sellThrough,
+      daysSinceLastSale, consistencyPct, actualPace14,
+      last7Avg, momentum, weeklyGoal, weekActual, weeklyGap, weeklyOnTrack,
+      roll30Sales, roll30PrevSales, roll30AvgProfit, roll30PrevAvgProfit, marginTrendPct
     };
   });
 
@@ -3798,6 +3844,20 @@ function renderGrowthPage() {
     p.proj30mo = r2(p.effDaily * 30 * p.profitPerListMo);
     p.proj60mo = r2(p.effDaily * 60 * p.profitPerListMo);
     p.proj90mo = r2(p.effDaily * 90 * p.profitPerListMo);
+
+    // Actual-pace projections — uses real 14-day listing avg instead of goal
+    const _ap = p.actualPace14 !== null ? p.actualPace14 : p.effDaily;
+    p.proj30actual = p.profitPerListMo > 0 ? r2(_ap * 30 * p.profitPerListMo) : null;
+    p.proj60actual = p.profitPerListMo > 0 ? r2(_ap * 60 * p.profitPerListMo) : null;
+    p.proj90actual = p.profitPerListMo > 0 ? r2(_ap * 90 * p.profitPerListMo) : null;
+
+    // Momentum-adjusted projection — pace × momentum factor (flags sandbagging / acceleration)
+    const _momPace = _ap * (p.momentum || 1);
+    p.proj90momentum = p.profitPerListMo > 0 ? r2(_momPace * 90 * p.profitPerListMo) : null;
+
+    // J&R take-home from this store's rolling 30d profit
+    const _split = getSplit(p.dashName, p.rolling30P);
+    p.jrShare30d = _split.jr || 0;
   });
 
   const totalList  = all.reduce((s,p) => s + p.current, 0);
@@ -3806,6 +3866,8 @@ function renderGrowthPage() {
   const proj90All  = all.reduce((s,p) => s + (p.proj90mo || p.proj90), 0);
   const avgPer1k   = totalList > 0 && totalProf > 0 ? r2(totalProf / totalList * 1000) : 0;
   const totalToday = all.reduce((s,p) => s + (p.todayN || 0), 0);
+  const jrTotal30d = r2(all.reduce((s,p) => s + p.jrShare30d, 0));
+  const storesOnTrack = all.filter(p => p.weeklyOnTrack).length;
 
   const byEff      = [...all].filter(p => p.current > 0).sort((a,b) => b.profitPer1k - a.profitPer1k);
   const growingCnt  = all.filter(p => p.roll30MomPct !== null && p.roll30MomPct > 0).length;
@@ -3839,16 +3901,26 @@ function renderGrowthPage() {
     <div class="growth-kpi-card">
       <div class="growth-kpi-label">Extra Monthly Profit (90d adds)</div>
       <div class="growth-kpi-val" style="color:var(--emerald)">${proj90All > 0 ? fmt$(proj90All) : '—'}</div>
-      <div class="growth-kpi-sub">extra profit/mo from listings added over next 90 days · ${gLastMo||'recent'} rate</div>
+      <div class="growth-kpi-sub">extra profit/mo from listings added over next 90 days · last 30d rate</div>
+    </div>
+    <div class="growth-kpi-card">
+      <div class="growth-kpi-label">J&R Take-Home (Last 30d)</div>
+      <div class="growth-kpi-val" style="color:var(--green)">${jrTotal30d > 0 ? fmt$(jrTotal30d) : '—'}</div>
+      <div class="growth-kpi-sub">J&R share across all stores · rolling 30d profit</div>
+    </div>
+    <div class="growth-kpi-card">
+      <div class="growth-kpi-label">On Pace This Week</div>
+      <div class="growth-kpi-val" style="color:${storesOnTrack >= all.length*0.7?'var(--green)':'var(--amber)'}">${storesOnTrack}/${all.length}</div>
+      <div class="growth-kpi-sub">stores hitting weekly listing goal</div>
     </div>`;
 
   // ════════════════════════════════════════════════════════
   // SCALE INTELLIGENCE — who to bet on
   // ════════════════════════════════════════════════════════
   // Update Scale Intelligence subtitle to show which period efficiency is based on
-  const _effLabel = _growthMonthFilter ? _growthMonthFilter : 'all-time';
+  const _effLabel = 'last 30d';
   const _effSubEl = document.querySelector('#growth-efficiency-list')?.closest('.growth-section')?.querySelector('.section-hdr span:last-child');
-  if (_effSubEl) _effSubEl.textContent = `profit per 1,000 listings · ${_effLabel} · who to bet on`;
+  if (_effSubEl) _effSubEl.textContent = `profit per 1,000 listings · last 30d · who to bet on`;
 
   const maxEff = byEff.length ? byEff[0].profitPer1k : 1;
   $('growth-efficiency-list').innerHTML = byEff.length === 0
@@ -3881,6 +3953,15 @@ function renderGrowthPage() {
             <span>${p.current.toLocaleString()} listings · ${p.totalProfit>0?fmt$(p.totalProfit)+' all-time profit':'no profit data yet'}</span>
             <span>${p.totalSales>0?p.totalSales+' sales':''}</span>
           </div>
+          ${(p.avgSalePrice>0||p.marginPct>0||p.sellThrough>0||p.daysSinceLastSale!==null||p.consistencyPct!==null) ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px;font-size:9px">
+            ${p.avgSalePrice>0?`<span style="color:var(--muted)">avg sale ${fmt$(p.avgSalePrice)}</span>`:''}
+            ${p.marginPct>0?`<span style="color:${p.marginPct>=20?'var(--green)':p.marginPct>=10?'var(--amber)':'var(--red)'}">${p.marginPct.toFixed(0)}% margin</span>`:''}
+            ${p.avgProfitPerSale>0?`<span style="color:var(--muted)">${fmt$(p.avgProfitPerSale)}/sale</span>`:''}
+            ${p.sellThrough>0?`<span style="color:${p.sellThrough>=0.5?'var(--green)':p.sellThrough>=0.2?'var(--indigo)':'var(--muted)'}">${(p.sellThrough*100).toFixed(0)}% sell-through</span>`:''}
+            ${p.daysSinceLastSale!==null?`<span style="color:${p.daysSinceLastSale>7?'var(--red)':p.daysSinceLastSale>3?'var(--amber)':'var(--green)'}">${p.daysSinceLastSale}d since sale</span>`:''}
+            ${p.consistencyPct!==null?`<span style="color:${p.consistencyPct>=70?'var(--green)':p.consistencyPct>=40?'var(--amber)':'var(--red)'}">${p.consistencyPct}% on-goal</span>`:''}
+            ${p.marginTrendPct!==null?`<span style="color:${p.marginTrendPct>=0?'var(--green)':'var(--red)'}">${p.marginTrendPct>=0?'↑':'↓'}margin/sale</span>`:''}
+          </div>` : ''}
         </div>`;
       }).join('');
 
@@ -3923,61 +4004,88 @@ function renderGrowthPage() {
   // ════════════════════════════════════════════════════════
   // 90-DAY PROJECTIONS
   // ════════════════════════════════════════════════════════
-  $('growth-proj-sub').textContent = proj90All > 0 ? `${fmt$(proj90All)} monthly profit uplift from new listings at 90d · based on ${gLastMo||'recent'} rate` : 'Load ops data to see projections';
-  const byProj = [...all].sort((a,b) => b.proj90 - a.proj90);
+  $('growth-proj-sub').textContent = proj90All > 0 ? `${fmt$(proj90All)} monthly profit uplift from new listings at 90d · based on last 30d rate` : 'Load ops data to see projections';
+  const byProj = [...all].sort((a,b) => (b.proj90actual||b.proj90mo||0) - (a.proj90actual||a.proj90mo||0));
   $('growth-proj-grid').innerHTML = byProj.map(p => {
-    const _projHistNote = dailyHistory.length >= 7
-      ? `${dailyHistory.length}d avg · ${p.avgDailyList.toFixed(1)}/day actual`
-      : dailyHistory.length === 0
-        ? `<span style="color:var(--amber)">⚠ No daily history — using ${p.effDaily}/day goal</span>`
-        : `<span style="color:var(--amber)">⚠ Only ${dailyHistory.length}d logged — using ${p.effDaily}/day goal</span>`;
     const hasMonthly = p.profitPerListMo > 0;
     const hasAllTime = p.profitPerList > 0;
-    const useMo = hasMonthly;
+    const goalPace   = p.effDaily;
+    const actualPace = p.actualPace14 !== null ? p.actualPace14 : goalPace;
+    const paceNote   = p.actualPace14 !== null
+      ? `goal ${goalPace.toFixed(1)}/day · actual ${actualPace.toFixed(1)}/day (14d)`
+      : `${goalPace.toFixed(1)}/day goal`;
+    const paceColor  = p.actualPace14 !== null && p.actualPace14 < goalPace * 0.7 ? 'var(--red)' : p.actualPace14 !== null && p.actualPace14 >= goalPace ? 'var(--green)' : 'var(--amber)';
+    // Order quality intel
+    const intelBits = [];
+    if (p.avgSalePrice > 0)      intelBits.push(`avg sale ${fmt$(p.avgSalePrice)}`);
+    if (p.marginPct > 0)         intelBits.push(`${p.marginPct.toFixed(0)}% margin`);
+    if (p.avgProfitPerSale > 0)  intelBits.push(`${fmt$(p.avgProfitPerSale)}/sale`);
+    if (p.daysSinceLastSale !== null) {
+      const dsl = p.daysSinceLastSale;
+      const dslColor = dsl > 7 ? 'var(--red)' : dsl > 3 ? 'var(--amber)' : 'var(--green)';
+      intelBits.push(`<span style="color:${dslColor}">${dsl}d since last sale</span>`);
+    }
+    if (p.consistencyPct !== null) {
+      const cColor = p.consistencyPct >= 70 ? 'var(--green)' : p.consistencyPct >= 40 ? 'var(--amber)' : 'var(--red)';
+      intelBits.push(`<span style="color:${cColor}">${p.consistencyPct}% on-goal (14d)</span>`);
+    }
+    if (!p.weeklyOnTrack && p.weeklyGap > 0) {
+      intelBits.push(`<span style="color:var(--red)">⚠ ${p.weeklyGap} behind this week</span>`);
+    }
+    if (p.momentum < 0.7) {
+      intelBits.push(`<span style="color:var(--red)">↓ slowing (7d pace dropping)</span>`);
+    } else if (p.momentum > 1.3) {
+      intelBits.push(`<span style="color:var(--green)">↑ accelerating</span>`);
+    }
+    if (p.marginTrendPct !== null && Math.abs(p.marginTrendPct) >= 10) {
+      intelBits.push(`<span style="color:${p.marginTrendPct>=0?'var(--green)':'var(--red)'}">${p.marginTrendPct>=0?'↑':'↓'}${Math.abs(p.marginTrendPct).toFixed(0)}% margin/sale (30d)</span>`);
+    }
     return `<div class="card" style="padding:16px">
       <div style="font-weight:700;font-size:13px;margin-bottom:2px">${p.store}</div>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:6px">+${Math.round(p.effDaily*30).toLocaleString()} listings/mo · ${_projHistNote}</div>
-      ${useMo ? `<div style="font-size:9px;color:var(--muted);margin-bottom:10px;padding:5px 7px;background:var(--glass);border-radius:5px;line-height:1.7">
+      <div style="font-size:10px;margin-bottom:4px"><span style="color:${paceColor}">${paceNote}</span></div>
+      ${hasMonthly ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px;line-height:1.7">
         <strong style="color:var(--text2)">${p.recentMoLabel} profit:</strong> ${fmt$(p.recentMoProfit)} ÷ ${p.current.toLocaleString()} listings = <strong style="color:var(--indigo)">${fmt$(p.profitPerListMo)}/listing/mo</strong>
-        ${hasAllTime ? `<br><span style="opacity:.65">All-time: ${fmt$(p.totalProfit)} ÷ ${p.current.toLocaleString()} = ${fmt$(p.profitPerList)}/listing total</span>` : ''}
-      </div>` : (!hasAllTime ? `<div style="font-size:9px;color:var(--muted);margin-bottom:10px;padding:5px 7px;background:var(--glass);border-radius:5px">No profit data yet — projections unavailable</div>` : '')}
+      </div>` : (!hasAllTime ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px">No profit data yet — projections unavailable</div>` : '')}
+      ${intelBits.length ? `<div style="font-size:9px;color:var(--muted);margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px">${intelBits.join('<span style="opacity:.4">·</span>')}</div>` : ''}
+      <div style="font-size:9px;color:var(--muted);margin-bottom:2px;opacity:.6">if you keep listing at current pace →</div>
       <div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--card-border)">
-        <span style="color:var(--muted)">Add 30 days of listings →</span><span style="font-weight:600;color:var(--cyan)">${useMo&&p.proj30mo>0?'+'+fmt$(p.proj30mo)+'/mo':hasAllTime&&p.proj30>0?'+'+fmt$(p.proj30)+'/mo':'—'}</span>
+        <span style="color:var(--muted)">+30 days of listings</span><span style="font-weight:600;color:var(--cyan)">${p.proj30actual>0?'+'+fmt$(p.proj30actual)+'/mo':hasMonthly&&p.proj30mo>0?'+'+fmt$(p.proj30mo)+'/mo':'—'}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--card-border)">
-        <span style="color:var(--muted)">Add 60 days of listings →</span><span style="font-weight:600;color:var(--violet)">${useMo&&p.proj60mo>0?'+'+fmt$(p.proj60mo)+'/mo':hasAllTime&&p.proj60>0?'+'+fmt$(p.proj60)+'/mo':'—'}</span>
+        <span style="color:var(--muted)">+60 days of listings</span><span style="font-weight:600;color:var(--violet)">${p.proj60actual>0?'+'+fmt$(p.proj60actual)+'/mo':hasMonthly&&p.proj60mo>0?'+'+fmt$(p.proj60mo)+'/mo':'—'}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0">
-        <span style="color:var(--muted)">Add 90 days of listings →</span><span style="font-weight:800;color:var(--green)">${useMo&&p.proj90mo>0?'+'+fmt$(p.proj90mo)+'/mo':hasAllTime&&p.proj90>0?'+'+fmt$(p.proj90)+'/mo':'—'}</span>
+        <span style="color:var(--muted)">+90 days of listings</span><span style="font-weight:800;color:var(--green)">${p.proj90actual>0?'+'+fmt$(p.proj90actual)+'/mo':hasMonthly&&p.proj90mo>0?'+'+fmt$(p.proj90mo)+'/mo':'—'}</span>
       </div>
-      ${useMo?`<div style="font-size:9px;color:var(--muted);border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px;opacity:.7">extra profit/mo you gain each month from those newly added listings</div>`:''}
-      ${p.daysToTgt?`<div style="font-size:10px;color:var(--muted);${useMo?'':'border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px'}">~${p.daysToTgt} days to ${p.target.toLocaleString()} target</div>`:''}
+      ${hasMonthly?`<div style="font-size:9px;color:var(--muted);border-top:1px solid var(--card-border);padding-top:6px;margin-top:2px;opacity:.7">extra profit/mo from those newly added listings · based on ${p.recentMoLabel} rate</div>`:''}
+      ${p.daysToTgt?`<div style="font-size:10px;color:var(--muted);margin-top:4px">~${p.daysToTgt} days to ${p.target.toLocaleString()} target at goal pace</div>`:''}
     </div>`;
   }).join('');
 
   // ════════════════════════════════════════════════════════
   // MONTH-OVER-MONTH TREND
   // ════════════════════════════════════════════════════════
-  const withMom = all.filter(p=>p.gMomPct!==null).sort((a,b)=>(b.gMomPct||0)-(a.gMomPct||0));
-  const noMom   = all.filter(p=>p.gMomPct===null);
-  const growCnt = withMom.filter(p=>p.gMomPct>0).length;
-  const decCnt  = withMom.filter(p=>p.gMomPct<=0).length;
-  const momPeriodLabel = (gPrevMo && gLastMo) ? `${gPrevMo} → ${gLastMo}` : '';
-  $('growth-mom-sub').textContent = `${momPeriodLabel}${momPeriodLabel?' · ':''}${growCnt} growing · ${decCnt} declining · ${noMom.length} no prior month`;
+  // MoM uses rolling 30d windows — immune to partial-month distortion
+  const withMom = all.filter(p=>p.roll30MomPct!==null).sort((a,b)=>(b.roll30MomPct||0)-(a.roll30MomPct||0));
+  const noMom   = all.filter(p=>p.roll30MomPct===null);
+  const growCnt = withMom.filter(p=>p.roll30MomPct>0).length;
+  const decCnt  = withMom.filter(p=>p.roll30MomPct<=0).length;
+  $('growth-mom-sub').textContent = `last 30d vs prior 30d · ${growCnt} growing · ${decCnt} declining · ${noMom.length} no data`;
   $('growth-mom-grid').innerHTML = [...withMom, ...noMom].map(p => {
-    const has  = p.gMomPct !== null;
-    const up   = has && p.gMomPct > 0;
+    const has  = p.roll30MomPct !== null;
+    const up   = has && p.roll30MomPct > 0;
     const clr  = has ? (up?'var(--green)':'var(--red)') : 'var(--muted)';
     const icon = has ? (up?'↑':'↓') : '—';
+    const delta = has ? r2(p.rolling30P - p.rolling30PrevP) : 0;
     const noData = p.recs.length === 0;
     return `<div class="card" style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
       <div>
         <div style="font-weight:700;font-size:13px">${p.store}</div>
-        <div style="font-size:10px;color:var(--muted);margin-top:2px">${has ? fmt$(p.gPrevMoP)+' → '+fmt$(p.gLastMoP) : (gPrevMo ? 'No profit in '+gPrevMo : 'Need prior month data')}</div>
-        ${has?`<div style="font-size:10px;color:${clr};margin-top:2px">${up?'+':''}${fmt$(p.gMomDelta)}</div>`:''}
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${has ? fmt$(p.rolling30PrevP)+' → '+fmt$(p.rolling30P)+' (30d profit)' : 'Not enough data'}</div>
+        ${has?`<div style="font-size:10px;color:${clr};margin-top:2px">${up?'+':''}${fmt$(delta)}</div>`:''}
         ${noData ? `<div style="font-size:9px;color:var(--amber);margin-top:2px">⚠ 0 transactions loaded — try refreshing</div>` : `<div style="font-size:9px;color:var(--muted);margin-top:1px">${p.recs.length} sales transactions loaded (all-time)</div>`}
       </div>
-      <div style="font-size:24px;font-weight:900;color:${clr}">${has?icon+Math.abs(p.gMomPct).toFixed(0)+'%':icon}</div>
+      <div style="font-size:24px;font-weight:900;color:${clr}">${has?icon+Math.abs(p.roll30MomPct).toFixed(0)+'%':icon}</div>
     </div>`;
   }).join('');
 
@@ -3987,27 +4095,38 @@ function renderGrowthPage() {
   const ops = {};
   summary.forEach(s => {
     const op = s.operator || 'Unassigned';
-    if (!ops[op]) ops[op] = { stores:[], totalList:0, totalProfit:0, effs:[], momGrow:0, momTotal:0 };
+    if (!ops[op]) ops[op] = { stores:[], totalList:0, totalProfit:0, rolling30:0, effs:[], momGrow:0, momTotal:0, consistScores:[], weeklyOnTrack:0 };
     const p = pd[s.store];
     ops[op].stores.push(s.store);
-    ops[op].totalList   += s.current;
-    ops[op].totalProfit += p.totalProfit;
+    ops[op].totalList    += s.current;
+    ops[op].totalProfit  += p.totalProfit;
+    ops[op].rolling30    += p.rolling30P;
     if (p.profitPer1k > 0) ops[op].effs.push(p.profitPer1k);
-    if (p.momPct !== null) { ops[op].momTotal++; if (p.momPct > 0) ops[op].momGrow++; }
+    if (p.roll30MomPct !== null) { ops[op].momTotal++; if (p.roll30MomPct > 0) ops[op].momGrow++; }
+    if (p.consistencyPct !== null) ops[op].consistScores.push(p.consistencyPct);
+    if (p.weeklyOnTrack) ops[op].weeklyOnTrack++;
   });
-  const opList = Object.entries(ops).sort((a,b)=>b[1].totalProfit-a[1].totalProfit);
+  const opList = Object.entries(ops).sort((a,b)=>b[1].rolling30-a[1].rolling30);
   $('growth-operator-grid').innerHTML = opList.map(([op, data]) => {
     const avgEff = data.effs.length ? r2(data.effs.reduce((s,v)=>s+v,0)/data.effs.length) : 0;
     const bestStore = data.stores.reduce((best, s) => (pd[s].profitPer1k > (pd[best]?.profitPer1k||0)) ? s : best, data.stores[0]);
+    const avgConsist = data.consistScores.length ? Math.round(data.consistScores.reduce((s,v)=>s+v,0)/data.consistScores.length) : null;
+    const consistColor = avgConsist===null?'var(--muted)':avgConsist>=70?'var(--green)':avgConsist>=40?'var(--amber)':'var(--red)';
+    const onTrackColor = data.weeklyOnTrack >= data.stores.length ? 'var(--green)' : data.weeklyOnTrack > 0 ? 'var(--amber)' : 'var(--red)';
+    const jrOp = r2(data.stores.reduce((s,st) => s + (pd[st]?.jrShare30d||0), 0));
     return `<div class="card" style="padding:16px">
       <div style="font-weight:700;font-size:14px;margin-bottom:2px">${op}</div>
       <div style="font-size:10px;color:var(--muted);margin-bottom:12px">${data.stores.join(' · ')}</div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Stores managed</span><span style="font-weight:600">${data.stores.length}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Total listings</span><span style="font-weight:600">${data.totalList.toLocaleString()}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">All-time profit</span><span style="font-weight:600;color:var(--green)">${data.totalProfit>0?fmt$(data.totalProfit):'—'}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Avg profit/1k listings (all-time)</span><span style="font-weight:600;color:var(--violet)">${avgEff>0?fmt$(avgEff):'—'}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Profit MoM growth</span><span style="font-weight:600">${data.momTotal>0?data.momGrow+'/'+data.momTotal+' growing':'—'}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0"><span style="color:var(--muted)">Best profit/1k account</span><span style="font-weight:600;color:var(--cyan)">${bestStore||'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Last 30d profit (stores)</span><span style="font-weight:600;color:var(--green)">${data.rolling30>0?fmt$(data.rolling30):'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Avg profit/1k listings (30d)</span><span style="font-weight:600;color:var(--violet)">${avgEff>0?fmt$(avgEff):'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Listing consistency (14d)</span><span style="font-weight:600;color:${consistColor}">${avgConsist!==null?avgConsist+'% on-goal':'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">On pace this week</span><span style="font-weight:600;color:${onTrackColor}">${data.weeklyOnTrack}/${data.stores.length} stores</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Profit trend (30d)</span><span style="font-weight:600">${data.momTotal>0?data.momGrow+'/'+data.momTotal+' growing':'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Best profit/1k account</span><span style="font-weight:600;color:var(--cyan)">${bestStore||'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0"><span style="color:var(--muted)">J&R share (last 30d)</span><span style="font-weight:600;color:var(--emerald)">${jrOp>0?fmt$(jrOp):'—'}</span></div>
     </div>`;
   }).join('');
 

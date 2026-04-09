@@ -3666,8 +3666,27 @@ function arrMedian(arr) {
 // Shared personData for calculators
 let _growthPersonData = {};
 
+// ─── MONTHLY LISTING SNAPSHOT ─────────────────────────────────────────────────
+// Saves each store's listing count once per month so we can track listings→profit lag
+function saveMonthlyListingSnapshot() {
+  const now   = new Date();
+  const key   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const store = JSON.parse(localStorage.getItem('ebay_listing_snapshots') || '{}');
+  if (store[key]) return; // already saved this month
+  const { summary } = LISTING_DATA;
+  if (!summary || !summary.length) return;
+  store[key] = {};
+  summary.forEach(s => { store[key][s.store] = s.current; });
+  localStorage.setItem('ebay_listing_snapshots', JSON.stringify(store));
+}
+
+function getMonthlyListingSnapshots() {
+  return JSON.parse(localStorage.getItem('ebay_listing_snapshots') || '{}');
+}
+
 function renderGrowthPage() {
   const { summary, todayRow, dailyColNames, dailyHistory = [] } = LISTING_DATA;
+  saveMonthlyListingSnapshot();
 
   // Pre-compute today's hist entry so all stores use the same source
   const _todayD = new Date();
@@ -4415,7 +4434,9 @@ function renderGrowthPage() {
   // ════════════════════════════════════════════════════════
   // LISTING → PROFIT IMPACT (per store, rolling windows)
   // ════════════════════════════════════════════════════════
-  $('growth-corr-sub').textContent = `${dailyHistory.length} days of listing data · rolling windows`;
+  const _snapshots = getMonthlyListingSnapshots();
+  const _snapKeys  = Object.keys(_snapshots).sort();
+  $('growth-corr-sub').textContent = `${dailyHistory.length} days of listing data · ${_snapKeys.length} monthly snapshot${_snapKeys.length!==1?'s':''} saved`;
 
   // For each store: listings added last 7d, last 14d, last 30d vs profit in same windows
   const corrCards = summary.map(s => {
@@ -4497,7 +4518,38 @@ function renderGrowthPage() {
           </div>`}
         </div>`;
       }).join('')}
-    </div>`;
+    </div>
+    ${_snapKeys.length > 0 ? `
+    <div class="card" style="padding:16px;margin-top:12px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:4px">📸 Monthly Listing Snapshots</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px">End-of-month listing counts saved locally — will be used to measure listings → profit lag as months accumulate</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:5px 8px;color:var(--muted);border-bottom:1px solid var(--card-border)">Store</th>
+              ${_snapKeys.map(k=>`<th style="text-align:right;padding:5px 8px;color:var(--muted);border-bottom:1px solid var(--card-border)">${k}</th>`).join('')}
+              <th style="text-align:right;padding:5px 8px;color:var(--indigo);border-bottom:1px solid var(--card-border)">Now</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${summary.map(s => {
+              const nowCount = s.current;
+              return `<tr>
+                <td style="padding:5px 8px;font-weight:600;border-bottom:1px solid rgba(255,255,255,.04)">${s.store}</td>
+                ${_snapKeys.map(k => {
+                  const v = _snapshots[k]?.[s.store];
+                  return `<td style="text-align:right;padding:5px 8px;color:var(--text2);border-bottom:1px solid rgba(255,255,255,.04)">${v!=null?v.toLocaleString():'—'}</td>`;
+                }).join('')}
+                <td style="text-align:right;padding:5px 8px;font-weight:700;color:var(--indigo);border-bottom:1px solid rgba(255,255,255,.04)">${nowCount.toLocaleString()}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:8px;opacity:.7">Snapshots saved in your browser's localStorage · one per month · builds automatically</div>
+    </div>` : ''}
+  `;
 }
 
 // ─── SCALE CALCULATORS ────────────────────────────────────────────────────────
@@ -5654,8 +5706,8 @@ function openWeeklyWrap() {
 }
 
 // ─── BOOT ──────────────────────────────────────────────────────────────────
-setInterval(loadAll, 5 * 60 * 1000);
-setInterval(() => loadListingTracker(), 10 * 60 * 1000);
+setInterval(loadAll, 15 * 60 * 1000);
+setInterval(() => loadListingTracker(), 15 * 60 * 1000);
 // Load listing tracker immediately (no API key needed — public CSV export)
 loadListingTracker();
 if (checkApiKey()) loadAll();

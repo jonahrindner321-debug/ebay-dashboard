@@ -3728,10 +3728,7 @@ function renderGrowthPage() {
     const momentum = (last7Avg !== null && actualPace14 > 0) ? r2(last7Avg / actualPace14) : 1;
 
     // Weekly pacing — are they on track for the week?
-    const weeklyGoal   = s.dailyGoal * 7;
     const weekActual   = _last7.reduce((sum,d) => sum + (d.counts[s.store]||0), 0);
-    const weeklyGap    = weeklyGoal - weekActual; // positive = behind
-    const weeklyOnTrack = weeklyGap <= 0;
 
     // Rolling 30d transaction counts (for per-sale trend)
     const roll30Sales     = recs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).length;
@@ -3763,7 +3760,7 @@ function renderGrowthPage() {
       rolling30P, rolling30PrevP,
       totalGross, avgSalePrice, avgProfitPerSale, marginPct, sellThrough,
       daysSinceLastSale, consistencyPct, actualPace14,
-      last7Avg, momentum, weeklyGoal, weekActual, weeklyGap, weeklyOnTrack,
+      last7Avg, momentum, weekActual,
       roll30Sales, roll30PrevSales, roll30AvgProfit, roll30PrevAvgProfit, marginTrendPct
     };
   });
@@ -3817,7 +3814,6 @@ function renderGrowthPage() {
   const avgPer1k   = totalList > 0 && totalProf > 0 ? r2(totalProf / totalList * 1000) : 0;
   const totalToday = all.reduce((s,p) => s + (p.todayN || 0), 0);
   const jrTotal30d = r2(all.reduce((s,p) => s + p.jrShare30d, 0));
-  const storesOnTrack = all.filter(p => p.weeklyOnTrack).length;
 
   const byEff      = [...all].filter(p => p.current > 0).sort((a,b) => b.profitPer1k - a.profitPer1k);
   const growingCnt  = all.filter(p => p.roll30MomPct !== null && p.roll30MomPct > 0).length;
@@ -3836,7 +3832,7 @@ function renderGrowthPage() {
     <div class="growth-kpi-card">
       <div class="growth-kpi-label">Added Today</div>
       <div class="growth-kpi-val" style="color:var(--green)">${totalToday}</div>
-      <div class="growth-kpi-sub">${Math.round(totalToday/440*100)}% of 440 daily goal</div>
+      <div class="growth-kpi-sub">${totalGoal > 0 ? Math.round(totalToday/totalGoal*100)+'% of '+totalGoal+' network daily goal' : 'no goal set'}</div>
     </div>
     <div class="growth-kpi-card">
       <div class="growth-kpi-label">Avg Profit / 1k Listings</div>
@@ -4055,7 +4051,7 @@ function renderGrowthPage() {
   const ops = {};
   summary.forEach(s => {
     const op = s.operator || 'Unassigned';
-    if (!ops[op]) ops[op] = { stores:[], totalList:0, totalProfit:0, rolling30:0, effs:[], momGrow:0, momTotal:0, consistScores:[], weeklyOnTrack:0 };
+    if (!ops[op]) ops[op] = { stores:[], totalList:0, totalProfit:0, rolling30:0, effs:[], momGrow:0, momTotal:0, consistScores:[] };
     const p = pd[s.store];
     ops[op].stores.push(s.store);
     ops[op].totalList    += s.current;
@@ -4064,7 +4060,6 @@ function renderGrowthPage() {
     if (p.profitPer1k > 0) ops[op].effs.push(p.profitPer1k);
     if (p.roll30MomPct !== null) { ops[op].momTotal++; if (p.roll30MomPct > 0) ops[op].momGrow++; }
     if (p.consistencyPct !== null) ops[op].consistScores.push(p.consistencyPct);
-    if (p.weeklyOnTrack) ops[op].weeklyOnTrack++;
   });
   const opList = Object.entries(ops).sort((a,b)=>b[1].rolling30-a[1].rolling30);
   $('growth-operator-grid').innerHTML = opList.map(([op, data]) => {
@@ -4072,7 +4067,6 @@ function renderGrowthPage() {
     const bestStore = data.stores.reduce((best, s) => (pd[s].profitPer1k > (pd[best]?.profitPer1k||0)) ? s : best, data.stores[0]);
     const avgConsist = data.consistScores.length ? Math.round(data.consistScores.reduce((s,v)=>s+v,0)/data.consistScores.length) : null;
     const consistColor = avgConsist===null?'var(--muted)':avgConsist>=70?'var(--green)':avgConsist>=40?'var(--amber)':'var(--red)';
-    const onTrackColor = data.weeklyOnTrack >= data.stores.length ? 'var(--green)' : data.weeklyOnTrack > 0 ? 'var(--amber)' : 'var(--red)';
     const jrOp = r2(data.stores.reduce((s,st) => s + (pd[st]?.jrShare30d||0), 0));
     return `<div class="card" style="padding:16px">
       <div style="font-weight:700;font-size:14px;margin-bottom:2px">${op}</div>

@@ -2914,6 +2914,7 @@ function renderGoalTracker(data) {
 // ─── ACTIVITY HEATMAP ────────────────────────────────────────────────────────
 function renderHeatmap(data) {
   const section=$('heatmap-section'), container=$('heatmap-container');
+  if (!section || !container) return;
   const withDates = data.filter(r=>r.date);
   if (!withDates.length) { section.style.display='none'; return; }
   const byDate={};
@@ -2979,6 +2980,7 @@ function renderHeatmap(data) {
 // ─── 7-DAY MOMENTUM ──────────────────────────────────────────────────────────
 function renderMomentum(data) {
   const section=$('mom-section'), grid=$('mom-grid');
+  if (!section || !grid) return;
   const dd=getDailyData(data);
   if(dd.length<8){section.style.display='none';return;}
   const last7=dd.slice(-7), prior7=dd.slice(-14,-7);
@@ -3158,6 +3160,7 @@ function renderHealthScores(data) {
 // ─── DAY-OF-WEEK CHART ───────────────────────────────────────────────────────
 function renderDOWChart(data) {
   const section=$('dow-section');
+  if (!section) return;
   const dd=getDailyData(data);
   if(!dd.length){section.style.display='none';return;}
   const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -5421,9 +5424,10 @@ function _dmLoop(){
 
 // ─── HEAD-TO-HEAD ─────────────────────────────────────────────────────────────
 function renderH2H() {
+  const section = $('h2h-section'), card = $('h2h-card');
+  if (!section || !card) return;
   const data    = filtered();
   const persons = [...new Set(data.map(r => r.person))];
-  const section = $('h2h-section'), card = $('h2h-card');
   if (!persons.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';
 

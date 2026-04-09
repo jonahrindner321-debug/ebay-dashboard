@@ -3814,6 +3814,7 @@ function renderGrowthPage() {
   const avgPer1k   = totalList > 0 && totalProf > 0 ? r2(totalProf / totalList * 1000) : 0;
   const totalToday = all.reduce((s,p) => s + (p.todayN || 0), 0);
   const jrTotal30d = r2(all.reduce((s,p) => s + p.jrShare30d, 0));
+  const totalGoal  = summary.reduce((s,r) => s + (r.dailyGoal || 40), 0);
 
   const byEff      = [...all].filter(p => p.current > 0).sort((a,b) => b.profitPer1k - a.profitPer1k);
   const growingCnt  = all.filter(p => p.roll30MomPct !== null && p.roll30MomPct > 0).length;

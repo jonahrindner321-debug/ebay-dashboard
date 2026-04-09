@@ -2150,9 +2150,9 @@ async function loadAll() {
     setStatus('live', '● LIVE');
     populateFilters();
     renderAllTimeBanner();
-    applyFilters();
+    try { applyFilters(); } catch(e) { console.error('applyFilters error:', e); }
     $('audit-btn').style.display = '';
-    renderGrowthPage(); // refresh Growth tab profit data whenever ops data reloads
+    try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
     if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
     else showToast('Data refreshed', 'info', '🔄');
   } else {
@@ -2216,7 +2216,7 @@ function applyFilters() {
   renderTable(d);
   checkMilestones(r2(d.reduce((s,r)=>s+r.profit,0)));
   // Re-render Growth tab so month filter affects efficiency/profit views there too
-  if (LISTING_DATA.summary && LISTING_DATA.summary.length) renderGrowthPage();
+  if (LISTING_DATA.summary && LISTING_DATA.summary.length) { try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); } }
 }
 
 // ─── PROFIT SPLIT SUMMARY ─────────────────────────────────────────────────

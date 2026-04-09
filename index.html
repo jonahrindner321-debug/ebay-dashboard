@@ -2171,14 +2171,16 @@ function populateFilters() {
   mSel.innerHTML = '<option value="all">All Months</option>'   + months.map(m=>`<option value="${m}">${m}</option>`).join('');
   if (persons.includes(pv)) pSel.value = pv;
   if (months.includes(mv))  mSel.value = mv;
-  // Populate H2H dropdowns (preserve selection)
+  // Populate H2H dropdowns if they exist (section may have been removed)
   const h2hA = $('h2h-a'), h2hB = $('h2h-b');
-  const va = h2hA.value, vb = h2hB.value;
-  const opts = persons.map(p=>`<option value="${p}">${p}</option>`).join('');
-  h2hA.innerHTML = '<option value="">— Pick Account A —</option>' + opts;
-  h2hB.innerHTML = '<option value="">— Pick Account B —</option>' + opts;
-  if (persons.includes(va)) h2hA.value = va;
-  if (persons.includes(vb)) h2hB.value = vb;
+  if (h2hA && h2hB) {
+    const va = h2hA.value, vb = h2hB.value;
+    const opts = persons.map(p=>`<option value="${p}">${p}</option>`).join('');
+    h2hA.innerHTML = '<option value="">— Pick Account A —</option>' + opts;
+    h2hB.innerHTML = '<option value="">— Pick Account B —</option>' + opts;
+    if (persons.includes(va)) h2hA.value = va;
+    if (persons.includes(vb)) h2hB.value = vb;
+  }
 }
 function filtered() {
   const p = $('filter-person').value, m = $('filter-month').value;

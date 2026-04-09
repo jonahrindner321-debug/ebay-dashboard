@@ -1158,35 +1158,10 @@
     <div id="tab-accounts" class="chart-panel">
       <div class="cg2">
         <div class="card chart-box"><h3>💰 Profit by Account</h3><canvas id="chart-profit-person"></canvas></div>
-        <div class="card chart-box"><h3>📊 ROI % by Account</h3><canvas id="chart-roi"></canvas></div>
-      </div>
-      <div class="cg2 mt">
-        <div class="card chart-box"><h3>🔢 Sales Volume by Account</h3><canvas id="chart-volume"></canvas></div>
-        <div class="card chart-box"><h3>💵 Revenue by Account</h3><canvas id="chart-revenue-person"></canvas></div>
       </div>
     </div>
   </div>
 
-  <!-- Activity Heatmap -->
-  <div class="heatmap-section" id="heatmap-section" style="display:none">
-    <div class="section-hdr"><span class="section-title">🔥 Activity Heatmap</span></div>
-    <div class="card heatmap-card">
-      <div id="heatmap-container"></div>
-      <div class="heatmap-legend">Less <div class="heatmap-legend-cells" id="heatmap-legend"></div> More</div>
-    </div>
-  </div>
-
-  <!-- 7-Day Momentum -->
-  <div class="mom-section" id="mom-section" style="display:none">
-    <div class="section-hdr"><span class="section-title">⚡ 7-Day Momentum</span></div>
-    <div class="mom-grid" id="mom-grid"></div>
-  </div>
-
-  <!-- Day of Week -->
-  <div class="dow-section" id="dow-section" style="display:none">
-    <div class="section-hdr"><span class="section-title">📅 Profit by Day of Week</span></div>
-    <div class="card chart-box"><h3>Average profit per weekday (across all history)</h3><canvas id="chart-dow" style="max-height:220px"></canvas></div>
-  </div>
 
   <!-- Leaderboard -->
   <div class="lb-section" id="lb-section" style="display:none">
@@ -1201,16 +1176,6 @@
     <div class="health-grid" id="health-grid"></div>
   </div>
 
-  <!-- Head-to-Head -->
-  <div class="h2h-section" id="h2h-section" style="display:none">
-    <div class="section-hdr"><span class="section-title">⚔️ Head-to-Head</span></div>
-    <div class="h2h-selectors">
-      <select class="h2h-select" id="h2h-a" onchange="renderH2H()"><option value="">— Pick Account A —</option></select>
-      <span class="h2h-vs">VS</span>
-      <select class="h2h-select" id="h2h-b" onchange="renderH2H()"><option value="">— Pick Account B —</option></select>
-    </div>
-    <div class="card h2h-card" id="h2h-card"><div class="h2h-empty">Select two accounts above to compare them head-to-head ⚔️</div></div>
-  </div>
 
   <!-- Table -->
   <div class="tbl-section">
@@ -1227,9 +1192,7 @@
           <tr>
             <th onclick="sortBy('rank')">#</th>
             <th onclick="sortBy('person')">Account <span id="sh-person"></span></th>
-            <th onclick="sortBy('revenue')">Revenue <span id="sh-revenue"></span></th>
             <th onclick="sortBy('profit')">Profit <span id="sh-profit"></span></th>
-            <th onclick="sortBy('roi')">ROI <span id="sh-roi"></span></th>
             <th onclick="sortBy('fee')">Fees <span id="sh-fee"></span></th>
             <th onclick="sortBy('sales')">Sales <span id="sh-sales"></span></th>
             <th onclick="sortBy('avg_sale')">Avg Sale <span id="sh-avg_sale"></span></th>
@@ -1495,11 +1458,6 @@
     </div>
   </div>
 
-  <!-- Per-Account Intelligence -->
-  <div class="growth-section">
-    <div class="section-hdr"><span class="section-title">🧠 Per-Account Intelligence</span></div>
-    <div id="growth-account-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--gap)"></div>
-  </div>
 
   <!-- Correlation -->
   <div class="growth-section">
@@ -2466,28 +2424,6 @@ function renderKPIs(data) {
       </div>
     </div>
     <div class="card kpi-card">
-      <div class="kpi-top-bar" style="background:linear-gradient(90deg,#f59e0b,#fbbf24)"></div>
-      <div class="kpi-label">📈 Avg ROI</div>
-      <div class="kpi-body">
-        <div class="kpi-left">
-          <div class="kpi-val" id="kv-roi">${fmtP(roi)}</div>
-          <div class="kpi-sub">on cost basis</div>
-        </div>
-        <canvas class="kpi-sparkline-wrap" id="sp-roi" width="80" height="32"></canvas>
-      </div>
-    </div>
-    <div class="card kpi-card">
-      <div class="kpi-top-bar" style="background:linear-gradient(90deg,#6366f1,#8b5cf6)"></div>
-      <div class="kpi-label">💵 Total Revenue</div>
-      <div class="kpi-body">
-        <div class="kpi-left">
-          <div class="kpi-val" id="kv-rev">${fmt$(rev)}</div>
-          <div class="kpi-sub">${fmt$(avgDailyRev)}/day avg</div>
-        </div>
-        <canvas class="kpi-sparkline-wrap" id="sp-rev" width="80" height="32"></canvas>
-      </div>
-    </div>
-    <div class="card kpi-card">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#ef4444,#f87171)"></div>
       <div class="kpi-label">🏷️ eBay Fees</div>
       <div class="kpi-body">
@@ -2825,9 +2761,7 @@ function renderTable(data) {
     return `<tr>
       <td>${rankHtml}</td>
       <td><strong>${r.person}</strong>${r.inactive !== null && r.inactive >= 5 ? `<span style="color:var(--rose);font-size:9px;margin-left:5px;font-weight:700">⚠️${r.inactive}d</span>` : ''}</td>
-      <td>${fmt$(r.revenue)}</td>
       <td><strong style="color:${r.profit>=0?'var(--emerald)':'var(--rose)'}">${fmt$(r.profit)}</strong></td>
-      <td>${roiPill(r.roi)}</td>
       <td style="color:var(--muted)">${fmt$(r.fee)}</td>
       <td>${fmtN(r.sales)}</td>
       <td>${fmt$(r.avg_sale)}</td>

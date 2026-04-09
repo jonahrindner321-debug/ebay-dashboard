@@ -1329,7 +1329,7 @@
 
   <div class="footer">
     <div class="f-dot"></div>
-    Live · Auto-refreshes every 5 min · New monthly tabs detected automatically
+    Live · Auto-refreshes every 15 min · New monthly tabs detected automatically
   </div>
 </main>
 
@@ -1465,7 +1465,7 @@
     <div id="growth-corr-section"></div>
   </div>
 
-  <div class="footer"><div class="f-dot"></div>Growth Intelligence · Listing tracker refreshes every 10 min</div>
+  <div class="footer"><div class="f-dot"></div>Growth Intelligence · Listing tracker refreshes every 15 min</div>
 </div>
 
 <!-- Disco ball (party mode) -->
@@ -2439,14 +2439,11 @@ function renderKPIs(data) {
     drawSparkline($('sp-profit'), profitSpark,  '#10b981');
     drawSparkline($('sp-adp'),    profitSpark,  '#10b981');
     drawSparkline($('sp-today'),  salesSpark,   '#06b6d4');
-    drawSparkline($('sp-roi'),    roiSpark,     '#f59e0b');
-    drawSparkline($('sp-rev'),    revSpark,     '#6366f1');
     drawSparkline($('sp-fee'),    feeSpark,     '#ef4444');
     // Animated count-up on KPI values
     countUp($('kv-profit'), profit, 1000);
     countUp($('kv-adp'),    avgDailyProfit, 900);
     if (latestRows.length > 0) countUp($('kv-today'), todayProfit, 800);
-    countUp($('kv-rev'), rev, 1000);
     countUp($('kv-fee'), fee, 900);
   }, 60);
 }
@@ -3862,9 +3859,9 @@ function renderGrowthPage() {
       <div class="growth-kpi-sub">J&R share across all stores · rolling 30d profit</div>
     </div>
     <div class="growth-kpi-card">
-      <div class="growth-kpi-label">On Pace This Week</div>
-      <div class="growth-kpi-val" style="color:${storesOnTrack >= all.length*0.7?'var(--green)':'var(--amber)'}">${storesOnTrack}/${all.length}</div>
-      <div class="growth-kpi-sub">stores hitting weekly listing goal</div>
+      <div class="growth-kpi-label">Network Momentum</div>
+      <div class="growth-kpi-val" style="color:${all.filter(p=>p.momentum>1.1).length >= all.length*0.5?'var(--green)':all.filter(p=>p.momentum<0.7).length > all.length*0.4?'var(--red)':'var(--amber)'}">${all.filter(p=>p.momentum>1.1).length} accelerating</div>
+      <div class="growth-kpi-sub">${all.filter(p=>p.momentum<0.7).length} slowing · ${all.filter(p=>p.momentum>=0.7&&p.momentum<=1.1).length} steady · based on 7d vs 14d pace</div>
     </div>`;
 
   // ════════════════════════════════════════════════════════
@@ -3912,7 +3909,7 @@ function renderGrowthPage() {
             ${p.avgProfitPerSale>0?`<span style="color:var(--muted)">${fmt$(p.avgProfitPerSale)}/sale</span>`:''}
             ${p.sellThrough>0?`<span style="color:${p.sellThrough>=0.5?'var(--green)':p.sellThrough>=0.2?'var(--indigo)':'var(--muted)'}">${(p.sellThrough*100).toFixed(0)}% sell-through</span>`:''}
             ${p.daysSinceLastSale!==null?`<span style="color:${p.daysSinceLastSale>7?'var(--red)':p.daysSinceLastSale>3?'var(--amber)':'var(--green)'}">${p.daysSinceLastSale}d since sale</span>`:''}
-            ${p.consistencyPct!==null?`<span style="color:${p.consistencyPct>=70?'var(--green)':p.consistencyPct>=40?'var(--amber)':'var(--red)'}">${p.consistencyPct}% on-goal</span>`:''}
+            ${p.consistencyPct!==null?`<span style="color:${p.consistencyPct>=70?'var(--green)':p.consistencyPct>=40?'var(--amber)':'var(--red)'}">${p.consistencyPct}% active days (14d)</span>`:''}
             ${p.marginTrendPct!==null?`<span style="color:${p.marginTrendPct>=0?'var(--green)':'var(--red)'}">${p.marginTrendPct>=0?'↑':'↓'}margin/sale</span>`:''}
           </div>` : ''}
         </div>`;
@@ -3964,10 +3961,11 @@ function renderGrowthPage() {
     const hasAllTime = p.profitPerList > 0;
     const goalPace   = p.effDaily;
     const actualPace = p.actualPace14 !== null ? p.actualPace14 : goalPace;
+    const momLabel   = p.momentum > 1.3 ? '↑ accelerating' : p.momentum < 0.7 ? '↓ slowing' : '→ steady';
     const paceNote   = p.actualPace14 !== null
-      ? `goal ${goalPace.toFixed(1)}/day · actual ${actualPace.toFixed(1)}/day (14d)`
-      : `${goalPace.toFixed(1)}/day goal`;
-    const paceColor  = p.actualPace14 !== null && p.actualPace14 < goalPace * 0.7 ? 'var(--red)' : p.actualPace14 !== null && p.actualPace14 >= goalPace ? 'var(--green)' : 'var(--amber)';
+      ? `${actualPace.toFixed(1)}/day actual (14d avg) · ${momLabel} · goal: ${goalPace.toFixed(1)}/day`
+      : `${goalPace.toFixed(1)}/day goal pace (no history yet)`;
+    const paceColor  = p.momentum > 1.3 ? 'var(--green)' : p.momentum < 0.7 ? 'var(--red)' : p.actualPace14 !== null && p.actualPace14 >= goalPace * 0.85 ? 'var(--cyan)' : 'var(--amber)';
     // Order quality intel
     const intelBits = [];
     if (p.avgSalePrice > 0)      intelBits.push(`avg sale ${fmt$(p.avgSalePrice)}`);
@@ -3980,15 +3978,13 @@ function renderGrowthPage() {
     }
     if (p.consistencyPct !== null) {
       const cColor = p.consistencyPct >= 70 ? 'var(--green)' : p.consistencyPct >= 40 ? 'var(--amber)' : 'var(--red)';
-      intelBits.push(`<span style="color:${cColor}">${p.consistencyPct}% on-goal (14d)</span>`);
-    }
-    if (!p.weeklyOnTrack && p.weeklyGap > 0) {
-      intelBits.push(`<span style="color:var(--red)">⚠ ${p.weeklyGap} behind this week</span>`);
+      const cLabel = p.consistencyPct >= 70 ? 'listing most days' : p.consistencyPct >= 40 ? 'listing some days' : 'listing infrequently';
+      intelBits.push(`<span style="color:${cColor}">${p.consistencyPct}% active (14d) — ${cLabel}</span>`);
     }
     if (p.momentum < 0.7) {
-      intelBits.push(`<span style="color:var(--red)">↓ slowing (7d pace dropping)</span>`);
+      intelBits.push(`<span style="color:var(--red)">↓ pace dropping (7d below 14d avg)</span>`);
     } else if (p.momentum > 1.3) {
-      intelBits.push(`<span style="color:var(--green)">↑ accelerating</span>`);
+      intelBits.push(`<span style="color:var(--green)">↑ pace picking up</span>`);
     }
     if (p.marginTrendPct !== null && Math.abs(p.marginTrendPct) >= 10) {
       intelBits.push(`<span style="color:${p.marginTrendPct>=0?'var(--green)':'var(--red)'}">${p.marginTrendPct>=0?'↑':'↓'}${Math.abs(p.marginTrendPct).toFixed(0)}% margin/sale (30d)</span>`);
@@ -4022,7 +4018,7 @@ function renderGrowthPage() {
         </div>`;
       })() : ''}
       ${hasMonthly?`<div style="font-size:9px;color:var(--muted);border-top:1px solid var(--card-border);padding-top:6px;margin-top:6px;opacity:.7">extra profit/mo from those newly added listings · based on ${p.recentMoLabel} rate</div>`:''}
-      ${p.daysToTgt?`<div style="font-size:10px;color:var(--muted);margin-top:4px">~${p.daysToTgt} days to ${p.target.toLocaleString()} target at goal pace</div>`:''}
+      ${p.actualPace14 > 0 && p.remaining > 0 ? `<div style="font-size:10px;color:var(--muted);margin-top:4px">~${Math.ceil(p.remaining/p.actualPace14)} days to ${p.target.toLocaleString()} target at current pace</div>` : ''}
     </div>`;
   }).join('');
 
@@ -4086,8 +4082,8 @@ function renderGrowthPage() {
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">All-time profit</span><span style="font-weight:600;color:var(--green)">${data.totalProfit>0?fmt$(data.totalProfit):'—'}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Last 30d profit (stores)</span><span style="font-weight:600;color:var(--green)">${data.rolling30>0?fmt$(data.rolling30):'—'}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Avg profit/1k listings (30d)</span><span style="font-weight:600;color:var(--violet)">${avgEff>0?fmt$(avgEff):'—'}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Listing consistency (14d)</span><span style="font-weight:600;color:${consistColor}">${avgConsist!==null?avgConsist+'% on-goal':'—'}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">On pace this week</span><span style="font-weight:600;color:${onTrackColor}">${data.weeklyOnTrack}/${data.stores.length} stores</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Active listing days (14d)</span><span style="font-weight:600;color:${consistColor}">${avgConsist!==null?avgConsist+'% of days':'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Momentum (7d vs 14d)</span><span style="font-weight:600;color:${(() => { const accel = data.stores.filter(s=>pd[s]?.momentum>1.1).length; return accel >= data.stores.length*0.6 ? 'var(--green)' : accel > 0 ? 'var(--amber)' : 'var(--red)'; })()}">${data.stores.filter(s=>pd[s]?.momentum>1.1).length}/${data.stores.length} accelerating</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Profit trend (30d)</span><span style="font-weight:600">${data.momTotal>0?data.momGrow+'/'+data.momTotal+' growing':'—'}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--card-border)"><span style="color:var(--muted)">Best profit/1k account</span><span style="font-weight:600;color:var(--cyan)">${bestStore||'—'}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0"><span style="color:var(--muted)">J&R share (last 30d)</span><span style="font-weight:600;color:var(--emerald)">${jrOp>0?fmt$(jrOp):'—'}</span></div>

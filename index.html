@@ -4413,64 +4413,91 @@ function renderGrowthPage() {
   }).join('');
 
   // ════════════════════════════════════════════════════════
-  // CORRELATION SECTION
+  // LISTING → PROFIT IMPACT (per store, rolling windows)
   // ════════════════════════════════════════════════════════
-  if (dailyHistory.length < 14) {
-    const need = 14 - dailyHistory.length;
-    $('growth-corr-sub').textContent = `${need} more days of listing data needed`;
-    $('growth-corr-section').innerHTML = `
-      <div class="card" style="padding:32px;text-align:center">
-        <div style="font-size:48px;margin-bottom:12px">📊</div>
-        <div style="font-size:16px;font-weight:700;margin-bottom:8px">Correlation engine warming up…</div>
-        <div style="font-size:13px;color:var(--muted);max-width:460px;margin:0 auto;line-height:1.7">
-          Need ~2 weeks of daily listing logs to find patterns.
-          You have <strong style="color:var(--indigo)">${dailyHistory.length} day${dailyHistory.length!==1?'s':''}</strong> so far.
-          Once populated, this will show you exactly how many days after adding listings before profit moves.
-        </div>
-        <div style="margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-          ${['🎯 Listings week N vs profit week N+2','📉 Lag days per account','💡 Personalized projection engine'].map(t=>`<div style="background:var(--glass);border-radius:8px;padding:10px 16px;font-size:11px;color:var(--muted)">${t}</div>`).join('')}
-        </div>
-      </div>`;
-  } else {
-    $('growth-corr-sub').textContent = `${dailyHistory.length} days · building correlation`;
-    const weekBuckets = {};
-    summary.forEach(s => {
-      const personRaw = RAW.filter(r=>r.person===(LISTING_NAME_MAP[s.store]||s.store));
-      const weeks = {};
-      dailyHistory.forEach(d => {
-        const wk = `${d.date.getFullYear()}-W${Math.ceil(d.date.getDate()/7)}`;
-        if (!weeks[wk]) weeks[wk] = { listings:0, dateStart:d.date };
-        weeks[wk].listings += d.counts[s.store] || 0;
-      });
-      const pts = [];
-      Object.values(weeks).forEach(wd => {
-        const fDate = new Date(wd.dateStart.getTime() + 14*86400000);
-        const fKey  = fDate.toISOString().substring(0,7);
-        const fProf = personRaw.filter(r=>r.date&&r.date.substring(0,7)===fKey).reduce((s,r)=>s+r.profit,0);
-        if (wd.listings > 0 && fProf > 0) pts.push({ x:wd.listings, y:fProf });
-      });
-      if (pts.length > 0) weekBuckets[s.store] = pts;
-    });
-    const datasets = Object.entries(weekBuckets).map(([name,pts],i) => ({
-      label:name, data:pts, backgroundColor:COLORS[i%COLORS.length]+'99', pointRadius:7
-    }));
-    if (!datasets.length) {
-      $('growth-corr-section').innerHTML = `<div class="card" style="padding:24px;text-align:center;color:var(--muted)">More data accumulating — check back soon</div>`;
-    } else {
-      $('growth-corr-section').innerHTML = `<div class="card chart-box" style="padding:20px;min-height:320px"><canvas id="chart-corr"></canvas></div>`;
-      if (_growthCharts.corr) _growthCharts.corr.destroy();
-      const ctx3 = document.getElementById('chart-corr');
-      if (ctx3) _growthCharts.corr = new Chart(ctx3, {
-        type:'scatter', data:{ datasets },
-        options:{ responsive:true, maintainAspectRatio:false,
-          plugins:{ legend:{labels:{color:'var(--text2)',font:{size:11}}},
-            title:{display:true,text:'Listings Added (Week N) vs Profit 2 Weeks Later',color:'var(--text2)',font:{size:12}} },
-          scales:{ x:{title:{display:true,text:'Listings Added',color:'var(--muted)'},ticks:{color:'var(--text2)'},grid:{color:'rgba(255,255,255,.05)'}},
-            y:{title:{display:true,text:'Profit ($)',color:'var(--muted)'},ticks:{color:'var(--text2)',callback:v=>'$'+v},grid:{color:'rgba(255,255,255,.05)'}} }
-        }
-      });
-    }
-  }
+  $('growth-corr-sub').textContent = `${dailyHistory.length} days of listing data · rolling windows`;
+
+  // For each store: listings added last 7d, last 14d, last 30d vs profit in same windows
+  const corrCards = summary.map(s => {
+    const p = pd[s.store];
+    if (!p) return null;
+    const recs = p.recs;
+    const _now = new Date();
+
+    const cut7  = new Date(_now); cut7.setDate(_now.getDate()-7);
+    const cut14 = new Date(_now); cut14.setDate(_now.getDate()-14);
+    const cut30 = new Date(_now); cut30.setDate(_now.getDate()-30);
+
+    const list7  = dailyHistory.filter(d=>d.date>=cut7).reduce((s,d)=>s+(d.counts[s.store]||0),0);
+    const list14 = dailyHistory.filter(d=>d.date>=cut14).reduce((s,d)=>s+(d.counts[s.store]||0),0);
+    const list30 = dailyHistory.filter(d=>d.date>=cut30).reduce((s,d)=>s+(d.counts[s.store]||0),0);
+
+    // Fix: use s.store not s inside reduce
+    const _l7  = dailyHistory.filter(d=>(_now-d.date)/86400000<=7).reduce((sum,d)=>sum+(d.counts[s.store]||0),0);
+    const _l14 = dailyHistory.filter(d=>(_now-d.date)/86400000<=14).reduce((sum,d)=>sum+(d.counts[s.store]||0),0);
+    const _l30 = dailyHistory.filter(d=>(_now-d.date)/86400000<=30).reduce((sum,d)=>sum+(d.counts[s.store]||0),0);
+
+    const _p7  = r2(recs.filter(r=>r.date&&new Date(r.date+'T00:00:00')>=cut7).reduce((s,r)=>s+r.profit,0));
+    const _p14 = r2(recs.filter(r=>r.date&&new Date(r.date+'T00:00:00')>=cut14).reduce((s,r)=>s+r.profit,0));
+    const _p30 = p.rolling30P;
+
+    // Implied $/listing in each window (how much profit each listed item is generating now)
+    const imp7  = _l7>0  && _p7>0  ? r2(_p7/_l7)   : null;
+    const imp14 = _l14>0 && _p14>0 ? r2(_p14/_l14) : null;
+    const imp30 = _l30>0 && _p30>0 ? r2(_p30/_l30) : null;
+
+    // Trend: is implied $/listing improving or falling?
+    const trend = (imp7!==null && imp30!==null) ? r2((imp7-imp30)/imp30*100) : null;
+    const trendColor = trend===null?'var(--muted)':trend>=10?'var(--green)':trend>=-10?'var(--amber)':'var(--red)';
+    const trendLabel = trend===null?'—':trend>=0?`↑${trend.toFixed(0)}% efficiency`:`↓${Math.abs(trend).toFixed(0)}% efficiency`;
+
+    // Color the best implied rate
+    const maxImp = Math.max(imp7||0, imp14||0, imp30||0);
+
+    return { store:s.store, _l7, _l14, _l30, _p7, _p14, _p30, imp7, imp14, imp30, trend, trendColor, trendLabel, maxImp, p };
+  }).filter(Boolean);
+
+  $('growth-corr-section').innerHTML = `
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;padding:10px 14px;background:var(--glass);border-radius:8px;line-height:1.7">
+      <strong style="color:var(--text2)">How to read this:</strong> Each window shows listings added vs profit earned in that same period.
+      <strong style="color:var(--indigo)">$/listing</strong> = how much profit each listed item is generating right now.
+      Trend compares your 7-day efficiency to your 30-day baseline — rising means your recent listings are paying off faster.
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">
+      ${corrCards.map(c => {
+        const hasData = c._l7>0 || c._l14>0 || c._l30>0;
+        const rows = [
+          { label:'Last 7 days',  listings:c._l7,  profit:c._p7,  imp:c.imp7  },
+          { label:'Last 14 days', listings:c._l14, profit:c._p14, imp:c.imp14 },
+          { label:'Last 30 days', listings:c._l30, profit:c._p30, imp:c.imp30 },
+        ];
+        return `<div class="card" style="padding:16px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+            <div>
+              <div style="font-weight:700;font-size:13px">${c.store}</div>
+              <div style="font-size:10px;color:var(--muted)">${c.p.operator}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:11px;font-weight:700;color:${c.trendColor}">${c.trendLabel}</div>
+              <div style="font-size:9px;color:var(--muted)">7d vs 30d efficiency</div>
+            </div>
+          </div>
+          ${!hasData ? `<div style="font-size:11px;color:var(--muted);text-align:center;padding:12px 0">No listing history yet</div>` : `
+          <div style="display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:4px;font-size:10px">
+            <div style="color:var(--muted);padding:3px 0"></div>
+            <div style="color:var(--muted);text-align:center;padding:3px 0;font-weight:600">Listed</div>
+            <div style="color:var(--muted);text-align:center;padding:3px 0;font-weight:600">Profit</div>
+            <div style="color:var(--muted);text-align:center;padding:3px 0;font-weight:600">$/listing</div>
+            ${rows.map(row => `
+              <div style="color:var(--muted);padding:4px 0;font-size:9px">${row.label}</div>
+              <div style="text-align:center;padding:4px 0;font-weight:600">${row.listings||'—'}</div>
+              <div style="text-align:center;padding:4px 0;font-weight:600;color:var(--green)">${row.profit>0?fmt$(row.profit):'—'}</div>
+              <div style="text-align:center;padding:4px 0;font-weight:700;color:${row.imp!==null&&row.imp===c.maxImp?'var(--indigo)':'var(--text2)'}">${row.imp!==null?fmt$(row.imp):'—'}</div>
+            `).join('')}
+          </div>`}
+        </div>`;
+      }).join('')}
+    </div>`;
 }
 
 // ─── SCALE CALCULATORS ────────────────────────────────────────────────────────

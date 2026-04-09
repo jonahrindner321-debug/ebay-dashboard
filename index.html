@@ -3607,12 +3607,22 @@ let _growthPersonData = {};
 function saveMonthlyListingSnapshot() {
   const now   = new Date();
   const key   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const store = JSON.parse(localStorage.getItem('ebay_listing_snapshots') || '{}');
-  if (store[key]) return; // already saved this month
-  const { summary } = LISTING_DATA;
+  const { summary, dailyHistory = [] } = LISTING_DATA;
   if (!summary || !summary.length) return;
+
+  // Migrate: if snapshots were saved without _version (old format used s.current = total listings
+  // including pre-tracker inventory), wipe them so they re-save with only tracked additions.
+  let store = JSON.parse(localStorage.getItem('ebay_listing_snapshots') || '{}');
+  if (store._version !== 2) {
+    store = { _version: 2 };
+  }
+
+  if (store[key]) return; // already saved this month with correct data
   store[key] = {};
-  summary.forEach(s => { store[key][s.store] = s.current; });
+  summary.forEach(s => {
+    // Sum only the daily additions recorded by the tracker — excludes pre-existing inventory
+    store[key][s.store] = dailyHistory.reduce((sum, d) => sum + (d.counts[s.store] || 0), 0);
+  });
   localStorage.setItem('ebay_listing_snapshots', JSON.stringify(store));
 }
 
@@ -4464,7 +4474,8 @@ function renderGrowthPage() {
           </thead>
           <tbody>
             ${summary.map(s => {
-              const nowCount = s.current;
+              // Cumulative additions since tracker began — excludes pre-existing inventory
+              const nowCount = dailyHistory.reduce((sum, d) => sum + (d.counts[s.store] || 0), 0);
               return `<tr>
                 <td style="padding:5px 8px;font-weight:600;border-bottom:1px solid rgba(255,255,255,.04)">${s.store}</td>
                 ${_snapKeys.map(k => {

@@ -4330,7 +4330,7 @@ function renderGrowthPage() {
   // ════════════════════════════════════════════════════════
   // PER-ACCOUNT INTELLIGENCE CARDS
   // ════════════════════════════════════════════════════════
-  $('growth-account-grid').innerHTML = all.map(p => {
+  if (!$('growth-account-grid')) { /* section removed */ } else $('growth-account-grid').innerHTML = all.map(p => {
     const pct  = Math.min(100,Math.round(p.current/p.target*100));
     const todC = p.todayN===null?'var(--muted)':p.todayN>=40?'var(--green)':'var(--amber)';
     const velAvg = dailyHistory.length > 0 ? (p.histForStore/dailyHistory.length).toFixed(1) : '—';

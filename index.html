@@ -59,6 +59,23 @@
       --shadow-lg: 0 8px 48px rgba(0,0,0,.12);
     }
 
+    /* ── TikTok Mode ── */
+    .tiktok-mode {
+      --indigo: #ff2d55;
+      --violet: #ff6b9d;
+      --cyan:   #fe2c55;
+      --green:  #25f4ee;
+      --emerald:#25f4ee;
+      --header-bg: rgba(15,4,12,.92);
+      --bg:  #0f040c;
+      --bg2: #1a0611;
+    }
+    .tiktok-mode .logo-icon {
+      background: linear-gradient(135deg, #ff2d55, #ff6b9d) !important;
+      box-shadow: 0 0 16px rgba(255,45,85,.5) !important;
+    }
+    .tiktok-mode .orb { opacity: .08; }
+
     /* ── Pastel Theme ── */
     [data-theme="pastel"] {
       --bg: #fdf4ff;
@@ -922,6 +939,13 @@
     <button class="page-nav-btn" id="page-btn-growth" onclick="switchPage('growth')">📦 Growth</button>
   </div>
 
+  <!-- Channel switcher — hidden until TikTok data loads -->
+  <div id="channel-switcher" style="display:none;align-items:center;gap:6px;padding:4px;background:var(--glass);border:1px solid var(--card-border);border-radius:24px">
+    <button id="ch-all"     onclick="setChannelFilter('all')"     style="padding:4px 14px;border-radius:20px;border:none;font-size:11px;font-weight:700;cursor:pointer;background:var(--indigo);color:#fff;transition:all .2s">All</button>
+    <button id="ch-ebay"    onclick="setChannelFilter('ebay')"    style="padding:4px 14px;border-radius:20px;border:none;font-size:11px;font-weight:700;cursor:pointer;background:transparent;color:var(--muted);transition:all .2s">eBay</button>
+    <button id="ch-tiktok"  onclick="setChannelFilter('tiktok')"  style="padding:4px 14px;border-radius:20px;border:none;font-size:11px;font-weight:700;cursor:pointer;background:transparent;color:#ff6b9d;transition:all .2s">⟡ TikTok</button>
+  </div>
+
   <div class="header-mid">
     <div class="status-pill">
       <div class="s-dot" id="s-dot"></div>
@@ -950,7 +974,6 @@
     <button class="btn btn-primary" onclick="loadAll()"><span id="ri">↻</span> Refresh</button>
     <button class="btn btn-ghost" id="theme-btn" onclick="cycleTheme()" title="Switch theme">🌙</button>
     <button class="btn btn-ghost" id="party-btn" onclick="toggleParty()">🎉 Party</button>
-    <button class="btn btn-ghost" id="destroy-btn" onclick="toggleDestroy()" style="border-color:rgba(239,68,68,.4);color:#ef4444">💥 Destroy</button>
     <button class="btn btn-ghost" onclick="changeKey()">⚙ Key</button>
     <button class="btn btn-ghost" id="audit-btn" onclick="openAudit()" style="display:none">🔍 Audit</button>
     <button class="btn btn-ghost" onclick="openClientView()" style="border-color:rgba(16,185,129,.4);color:var(--green)">👤 Client View</button>
@@ -1340,14 +1363,6 @@
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
     <span style="font-size:11px;color:var(--muted)" id="listing-last-updated"></span>
     <button onclick="loadListingTracker(true)" style="background:var(--glass);border:1px solid var(--glass-border);color:var(--text2);cursor:pointer;padding:5px 14px;border-radius:8px;font-size:12px;font-weight:500;transition:all .2s" onmouseover="this.style.background='var(--glass-hover)'" onmouseout="this.style.background='var(--glass)'">↻ Refresh Listings</button>
-  </div>
-
-  <!-- Channel toggle — only rendered when TikTok data exists -->
-  <div id="channel-toggle-row" style="display:none;margin-bottom:14px;gap:8px;align-items:center">
-    <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Channel:</span>
-    <button id="ch-btn-all"     onclick="setChannelFilter('all')"     style="padding:5px 16px;border-radius:20px;border:1px solid var(--card-border);font-size:12px;font-weight:600;cursor:pointer;background:var(--indigo);color:#fff">All</button>
-    <button id="ch-btn-ebay"    onclick="setChannelFilter('ebay')"    style="padding:5px 16px;border-radius:20px;border:1px solid var(--card-border);font-size:12px;font-weight:600;cursor:pointer;background:var(--glass);color:var(--text2)">eBay</button>
-    <button id="ch-btn-tiktok"  onclick="setChannelFilter('tiktok')"  style="padding:5px 16px;border-radius:20px;border:1px solid #ff6b9d44;font-size:12px;font-weight:600;cursor:pointer;background:var(--glass);color:#ff6b9d">⟡ TikTok</button>
   </div>
 
   <!-- Hero KPIs -->
@@ -2163,6 +2178,7 @@ async function loadAll() {
     renderAllTimeBanner();
     try { applyFilters(); } catch(e) { console.error('applyFilters error:', e); }
     $('audit-btn').style.display = '';
+    updateChannelSwitcherVisibility();
     try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
     if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
     else showToast('Data refreshed', 'info', '🔄');
@@ -2201,7 +2217,8 @@ function filtered() {
     (p==='all' || r.person===p) &&
     (m==='all' || r.month===m)  &&
     (!df || !r.date || r.date >= df) &&
-    (!dt || !r.date || r.date <= dt)
+    (!dt || !r.date || r.date <= dt) &&
+    (CHANNEL_FILTER === 'all' || (CHANNEL_FILTER === 'tiktok' ? r.channel === 'tiktok' : r.channel !== 'tiktok'))
   );
 }
 function clearDates() {
@@ -3645,14 +3662,38 @@ function getMonthlyListingSnapshots() {
 
 function setChannelFilter(ch) {
   CHANNEL_FILTER = ch;
+
+  // Body class for full UI swap
+  document.body.classList.toggle('tiktok-mode', ch === 'tiktok');
+
+  // Update logo icon & sub
+  const logoIcon = document.querySelector('.logo-icon');
+  const logoSub  = document.querySelector('.logo-sub');
+  if (logoIcon) logoIcon.textContent = ch === 'tiktok' ? '⟡' : '📦';
+  if (logoSub)  logoSub.textContent  = ch === 'tiktok' ? 'TikTok Sales' : ch === 'ebay' ? 'eBay Only' : 'Operations Dashboard';
+
+  // Update button active states
   ['all','ebay','tiktok'].forEach(c => {
-    const btn = $('ch-btn-'+c);
+    const btn = $('ch-'+c);
     if (!btn) return;
     const active = c === ch;
-    btn.style.background = active ? (c === 'tiktok' ? '#ff6b9d' : 'var(--indigo)') : 'var(--glass)';
-    btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--text2)');
+    if (active) {
+      btn.style.background = c === 'tiktok' ? '#ff2d55' : 'var(--indigo)';
+      btn.style.color = '#fff';
+    } else {
+      btn.style.background = 'transparent';
+      btn.style.color = c === 'tiktok' ? '#ff6b9d' : 'var(--muted)';
+    }
   });
-  try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
+
+  // Re-render ops page with new filter
+  try { applyFilters(); } catch(e) { console.error('applyFilters error:', e); }
+}
+
+function updateChannelSwitcherVisibility() {
+  const hasTiktok = RAW.some(r => r.channel === 'tiktok');
+  const sw = $('channel-switcher');
+  if (sw) sw.style.display = hasTiktok ? 'flex' : 'none';
 }
 
 function renderGrowthPage() {
@@ -3693,10 +3734,9 @@ function renderGrowthPage() {
   const pd = {}; // personData keyed by tracker store name
   summary.forEach(s => {
     const dashName = LISTING_NAME_MAP[s.store] || s.store;
-    const allRecs    = RAW.filter(r => r.person === dashName);
-    const tiktokRecs = allRecs.filter(r => r.channel === 'tiktok');
-    const ebayRecs   = allRecs.filter(r => r.channel !== 'tiktok');
-    const recs       = CHANNEL_FILTER === 'tiktok' ? tiktokRecs : CHANNEL_FILTER === 'ebay' ? ebayRecs : allRecs;
+    const recs = RAW.filter(r => r.person === dashName);
+    const tiktokRecs = recs.filter(r => r.channel === 'tiktok');
+    const ebayRecs   = recs.filter(r => r.channel !== 'tiktok');
 
     // Profit / revenue / sales totals (always all-time for reference)
     const totalProfit  = r2(recs.reduce((sum,r) => sum + r.profit, 0));
@@ -3908,26 +3948,7 @@ function renderGrowthPage() {
       <div class="growth-kpi-val" style="color:${all.filter(p=>p.momentum>1.1).length >= all.length*0.5?'var(--green)':all.filter(p=>p.momentum<0.7).length > all.length*0.4?'var(--red)':'var(--amber)'}">${all.filter(p=>p.momentum>1.1).length} accelerating</div>
       <div class="growth-kpi-sub">${all.filter(p=>p.momentum<0.7).length} slowing · ${all.filter(p=>p.momentum>=0.7&&p.momentum<=1.1).length} steady · based on 7d vs 14d pace</div>
     </div>
-    ${totalTiktok30d > 0 ? `<div class="growth-kpi-card" style="border-color:#ff6b9d44">
-      <div class="growth-kpi-label" style="color:#ff6b9d">⟡ TikTok Revenue (30d)</div>
-      <div class="growth-kpi-val" style="color:#ff6b9d">${fmt$(totalTiktok30d)}</div>
-      <div class="growth-kpi-sub">eBay: ${fmt$(totalEbay30d)} · TikTok: ${fmt$(totalTiktok30d)} · combined: ${fmt$(r2(totalTiktok30d+totalEbay30d))}</div>
     </div>` : ''}`;
-
-  // Show/hide channel toggle based on whether TikTok data exists in RAW
-  const hasTiktokData = RAW.some(r => r.channel === 'tiktok');
-  const toggleRow = $('channel-toggle-row');
-  if (toggleRow) {
-    toggleRow.style.display = hasTiktokData ? 'flex' : 'none';
-    // Sync button active states to current filter
-    ['all','ebay','tiktok'].forEach(c => {
-      const btn = $('ch-btn-'+c);
-      if (!btn) return;
-      const active = c === CHANNEL_FILTER;
-      btn.style.background = active ? (c === 'tiktok' ? '#ff6b9d' : 'var(--indigo)') : 'var(--glass)';
-      btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--text2)');
-    });
-  }
 
   // ════════════════════════════════════════════════════════
   // SCALE INTELLIGENCE — who to bet on
@@ -4059,7 +4080,6 @@ function renderGrowthPage() {
       <div style="font-size:10px;margin-bottom:4px"><span style="color:${paceColor}">${paceNote}</span></div>
       ${hasMonthly ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px;line-height:1.7">
         <strong style="color:var(--text2)">${p.recentMoLabel} profit:</strong> ${fmt$(p.recentMoProfit)} ÷ ${p.current.toLocaleString()} listings = <strong style="color:var(--indigo)">${fmt$(p.profitPerListMo)}/listing/mo</strong>
-        ${CHANNEL_FILTER === 'all' && p.rolling30Tiktok > 0 ? `<br><span style="color:#ff6b9d">⟡ TikTok</span> <strong style="color:#ff6b9d">${fmt$(p.rolling30Tiktok)}</strong> · <span style="color:var(--cyan)">eBay</span> <strong style="color:var(--cyan)">${fmt$(p.rolling30Ebay)}</strong> <span style="opacity:.5">(last 30d)</span>` : ''}
       </div>` : (!hasAllTime ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px">No profit data yet — projections unavailable</div>` : '')}
       ${intelBits.length ? `<div style="font-size:9px;color:var(--muted);margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px">${intelBits.join('<span style="opacity:.4">·</span>')}</div>` : ''}
       <div style="font-size:9px;color:var(--muted);margin-bottom:2px;opacity:.6">if you keep listing at current pace →</div>
@@ -4800,7 +4820,9 @@ function renderClientView(personName) {
   const ownerPctLabel = isJacob ? '10%' : '50%';
   const displayName   = personName === 'John Slop' ? 'Sloop' : personName;
 
-  const recs         = RAW.filter(r => r.person === personName);
+  const isTikTokMode  = CHANNEL_FILTER === 'tiktok';
+  const recs         = RAW.filter(r => r.person === personName &&
+    (CHANNEL_FILTER === 'all' || (isTikTokMode ? r.channel === 'tiktok' : r.channel !== 'tiktok')));
   const allTimeProfit = r2(recs.reduce((s,r) => s + r.profit, 0));
   const myAllTime     = r2(allTimeProfit * ownerPct);
 
@@ -4882,10 +4904,10 @@ function renderClientView(personName) {
       <!-- Header -->
       <div style="background:var(--card);border-bottom:1px solid var(--card-border);padding:16px 24px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10">
         <div style="display:flex;align-items:center;gap:12px">
-          <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--emerald));display:flex;align-items:center;justify-content:center;font-size:18px">📦</div>
+          <div style="width:36px;height:36px;border-radius:10px;background:${isTikTokMode?'linear-gradient(135deg,#ff2d55,#ff6b9d)':'linear-gradient(135deg,var(--green),var(--emerald))'};display:flex;align-items:center;justify-content:center;font-size:18px">${isTikTokMode?'⟡':'📦'}</div>
           <div>
             <div style="font-weight:800;font-size:16px">${displayName}</div>
-            <div style="font-size:11px;color:var(--muted)">Your Store · ${ownerPctLabel} profit share</div>
+            <div style="font-size:11px;color:var(--muted)">${isTikTokMode?'TikTok':'Your Store'} · ${ownerPctLabel} profit share</div>
           </div>
         </div>
         <button onclick="closeClientView()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--rose);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">✕ Exit</button>
@@ -4914,15 +4936,15 @@ function renderClientView(personName) {
             <div style="font-size:36px;font-weight:900;color:var(--cyan)">${myAllTime > 0 ? fmt$(myAllTime) : '—'}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">your total since day one</div>
           </div>
-          ${myProjNow !== null ? `<div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(139,92,246,.1),rgba(99,102,241,.06));border:1px solid rgba(139,92,246,.2)">
+          ${(!isTikTokMode && myProjNow !== null) ? `<div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(139,92,246,.1),rgba(99,102,241,.06));border:1px solid rgba(139,92,246,.2)">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Projected Monthly</div>
             <div style="font-size:36px;font-weight:900;color:var(--violet)">${fmt$(myProjNow)}<span style="font-size:14px;font-weight:400">/mo</span></div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">at current ${current.toLocaleString()} listings · ${latestMo || 'recent'} rate</div>
           </div>` : ''}
         </div>
 
-        <!-- Listings Progress -->
-        <div class="card" style="padding:20px">
+        <!-- Listings Progress — eBay only (listings are an eBay metric) -->
+        ${!isTikTokMode ? `<div class="card" style="padding:20px">
           <div style="font-size:13px;font-weight:700;margin-bottom:16px">📦 Your Store Listings</div>
           <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px">
             <div>
@@ -4984,6 +5006,30 @@ function renderClientView(personName) {
             </div>` : ''}
           </div>
           <div style="margin-top:12px;font-size:10px;color:var(--muted);opacity:.7">⚠️ Projections are estimates before shared expense deductions</div>
+        </div>` : ''}` : ''}
+
+        <!-- TikTok channel callout (only in TikTok mode) -->
+        ${isTikTokMode ? `<div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(255,45,85,.1),rgba(254,44,85,.05));border:1px solid rgba(255,45,85,.25)">
+          <div style="font-size:13px;font-weight:700;margin-bottom:12px">⟡ TikTok Shop Breakdown</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="padding:12px;background:rgba(255,255,255,.04);border-radius:8px;text-align:center">
+              <div style="font-size:10px;color:var(--muted);margin-bottom:4px">TOTAL SALES</div>
+              <div style="font-size:24px;font-weight:900;color:#ff2d55">${fmtN(recs.length)}</div>
+            </div>
+            <div style="padding:12px;background:rgba(255,255,255,.04);border-radius:8px;text-align:center">
+              <div style="font-size:10px;color:var(--muted);margin-bottom:4px">AVG SALE VALUE</div>
+              <div style="font-size:24px;font-weight:900;color:#25f4ee">${fmt$(recs.length ? r2(recs.reduce((s,r)=>s+r.price,0)/recs.length) : 0)}</div>
+            </div>
+            <div style="padding:12px;background:rgba(255,255,255,.04);border-radius:8px;text-align:center">
+              <div style="font-size:10px;color:var(--muted);margin-bottom:4px">TOTAL REVENUE</div>
+              <div style="font-size:24px;font-weight:900;color:#ff6b9d">${fmt$(r2(recs.reduce((s,r)=>s+r.price,0)))}</div>
+            </div>
+            <div style="padding:12px;background:rgba(255,255,255,.04);border-radius:8px;text-align:center">
+              <div style="font-size:10px;color:var(--muted);margin-bottom:4px">MARGIN</div>
+              <div style="font-size:24px;font-weight:900;color:#25f4ee">${(() => { const rev=r2(recs.reduce((s,r)=>s+r.price,0)); const prof=r2(recs.reduce((s,r)=>s+r.profit,0)); return rev>0?fmtP(r2(prof/rev*100)):'—'; })()}</div>
+            </div>
+          </div>
+          <div style="margin-top:12px;font-size:10px;color:var(--muted)">⟡ TikTok Shop data · listing-based projections not applicable</div>
         </div>` : ''}
 
         <!-- Monthly Breakdown -->
@@ -5005,8 +5051,8 @@ function renderClientView(personName) {
           }).join('')}
         </div>` : ''}
 
-        <!-- Scale Calculator -->
-        ${profitPerListMo > 0 ? `<div class="card" style="padding:20px">
+        <!-- Scale Calculator — eBay only -->
+        ${(!isTikTokMode && profitPerListMo > 0) ? `<div class="card" style="padding:20px">
           <div style="font-size:13px;font-weight:700;margin-bottom:4px">🔢 Scale Calculator</div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:16px">Drag to see your projected take-home at any listing count</div>
           <input type="range" id="scale-slider" min="${Math.max(1,current)}" max="${calcMax}" value="${current}" step="50"
@@ -5038,7 +5084,7 @@ function renderClientView(personName) {
         </div>` : ''}
 
         <div style="text-align:center;font-size:11px;color:var(--muted);padding-top:8px">
-          Data updates whenever the dashboard refreshes · your ${ownerPctLabel} share is calculated from store profit after eBay fees
+          Data updates whenever the dashboard refreshes · your ${ownerPctLabel} share is calculated from store profit after ${isTikTokMode ? 'TikTok' : 'eBay'} fees
         </div>
       </div>
     </div>`;
@@ -5220,275 +5266,6 @@ function toggleParty() {
   }
 }
 
-// ─── DESTRUCTION MODE ─────────────────────────────────────────────────────────
-let _dm = false, _dmCanvas, _dmCtx, _dmRaf, _dmShip, _dmBullets=[], _dmParticles=[], _dmKeys={}, _dmCardHP=new Map(), _dmScore=0, _dmKilled=0, _dmPlayerHP=3, _dmBossBullets=[], _dmBossShootTimer=0, _dmInvincible=0;
-const _DM_SHIP=14, _DM_BSPD=9, _DM_FRIC=0.97, _DM_ROT=0.055, _DM_THRUST=0.18, _DM_COOLDOWN=10;
-
-// ── Web Audio sound engine ──
-function _dmAC() { if(!window.__dmAC) window.__dmAC=new AudioContext(); return window.__dmAC; }
-function _dmPlayLaser() {
-  try {
-    const ac=_dmAC(), o=ac.createOscillator(), g=ac.createGain();
-    o.connect(g); g.connect(ac.destination);
-    o.type='square';
-    o.frequency.setValueAtTime(900,ac.currentTime);
-    o.frequency.exponentialRampToValueAtTime(120,ac.currentTime+0.09);
-    g.gain.setValueAtTime(0.18,ac.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.09);
-    o.start(ac.currentTime); o.stop(ac.currentTime+0.09);
-  } catch(e){}
-}
-function _dmPlayHit(boss=false) {
-  try {
-    const ac=_dmAC(), len=boss?0.25:0.12;
-    const buf=ac.createBuffer(1,Math.floor(ac.sampleRate*len),ac.sampleRate);
-    const d=buf.getChannelData(0);
-    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,boss?1:2);
-    const src=ac.createBufferSource(); src.buffer=buf;
-    const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=boss?200:600;
-    const g=ac.createGain(); g.gain.setValueAtTime(boss?0.7:0.35,ac.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+len);
-    src.connect(f); f.connect(g); g.connect(ac.destination); src.start();
-  } catch(e){}
-}
-function _dmPlayExplosion() {
-  try {
-    const ac=_dmAC(), len=0.6;
-    const buf=ac.createBuffer(1,Math.floor(ac.sampleRate*len),ac.sampleRate);
-    const d=buf.getChannelData(0);
-    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,1.2);
-    const src=ac.createBufferSource(); src.buffer=buf;
-    const f=ac.createBiquadFilter(); f.type='lowpass';
-    f.frequency.setValueAtTime(500,ac.currentTime);
-    f.frequency.exponentialRampToValueAtTime(40,ac.currentTime+len);
-    const g=ac.createGain(); g.gain.setValueAtTime(1.1,ac.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+len);
-    src.connect(f); f.connect(g); g.connect(ac.destination); src.start();
-  } catch(e){}
-}
-function _dmPlayFanfare() {
-  try {
-    const ac=_dmAC();
-    const notes=[523,659,784,1047,1319];
-    notes.forEach((freq,i)=>{
-      const o=ac.createOscillator(), g=ac.createGain();
-      o.connect(g); g.connect(ac.destination);
-      o.type='triangle'; o.frequency.value=freq;
-      const t=ac.currentTime+i*0.13;
-      g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.4,t+0.05);
-      g.gain.exponentialRampToValueAtTime(0.001,t+0.3);
-      o.start(t); o.stop(t+0.3);
-    });
-  } catch(e){}
-}
-
-function toggleDestroy() {
-  if (_dm) _exitDM(); else _startDM();
-}
-
-function _startDM() {
-  _dm=true; _dmScore=0; _dmKilled=0; _dmBullets=[]; _dmParticles=[]; _dmCardHP=new Map(); _dmBossBullets=[]; _dmBossShootTimer=80; _dmPlayerHP=3; _dmInvincible=0;
-  // canvas
-  _dmCanvas=document.createElement('canvas');
-  _dmCanvas.id='dm-canvas';
-  _dmCanvas.style.cssText='position:fixed;top:0;left:0;z-index:10000;pointer-events:none;';
-  _dmCanvas.width=window.innerWidth; _dmCanvas.height=window.innerHeight;
-  document.body.appendChild(_dmCanvas);
-  _dmCtx=_dmCanvas.getContext('2d');
-  // score HUD
-  const hud=document.createElement('div'); hud.id='dm-hud';
-  hud.style.cssText='position:fixed;top:70px;left:20px;z-index:10001;background:rgba(0,0,0,.85);border:1px solid #ef4444;border-radius:10px;padding:10px 16px;color:#ef4444;font-family:monospace;font-weight:700;font-size:13px;line-height:1.6;pointer-events:none;';
-  hud.innerHTML='💥 DESTRUCTION MODE<br>KILLED: 0 cards<br>DESTROYED: $0';
-  document.body.appendChild(hud);
-  // instructions toast
-  showToast('🚀 ARROWS to fly · SPACE to shoot · ESC to exit', 'error', '💥');
-  // ship
-  _dmShip={x:window.innerWidth/2,y:window.innerHeight/2,angle:-Math.PI/2,vx:0,vy:0,cooldown:0};
-  // card HP — alltime bar = 3 hits, regular cards = 1
-  document.querySelectorAll('.card').forEach(c=>{
-    const hp=c.closest('#alltime-bar')?3:1;
-    _dmCardHP.set(c,hp);
-  });
-  document.body.style.overflow='hidden';
-  document.addEventListener('keydown',_dmKeyDown);
-  document.addEventListener('keyup',_dmKeyUp);
-  $('destroy-btn').textContent='🚪 Exit';
-  $('destroy-btn').style.background='rgba(239,68,68,.15)';
-  _dmLoop();
-}
-
-function _dmKeyDown(e){
-  _dmKeys[e.code]=true;
-  if(['Space','ArrowUp','ArrowDown'].includes(e.code)) e.preventDefault();
-  if(e.code==='Escape') _exitDM();
-}
-function _dmKeyUp(e){ _dmKeys[e.code]=false; }
-
-function _dmSpawnParticles(x,y,n,emojis){
-  for(let i=0;i<n;i++) _dmParticles.push({x,y,vx:(Math.random()-.5)*9,vy:(Math.random()-.5)*9,life:1,decay:.022+Math.random()*.025,emoji:emojis[Math.floor(Math.random()*emojis.length)],size:14+Math.random()*14});
-}
-
-function _dmDestroyCard(card, bx, by){
-  const r=card.getBoundingClientRect();
-  const cx=r.left+r.width/2, cy=r.top+r.height/2;
-  _dmSpawnParticles(cx,cy,24,['💥','💸','💵','🔥','⭐','💨','🤑']);
-  // floating damage text
-  const valEl=card.querySelector('.kpi-val,.alltime-val');
-  const valTxt=valEl?valEl.textContent:'';
-  const dmgEl=document.createElement('div');
-  dmgEl.style.cssText=`position:fixed;left:${cx}px;top:${cy}px;z-index:10002;color:#ef4444;font-weight:900;font-size:20px;font-family:monospace;pointer-events:none;transform:translateX(-50%);transition:all 1.4s ease;white-space:nowrap;text-shadow:0 0 10px #ef4444;`;
-  dmgEl.textContent=valTxt?`− ${valTxt} 💀`:'💀 DEAD';
-  document.body.appendChild(dmgEl);
-  setTimeout(()=>{dmgEl.style.transform='translateX(-50%) translateY(-90px)';dmgEl.style.opacity='0';},30);
-  setTimeout(()=>dmgEl.remove(),1500);
-  // card fly-off animation
-  const dx=cx-window.innerWidth/2, dy=cy-window.innerHeight/2;
-  card.style.transition='all .45s cubic-bezier(.4,0,.2,1)';
-  card.style.transform=`translate(${dx*.6}px,${dy*.6}px) rotate(${(Math.random()-.5)*40}deg) scale(.1)`;
-  card.style.opacity='0';
-  setTimeout(()=>card.remove(),460);
-  // score
-  const nm=valTxt.match(/([\d.]+)k?/);
-  if(nm){const n=parseFloat(nm[1])*(valTxt.includes('k')?1000:1);_dmScore+=Math.round(n);}
-  _dmKilled++;
-  const hud=$('dm-hud');
-  if(hud) hud.innerHTML=`💥 DESTRUCTION MODE<br>KILLED: ${_dmKilled} cards<br>DESTROYED: $${_dmScore.toLocaleString()}`;
-  // check win
-  if(document.querySelectorAll('.card').length===0) setTimeout(_dmWin,600);
-}
-
-function _dmWin(){
-  cancelAnimationFrame(_dmRaf);
-  _dmPlayFanfare();
-  const win=document.createElement('div');
-  win.id='dm-win';
-  win.style.cssText='position:fixed;inset:0;z-index:10003;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;background:rgba(0,0,0,.92);';
-  win.innerHTML=`<div style="font-size:80px">💀</div>
-    <div style="color:#ef4444;font-size:36px;font-weight:900;font-family:monospace;text-align:center;text-shadow:0 0 20px #ef4444">YOU BROKE THE DASHBOARD</div>
-    <div style="color:#fbbf24;font-size:20px;font-family:monospace">$${_dmScore.toLocaleString()} worth of profit data eliminated</div>
-    <div style="color:#8b5cf6;font-size:14px">${_dmKilled} cards destroyed · no survivors</div>
-    <button onclick="location.reload()" style="margin-top:12px;background:#ef4444;color:#fff;border:none;border-radius:10px;padding:14px 28px;font-size:18px;font-weight:700;cursor:pointer;font-family:monospace">🔄 REBUILD DASHBOARD</button>`;
-  document.body.appendChild(win);
-}
-
-function _exitDM(){
-  _dm=false;
-  if(_dmRaf){cancelAnimationFrame(_dmRaf);_dmRaf=null;}
-  document.removeEventListener('keydown',_dmKeyDown);
-  document.removeEventListener('keyup',_dmKeyUp);
-  document.body.style.overflow='';
-  ['dm-canvas','dm-hud','dm-win'].forEach(id=>{const el=$(id);if(el)el.remove();});
-  _dmBullets=[];_dmParticles=[];_dmBossBullets=[];
-  const btn=$('destroy-btn');
-  if(btn){btn.textContent='💥 Destroy';btn.style.background='';}
-  showToast('Dashboard survived... for now 😤','info','🛡️');
-}
-
-function _dmLoop(){
-  if(!_dm) return;
-  const ctx=_dmCtx, W=_dmCanvas.width, H=_dmCanvas.height;
-  ctx.clearRect(0,0,W,H);
-  const s=_dmShip;
-  // rotate + thrust
-  if(_dmKeys['ArrowLeft']) s.angle-=_DM_ROT;
-  if(_dmKeys['ArrowRight']) s.angle+=_DM_ROT;
-  if(_dmKeys['ArrowUp']){s.vx+=Math.cos(s.angle)*_DM_THRUST;s.vy+=Math.sin(s.angle)*_DM_THRUST;}
-  s.vx*=_DM_FRIC; s.vy*=_DM_FRIC;
-  s.x=(s.x+s.vx+W)%W; s.y=(s.y+s.vy+H)%H;
-  s.cooldown=Math.max(0,s.cooldown-1);
-  if(_dmKeys['Space']&&s.cooldown===0){
-    _dmBullets.push({x:s.x+Math.cos(s.angle)*_DM_SHIP,y:s.y+Math.sin(s.angle)*_DM_SHIP,vx:Math.cos(s.angle)*_DM_BSPD+s.vx,vy:Math.sin(s.angle)*_DM_BSPD+s.vy,life:70});
-    s.cooldown=_DM_COOLDOWN;
-    _dmPlayLaser();
-  }
-  if(_dmInvincible>0) _dmInvincible--;
-  // ── Boss shoots back ──
-  const bossCard=[..._dmCardHP.keys()].find(c=>c.closest&&c.closest('#alltime-bar')&&document.body.contains(c));
-  if(bossCard){
-    _dmBossShootTimer--;
-    if(_dmBossShootTimer<=0){
-      const br=bossCard.getBoundingClientRect();
-      const bx=br.left+br.width/2, by=br.top+br.height/2;
-      const ang=Math.atan2(s.y-by,s.x-bx)+(Math.random()-.5)*.4;
-      _dmBossBullets.push({x:bx,y:by,vx:Math.cos(ang)*5,vy:Math.sin(ang)*5,life:120});
-      _dmBossShootTimer=55+Math.floor(Math.random()*30);
-      bossCard.style.boxShadow='0 0 30px #fbbf24';
-      setTimeout(()=>bossCard.style.boxShadow='',150);
-    }
-  } else { _dmBossShootTimer=0; }
-  // draw ship
-  ctx.save(); ctx.translate(s.x,s.y); ctx.rotate(s.angle);
-  ctx.strokeStyle='#6366f1'; ctx.lineWidth=2; ctx.shadowColor='#6366f1'; ctx.shadowBlur=12;
-  ctx.beginPath(); ctx.moveTo(_DM_SHIP,0); ctx.lineTo(-_DM_SHIP*.7,-_DM_SHIP*.6); ctx.lineTo(-_DM_SHIP*.35,0); ctx.lineTo(-_DM_SHIP*.7,_DM_SHIP*.6); ctx.closePath();
-  ctx.fillStyle='rgba(99,102,241,.25)'; ctx.fill(); ctx.stroke();
-  if(_dmKeys['ArrowUp']){
-    ctx.beginPath(); ctx.moveTo(-_DM_SHIP*.35,0); ctx.lineTo(-_DM_SHIP*1.3,(Math.random()-.5)*7);
-    ctx.strokeStyle='#f59e0b'; ctx.shadowColor='#f59e0b'; ctx.lineWidth=2.5; ctx.stroke();
-  }
-  ctx.restore();
-  // bullets
-  _dmBullets=_dmBullets.filter(b=>b.life>0);
-  _dmBullets.forEach(b=>{
-    b.x+=b.vx; b.y+=b.vy; b.life--;
-    b.x=(b.x+W)%W; b.y=(b.y+H)%H;
-    ctx.beginPath(); ctx.arc(b.x,b.y,3.5,0,Math.PI*2);
-    ctx.fillStyle='#ef4444'; ctx.shadowColor='#ef4444'; ctx.shadowBlur=10; ctx.fill();
-    // collision
-    _dmCardHP.forEach((hp,card)=>{
-      if(!document.body.contains(card)){_dmCardHP.delete(card);return;}
-      const r=card.getBoundingClientRect();
-      if(b.x>r.left&&b.x<r.right&&b.y>r.top&&b.y<r.bottom){
-        b.life=0;
-        const newHp=hp-1; _dmCardHP.set(card,newHp);
-        const isBoss=!!card.closest('#alltime-bar');
-        if(newHp<=0){_dmCardHP.delete(card);_dmDestroyCard(card,b.x,b.y);_dmPlayExplosion();}
-        else{
-          _dmSpawnParticles(b.x,b.y,6,['💥','⚡','🔥']);
-          card.style.transition='box-shadow .1s'; card.style.boxShadow=`0 0 24px ${isBoss?'#fbbf24':'#ef4444'}`;
-          setTimeout(()=>card.style.boxShadow='',200);
-          _dmPlayHit(isBoss);
-        }
-      }
-    });
-  });
-  // ── Boss bullets ──
-  _dmBossBullets=_dmBossBullets.filter(b=>b.life>0);
-  _dmBossBullets.forEach(b=>{
-    b.x+=b.vx; b.y+=b.vy; b.life--;
-    ctx.beginPath(); ctx.arc(b.x,b.y,4,0,Math.PI*2);
-    ctx.fillStyle='#fbbf24'; ctx.shadowColor='#fbbf24'; ctx.shadowBlur=12; ctx.fill();
-    // hit player ship
-    if(_dmInvincible===0){
-      const dx=b.x-s.x, dy=b.y-s.y;
-      if(Math.sqrt(dx*dx+dy*dy)<_DM_SHIP+4){
-        b.life=0; _dmPlayerHP--; _dmInvincible=90;
-        _dmPlayHit(false);
-        _dmSpawnParticles(s.x,s.y,10,['💥','⚡','😵']);
-        // flash ship red
-        s._hit=20;
-        // update HUD
-        const hud=$('dm-hud');
-        const hearts='❤️'.repeat(Math.max(0,_dmPlayerHP))+'🖤'.repeat(Math.max(0,3-_dmPlayerHP));
-        if(hud) hud.innerHTML=`💥 DESTRUCTION MODE<br>KILLED: ${_dmKilled} cards<br>DESTROYED: $${_dmScore.toLocaleString()}<br>${hearts}`;
-        if(_dmPlayerHP<=0){ showToast('💀 YOUR SHIP GOT REKT BY THE BOSS','error','😵'); _dmPlayerHP=3; }
-      }
-    }
-  });
-  // draw ship hit flash
-  if(s._hit>0){ s._hit--; ctx.save(); ctx.translate(s.x,s.y); ctx.rotate(s.angle); ctx.fillStyle=`rgba(239,68,68,${s._hit/20*.5})`; ctx.beginPath(); ctx.arc(0,0,_DM_SHIP*1.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
-  // ── Player HUD hearts ──
-  ctx.font='18px serif'; ctx.globalAlpha=.9;
-  for(let i=0;i<3;i++) ctx.fillText(i<_dmPlayerHP?'❤️':'🖤',W-36-i*24,32);
-  ctx.globalAlpha=1;
-  // particles
-  _dmParticles=_dmParticles.filter(p=>p.life>0);
-  _dmParticles.forEach(p=>{
-    p.x+=p.vx; p.y+=p.vy; p.vy+=.12; p.life-=p.decay;
-    ctx.save(); ctx.globalAlpha=Math.max(0,p.life); ctx.font=`${p.size}px serif`; ctx.fillText(p.emoji,p.x,p.y); ctx.restore();
-  });
-  _dmRaf=requestAnimationFrame(_dmLoop);
-}
-
 // ─── HEAD-TO-HEAD ─────────────────────────────────────────────────────────────
 function renderH2H() {
   const section = $('h2h-section'), card = $('h2h-card');
@@ -5585,6 +5362,9 @@ function openWeeklyWrap() {
   const content = $('wrap-content');
   if (!RAW.length) { showToast('Load data first', 'error', '⚠️'); return; }
 
+  // Apply channel filter so Wrap respects eBay / TikTok / All switcher
+  const chRAW = RAW.filter(r => CHANNEL_FILTER === 'all' || (CHANNEL_FILTER === 'tiktok' ? r.channel === 'tiktok' : r.channel !== 'tiktok'));
+
   // Determine last full week (Mon–Sun)
   const today = new Date();
   const dow = today.getDay(); // 0=Sun
@@ -5596,14 +5376,14 @@ function openWeeklyWrap() {
   const fmt = d => d.toISOString().slice(0, 10);
   const inRange = (r, from, to) => r.date && r.date >= fmt(from) && r.date <= fmt(to);
 
-  const thisWeek = RAW.filter(r => inRange(r, lastMon, lastSun));
-  const prevWeek = RAW.filter(r => inRange(r, prevMon, prevSun));
+  const thisWeek = chRAW.filter(r => inRange(r, lastMon, lastSun));
+  const prevWeek = chRAW.filter(r => inRange(r, prevMon, prevSun));
 
   // If no last-week data, use the last 7 available days
-  const dd = getDailyData(RAW).slice(-7);
-  const useData = thisWeek.length > 0 ? thisWeek : RAW.filter(r => dd.some(d => d.date === r.date));
-  const prevData = prevWeek.length > 0 ? prevWeek : getDailyData(RAW).slice(-14, -7).reduce((acc, d) => {
-    return acc.concat(RAW.filter(r => r.date === d.date));
+  const dd = getDailyData(chRAW).slice(-7);
+  const useData = thisWeek.length > 0 ? thisWeek : chRAW.filter(r => dd.some(d => d.date === r.date));
+  const prevData = prevWeek.length > 0 ? prevWeek : getDailyData(chRAW).slice(-14, -7).reduce((acc, d) => {
+    return acc.concat(chRAW.filter(r => r.date === d.date));
   }, []);
 
   const sumProfit  = arr => r2(arr.reduce((s,r)=>s+r.profit,0));

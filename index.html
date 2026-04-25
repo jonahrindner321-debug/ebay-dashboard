@@ -3222,20 +3222,30 @@ function renderDOWChart(data) {
 function renderAllTimeBanner() {
   const banner=$('alltime-banner');
   if(!RAW.length){banner.style.display='none';return;}
-  const allProfit=r2(RAW.reduce((s,r)=>s+r.profit,0));
-  const allDates=[...new Set(RAW.filter(r=>r.date).map(r=>r.date))];
-  const months=[...new Set(RAW.map(r=>r.month))];
+  // Filter by active channel
+  const data = CHANNEL_FILTER === 'tiktok' ? RAW.filter(r=>r.channel==='tiktok')
+             : CHANNEL_FILTER === 'ebay'   ? RAW.filter(r=>r.channel!=='tiktok')
+             : RAW;
+  if(!data.length){banner.style.display='none';return;}
+  const allProfit=r2(data.reduce((s,r)=>s+r.profit,0));
+  const allDates=[...new Set(data.filter(r=>r.date).map(r=>r.date))];
+  const months=[...new Set(data.map(r=>r.month))];
   let allJR=0;
-  const persons=[...new Set(RAW.map(r=>r.person))];
+  const persons=[...new Set(data.map(r=>r.person))];
   persons.forEach(p=>{
-    const profit=r2(RAW.filter(r=>r.person===p).reduce((s,r)=>s+r.profit,0));
+    const profit=r2(data.filter(r=>r.person===p).reduce((s,r)=>s+r.profit,0));
     allJR=r2(allJR+getSplit(p,profit).jr);
   });
+  // Update label based on channel
+  const bannerLabel = banner.querySelector('.alltime-label');
+  if (bannerLabel) bannerLabel.textContent = CHANNEL_FILTER === 'tiktok' ? '🏆 TikTok Total Profit'
+                                           : CHANNEL_FILTER === 'ebay'   ? '🏆 eBay Total Profit'
+                                           : '🏆 All-Time Total Profit';
   banner.style.display='flex';
   $('alltime-val').className  = 'alltime-val shimmer-val';
   $('alltime-val').textContent   = fmt$(allProfit);
   window._ALLTIME_PROFIT = allProfit;
-  $('alltime-sales').textContent = fmtN(RAW.length);
+  $('alltime-sales').textContent = fmtN(data.length);
   $('alltime-days').textContent  = fmtN(allDates.length);
   $('alltime-jr').textContent    = fmt$(allJR);
   $('alltime-meta').textContent  = `${months.length} months tracked`;
@@ -3700,6 +3710,7 @@ function setChannelFilter(ch) {
   // If on Growth page and switching to TikTok, snap back to Ops
   if (ch === 'tiktok') { try { switchPage('ops'); } catch(e) {} }
   try { applyFilters(); } catch(e) {}
+  try { renderAllTimeBanner(); } catch(e) { console.error('renderAllTimeBanner error:', e); }
   try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
 }
 

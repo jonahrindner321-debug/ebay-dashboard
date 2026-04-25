@@ -710,6 +710,7 @@ async function loadAll() {
     setTimeout(updateChannelSwitcherVisibility, 1000);
     $('audit-btn').style.display = '';
     try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
+    maybeOpenClientFromUrl();
     if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
     else showToast('Data refreshed', 'info', '🔄');
   } else {
@@ -3366,9 +3367,71 @@ function openAudit() {
 }
 
 // ─── CLIENT VIEW ───────────────────────────────────────────────────────────
+let _clientDeepLinkOpened = false;
+
+function getClientStoreNames() {
+  return Object.values(SHEETS).filter(name => !OWNED_STORES.includes(name));
+}
+
+function clientSlug(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function clientNameFromSlug(slug) {
+  const normalized = String(slug || '').toLowerCase().replace(/^#?client=/, '');
+  return getClientStoreNames().find(name => clientSlug(name) === normalized) || null;
+}
+
+function getClientLink(name) {
+  const base = `${window.location.origin}${window.location.pathname}`;
+  return `${base}#client=${clientSlug(name)}`;
+}
+
+function copyClientLink(name, ev) {
+  if (ev) ev.stopPropagation();
+  const url = getClientLink(name);
+  const done = () => showToast('Client link copied', 'success', '🔗');
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); }
+    catch(e) { window.prompt('Copy this client link:', url); }
+    ta.remove();
+  };
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(fallback);
+  else fallback();
+}
+
+function getClientSlugFromUrl() {
+  const hash = (window.location.hash || '').replace(/^#/, '');
+  if (hash.startsWith('client=')) return new URLSearchParams(hash).get('client');
+  return new URLSearchParams(window.location.search).get('client');
+}
+
+function maybeOpenClientFromUrl() {
+  if (_clientDeepLinkOpened || !RAW.length) return;
+  const slug = getClientSlugFromUrl();
+  if (!slug) return;
+  const name = clientNameFromSlug(slug);
+  if (!name) {
+    showToast('Client link did not match a loaded account', 'error', '👤');
+    return;
+  }
+  _clientDeepLinkOpened = true;
+  renderClientView(name, { preserveUrl: true });
+}
+
 function openClientView() {
   // Build list of client-facing stores (partner stores + Jacob name-fee stores)
-  const clientStores = Object.values(SHEETS).filter(name => !OWNED_STORES.includes(name));
+  const clientStores = getClientStoreNames();
   if (!clientStores.length) { showToast('No partner stores loaded yet', 'info', '👤'); return; }
 
   const listEl = $('client-select-list');
@@ -3381,18 +3444,23 @@ function openClientView() {
     const profit   = r2(recs.reduce((s,r) => s + r.profit, 0));
     const myShare  = isJacob ? r2(profit * 0.10) : r2(profit * 0.50);
     const displayName = name === 'John Slop' ? 'Sloop' : name;
-    return `<button onclick="closeModal('client-select-modal');renderClientView('${name}')"
-      style="width:100%;text-align:left;padding:14px 16px;background:var(--card);border:1px solid var(--card-border);border-radius:12px;cursor:pointer;transition:background .15s"
-      onmouseover="this.style.background='var(--glass)'" onmouseout="this.style.background='var(--card)'">
-      <div style="font-weight:700;font-size:14px;color:var(--text)">${displayName}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">Your share: ${pct} · ${_cvEarnLabel}: <span style="color:var(--green);font-weight:700">${fmt$(myShare)}</span></div>
-    </button>`;
+    return `<div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:stretch">
+      <button onclick="closeModal('client-select-modal');renderClientView(${JSON.stringify(name)})"
+        style="width:100%;text-align:left;padding:14px 16px;background:var(--card);border:1px solid var(--card-border);border-radius:12px;cursor:pointer;transition:background .15s"
+        onmouseover="this.style.background='var(--glass)'" onmouseout="this.style.background='var(--card)'">
+        <div style="font-weight:700;font-size:14px;color:var(--text)">${displayName}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Your share: ${pct} · ${_cvEarnLabel}: <span style="color:var(--green);font-weight:700">${fmt$(myShare)}</span></div>
+      </button>
+      <button onclick="copyClientLink(${JSON.stringify(name)}, event)"
+        title="Copy client portal link"
+        style="min-width:44px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:var(--green);border-radius:12px;cursor:pointer;font-weight:800">🔗</button>
+    </div>`;
   }).join('');
 
   $('client-select-modal').classList.add('open');
 }
 
-function renderClientView(personName) {
+function renderClientView(personName, opts = {}) {
   const isJacob   = JACOB_STORES.includes(personName);
   const ownerPct  = isJacob ? 0.10 : 0.50;
   const ownerPctLabel = isJacob ? '10%' : '50%';
@@ -3522,6 +3590,9 @@ function renderClientView(personName) {
 
   const overlay = $('client-view-overlay');
   overlay.style.display = 'block';
+  if (!opts.preserveUrl && window.history?.replaceState) {
+    window.history.replaceState(null, '', `#client=${clientSlug(personName)}`);
+  }
 
   $('client-view-content').innerHTML = `
     <div style="min-height:100vh;background:var(--bg);padding:0 0 60px">
@@ -3534,7 +3605,10 @@ function renderClientView(personName) {
             <div style="font-size:11px;color:var(--muted)">Your Store · ${ownerPctLabel} profit share</div>
           </div>
         </div>
-        <button onclick="closeClientView()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--rose);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">✕ Exit</button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button onclick="copyClientLink(${JSON.stringify(personName)}, event)" style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:var(--green);padding:8px 12px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🔗 Copy Link</button>
+          <button onclick="closeClientView()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--rose);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">✕ Exit</button>
+        </div>
       </div>
 
       <!-- Expense Warning Banner -->
@@ -3658,6 +3732,9 @@ function renderClientView(personName) {
 
 function closeClientView() {
   $('client-view-overlay').style.display = 'none';
+  if ((window.location.hash || '').replace(/^#/, '').startsWith('client=') && window.history?.replaceState) {
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+  }
 }
 
 function clientScaleCalc(n) {

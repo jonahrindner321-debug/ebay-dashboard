@@ -3391,9 +3391,16 @@ function getClientLink(name) {
   return `${base}#client=${clientSlug(name)}`;
 }
 
-function copyClientLink(name, ev) {
+function escAttr(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function copyClientUrl(url, ev) {
   if (ev) ev.stopPropagation();
-  const url = getClientLink(name);
   const done = () => showToast('Client link copied', 'success', '🔗');
   const legacyCopy = () => {
     const ta = document.createElement('textarea');
@@ -3413,6 +3420,10 @@ function copyClientLink(name, ev) {
   if (legacyCopy()) return;
   if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(() => window.prompt('Copy this client link:', url));
   else window.prompt('Copy this client link:', url);
+}
+
+function copyClientLink(name, ev) {
+  copyClientUrl(getClientLink(name), ev);
 }
 
 function getClientSlugFromUrl() {
@@ -3449,16 +3460,20 @@ function openClientView() {
     const profit   = r2(recs.reduce((s,r) => s + r.profit, 0));
     const myShare  = isJacob ? r2(profit * 0.10) : r2(profit * 0.50);
     const displayName = name === 'John Slop' ? 'Sloop' : name;
-    return `<div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:stretch">
+    const link = getClientLink(name);
+    return `<div style="display:flex;flex-direction:column;gap:8px;padding:12px;background:var(--card);border:1px solid var(--card-border);border-radius:12px">
       <button onclick="closeModal('client-select-modal');renderClientView(${JSON.stringify(name)})"
-        style="width:100%;text-align:left;padding:14px 16px;background:var(--card);border:1px solid var(--card-border);border-radius:12px;cursor:pointer;transition:background .15s"
-        onmouseover="this.style.background='var(--glass)'" onmouseout="this.style.background='var(--card)'">
+        style="width:100%;text-align:left;padding:4px 2px;background:transparent;border:none;cursor:pointer">
         <div style="font-weight:700;font-size:14px;color:var(--text)">${displayName}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">Your share: ${pct} · ${_cvEarnLabel}: <span style="color:var(--green);font-weight:700">${fmt$(myShare)}</span></div>
       </button>
-      <button onclick="copyClientLink(${JSON.stringify(name)}, event)"
-        title="Copy client portal link"
-        style="min-width:44px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:var(--green);border-radius:12px;cursor:pointer;font-weight:800">🔗</button>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px">
+        <input readonly value="${escAttr(link)}" onclick="this.select()"
+          style="min-width:0;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:8px;color:var(--muted);font-size:11px;padding:8px;outline:none">
+        <button onclick="copyClientUrl(this.dataset.url, event)" data-url="${escAttr(link)}"
+          title="Copy client portal link"
+          style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:var(--green);border-radius:8px;cursor:pointer;font-size:12px;font-weight:800;padding:0 12px">Copy</button>
+      </div>
     </div>`;
   }).join('');
 

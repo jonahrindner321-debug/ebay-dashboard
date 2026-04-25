@@ -541,6 +541,51 @@ async function getTabValues(id, tab) {
   return data.values || [];
 }
 
+// ─── TIKTOK SHOP CONNECTOR ────────────────────────────────────────────────
+async function refreshTikTokStatus() {
+  const btn = $('tiktok-connect-btn');
+  if (!btn) return;
+  try {
+    const res = await fetch('/api/tiktok/status');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const status = await res.json();
+    if (!status.configured) {
+      btn.textContent = '⟡ TikTok Setup';
+      btn.title = `Missing: ${(status.missing || []).join(', ')}`;
+      btn.style.color = 'var(--amber)';
+      btn.style.borderColor = 'rgba(251,191,36,.45)';
+      return;
+    }
+    if (status.connected) {
+      btn.textContent = '⟡ TikTok Linked';
+      btn.title = 'TikTok Shop connected read-only';
+      btn.style.color = '#34d399';
+      btn.style.borderColor = 'rgba(52,211,153,.45)';
+      return;
+    }
+    btn.textContent = '⟡ Link TikTok';
+    btn.title = 'Connect TikTok Shop read-only';
+    btn.style.color = '#ff6b9d';
+    btn.style.borderColor = 'rgba(255,45,85,.4)';
+  } catch (e) {
+    btn.textContent = '⟡ Link TikTok';
+    btn.title = 'TikTok connector not available locally yet';
+  }
+}
+
+async function connectTikTokShop() {
+  try {
+    const res = await fetch('/api/tiktok/status');
+    if (res.ok) {
+      const status = await res.json();
+      if (!status.configured) {
+        showToast(`TikTok setup needed: ${(status.missing || []).join(', ')}`, 'error', '⟡');
+      }
+    }
+  } catch (e) { /* local static server has no API routes */ }
+  window.location.href = '/api/tiktok/connect';
+}
+
 // ─── PARSE VALUES ──────────────────────────────────────────────────────────
 function parseValues(values, person, monthLabel, channel = 'ebay') {
   const rows = [];
@@ -4514,4 +4559,5 @@ setInterval(loadAll, 15 * 60 * 1000);
 setInterval(() => loadListingTracker(), 15 * 60 * 1000);
 // Load listing tracker immediately (no API key needed — public CSV export)
 loadListingTracker();
+refreshTikTokStatus();
 if (checkApiKey()) loadAll();

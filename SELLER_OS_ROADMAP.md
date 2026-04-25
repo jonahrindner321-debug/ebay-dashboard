@@ -102,18 +102,32 @@ Everything should flow into normalized entities instead of platform-specific das
 - ✅ Client link lockdown: `#client=<slug>` deep links lock the user into that view
   - Exit button is hidden, `closeClientView()` is blocked via `_clientOnlyMode` flag
   - Admins opening a client from inside the dashboard still see the Exit button
+- ✅ TikTok Shop connector foundation
+  - Header button: `⟡ Link TikTok`
+  - OAuth routes: `api/tiktok/connect` and `api/tiktok/callback`
+  - Connection status route: `api/tiktok/status`
+  - Encrypted HttpOnly cookie stores the token bundle for the prototype
+  - Placeholder read-only data routes: `api/tiktok/orders` and `api/tiktok/products`
+  - No posting, account control, scraping, or write scopes
 
 ### Immediate Next Steps
 
-1. **Daily Brief section** — "Daily Brief" card on the ops page showing today's profit, sales count, inactive account alerts, and top performer. Uses already-loaded `RAW` data, no new API calls.
-2. **Real auth** — Password-protect the dashboard using a signed token system:
+1. **Finalize TikTok app setup**
+   - Create/approve the TikTok Shop app and read-only scopes
+   - Set `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_TOKEN_SECRET`, `TIKTOK_REDIRECT_URI`, and `TIKTOK_SCOPES` in Vercel
+   - Confirm whether the approved app uses OAuth v2 or legacy TikTok Shop token exchange
+2. **Wire TikTok data reads**
+   - Add signed, read-only TikTok Shop order/product requests after app approval
+   - Normalize TikTok orders into the existing Seller OS row model
+   - Keep TikTok data read-only
+3. **Real auth** — Password-protect the dashboard using a signed token system:
    - `api/auth.js` endpoint: checks `DASHBOARD_PASSWORD` env var, returns a signed token (HMAC-SHA256 via Node built-in `crypto`, no npm packages)
    - Token format: `${expiry_unix_timestamp}.${hmac(expiry, TOKEN_SECRET)}`
    - `api/sheets.js` validates token on every request
    - Frontend shows auth overlay on load; client `#client=` links bypass auth entirely
    - Env vars needed: `DASHBOARD_PASSWORD`, `TOKEN_SECRET`
-3. Add mock/fixture data so local development works without production API access.
-4. Add role-aware backend permission enforcement (not just hidden UI).
+4. Add mock/fixture data so local development works without production API access.
+5. Add role-aware backend permission enforcement (not just hidden UI).
 
 ## Safety Rules
 

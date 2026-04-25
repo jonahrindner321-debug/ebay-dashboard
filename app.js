@@ -3522,10 +3522,6 @@ function renderClientView(personName, opts = {}) {
   const profitPerListMo = pd?.profitPerListMo || 0;
   const myProjAtTarget  = profitPerListMo > 0 ? r2(target * profitPerListMo * ownerPct) : null;
   const myProjNow       = profitPerListMo > 0 ? r2(current * profitPerListMo * ownerPct) : null;
-  const actualPace      = pd?.actualPace14 || pd?.effDaily || dailyGoal;
-  const myProj30d       = profitPerListMo > 0 ? r2((current + actualPace * 30) * profitPerListMo * ownerPct) : null;
-  const myProj60d       = profitPerListMo > 0 ? r2((current + actualPace * 60) * profitPerListMo * ownerPct) : null;
-  const myProj90d       = profitPerListMo > 0 ? r2((current + actualPace * 90) * profitPerListMo * ownerPct) : null;
   const rateLabel       = pd?.recentMoLabel || 'last 30d';
 
   const MN = {'Jan':'January','Feb':'February','Mar':'March','Apr':'April','May':'May','Jun':'June','Jul':'July','Aug':'August','Sep':'September','Oct':'October','Nov':'November','Dec':'December'};
@@ -3547,7 +3543,6 @@ function renderClientView(personName, opts = {}) {
   const revPct = prevRev > 0 ? r2((latestRev - prevRev) / prevRev * 100) : null;
   const salesPct = prevSales > 0 ? r2((latestSales - prevSales) / prevSales * 100) : null;
   const remainingListings = Math.max(0, target - current);
-  const daysToTarget = actualPace > 0 && remainingListings > 0 ? Math.ceil(remainingListings / actualPace) : null;
   const nextMilestone = current < 1000 ? 1000 : current < 2500 ? 2500 : current < 5000 ? 5000 : target * 2;
   const nextMilestoneLeft = Math.max(0, nextMilestone - current);
   const bestMonth = mKeys.map(m => ({ month: m, share: r2(byMonth[m] * ownerPct) })).sort((a,b) => b.share - a.share)[0] || null;
@@ -3555,25 +3550,25 @@ function renderClientView(personName, opts = {}) {
     ? 'Building baseline'
     : momPct >= 25 ? 'Strong momentum'
     : momPct >= 0 ? 'Trending up'
-    : 'Needs attention';
+    : 'Building momentum';
   const clientStatusColor = momPct === null
     ? 'var(--cyan)'
-    : momPct >= 0 ? 'var(--green)' : 'var(--amber)';
+    : momPct >= 0 ? 'var(--green)' : 'var(--cyan)';
   const focusItems = [
     momPct !== null && momPct >= 25
       ? `Momentum is strong: ${latestLabel || 'this month'} earnings are up ${Math.abs(momPct).toFixed(0)}% from ${prevMo}.`
-      : momPct !== null && momPct < 0
-        ? `Earnings are down ${Math.abs(momPct).toFixed(0)}% from ${prevMo}; the next review should focus on sales velocity and margin.`
-        : `This store is still building a clean month-over-month baseline.`,
+      : momPct !== null && momPct >= 0
+        ? `${latestLabel || 'This month'} is trending higher than ${prevMo}, with your share continuing to grow.`
+        : `This store is still early in the month, with ${myAllTime > 0 ? fmt$(myAllTime) : 'earnings'} already built all-time.`,
     !isTikTokMode && remainingListings > 0
-      ? `Listing runway: ${remainingListings.toLocaleString()} listings left to the ${target.toLocaleString()} target${daysToTarget ? `, roughly ${daysToTarget.toLocaleString()} days at the current pace` : ''}.`
-      : `Listing target reached; the next unlock is keeping profit per listing healthy.`,
+      ? `The store is at ${current.toLocaleString()} active listings, with a clear path toward the ${target.toLocaleString()} listing goal.`
+      : `The listing goal is in great shape, which gives the store more room to compound earnings.`,
     latestMargin > 0
-      ? `Current margin is ${latestMargin.toFixed(1)}% on ${fmt$(latestRev)} in ${latestLabel || 'the latest month'}.`
-      : `Margin will appear once this month has revenue and profit data.`,
-    todayN !== null && !isTikTokMode
-      ? `Today: ${todayN.toLocaleString()} listings added against a ${dailyGoal.toLocaleString()} daily goal.`
-      : `Latest data refresh includes sales through ${lastDataLabel}.`
+      ? `${latestLabel || 'The latest month'} has produced ${fmt$(latestRev)} in store revenue at a ${latestMargin.toFixed(1)}% margin.`
+      : `Revenue and margin highlights will fill in as the newest month develops.`,
+    bestMonth
+      ? `Best month so far: ${bestMonth.month} at ${fmt$(bestMonth.share)} for your share.`
+      : `The store is building its first performance baseline.`
   ];
   const kpiDelta = val => val === null ? '' : `<span style="font-size:11px;font-weight:800;color:${val>=0?'var(--green)':'var(--rose)'}">${val>=0?'↑':'↓'} ${Math.abs(val).toFixed(0)}%</span>`;
 
@@ -3615,12 +3610,12 @@ function renderClientView(personName, opts = {}) {
           </div>
         </div>
 
-        <!-- Today & Goal -->
+        <!-- Goal Snapshot -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           <div class="card" style="padding:18px;text-align:center">
-            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Listings Added Today</div>
-            <div style="font-size:40px;font-weight:900;color:${todayN===null?'var(--muted)':todayN>=dailyGoal?'var(--green)':'var(--amber)'}">${todayN === null ? '—' : todayN}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:4px">daily goal: ${dailyGoal} ${todayN!==null&&todayN>=dailyGoal?'✅':''}</div>
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Progress Unlocked</div>
+            <div style="font-size:40px;font-weight:900;color:${pctColor}">${pct}%</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">${current.toLocaleString()} of ${target.toLocaleString()} listings</div>
           </div>
           <div class="card" style="padding:18px;text-align:center">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">At Target (${target.toLocaleString()} listings)</div>
@@ -3722,12 +3717,12 @@ function renderClientView(personName, opts = {}) {
           </div>` : ''}
         </div>
 
-        <!-- Today's Focus -->
+        <!-- Store Highlights -->
         <div class="card" style="padding:20px;border:1px solid rgba(6,182,212,.18);background:linear-gradient(135deg,rgba(6,182,212,.08),rgba(255,255,255,.03))">
           <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:14px">
             <div>
-              <div style="font-size:13px;font-weight:900">Today's Focus</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:3px">plain-English readout from the current store data</div>
+              <div style="font-size:13px;font-weight:900">Store Highlights</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:3px">simple wins from the latest store data</div>
             </div>
             <div style="font-size:12px;font-weight:900;color:${clientStatusColor};white-space:nowrap">${clientStatus}</div>
           </div>
@@ -3737,35 +3732,6 @@ function renderClientView(personName, opts = {}) {
         </div>
 
         ${cvListingsHtml}
-
-        <!-- Your Earning Trajectory -->
-        ${(myProj30d||myProj60d||myProj90d) ? `<div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(52,211,153,.04));border:1px solid rgba(16,185,129,.15)">
-          <div style="font-size:13px;font-weight:700;margin-bottom:4px">🚀 Your Earning Trajectory</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:16px">based on your current ${actualPace.toFixed(1)}/day listing pace · ${rateLabel} profit rate</div>
-          <div style="display:flex;flex-direction:column;gap:10px">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:rgba(255,255,255,.04);border-radius:8px">
-              <div><div style="font-size:12px;font-weight:600">Right now</div><div style="font-size:10px;color:var(--muted)">${current.toLocaleString()} listings</div></div>
-              <div style="font-size:22px;font-weight:900;color:var(--indigo)">${myProjNow ? fmt$(myProjNow)+'/mo' : '—'}</div>
-            </div>
-            ${myProj30d ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:rgba(255,255,255,.04);border-radius:8px">
-              <div><div style="font-size:12px;font-weight:600">+30 days of listing</div><div style="font-size:10px;color:var(--muted)">~${Math.round(current+actualPace*30).toLocaleString()} listings</div></div>
-              <div style="font-size:22px;font-weight:900;color:var(--cyan)">${fmt$(myProj30d)}/mo</div>
-            </div>` : ''}
-            ${myProj60d ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:rgba(255,255,255,.04);border-radius:8px">
-              <div><div style="font-size:12px;font-weight:600">+60 days of listing</div><div style="font-size:10px;color:var(--muted)">~${Math.round(current+actualPace*60).toLocaleString()} listings</div></div>
-              <div style="font-size:22px;font-weight:900;color:var(--violet)">${fmt$(myProj60d)}/mo</div>
-            </div>` : ''}
-            ${myProj90d ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:rgba(255,255,255,.04);border-radius:8px">
-              <div><div style="font-size:12px;font-weight:600">+90 days of listing</div><div style="font-size:10px;color:var(--muted)">~${Math.round(current+actualPace*90).toLocaleString()} listings</div></div>
-              <div style="font-size:22px;font-weight:900;color:var(--green)">${fmt$(myProj90d)}/mo</div>
-            </div>` : ''}
-            ${myProjAtTarget ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:rgba(16,185,129,.1);border-radius:8px;border:1px solid rgba(16,185,129,.2)">
-              <div><div style="font-size:12px;font-weight:700;color:var(--green)">🎯 At full target</div><div style="font-size:10px;color:var(--muted)">${target.toLocaleString()} listings</div></div>
-              <div style="font-size:26px;font-weight:900;color:var(--emerald)">${fmt$(myProjAtTarget)}/mo</div>
-            </div>` : ''}
-          </div>
-          <div style="margin-top:12px;font-size:10px;color:var(--muted);opacity:.7">⚠️ Projections are estimates before shared expense deductions</div>
-        </div>` : ''}
 
         <!-- Monthly Breakdown -->
         ${mKeys.length > 0 ? `<div class="card" style="padding:20px">

@@ -3404,6 +3404,7 @@ function openAudit() {
 
 // ─── CLIENT VIEW ───────────────────────────────────────────────────────────
 let _clientDeepLinkOpened = false;
+let _clientOnlyMode = false; // true when opened via #client= deep link — blocks exit
 
 function getClientStoreNames() {
   return Object.values(SHEETS).filter(name => !OWNED_STORES.includes(name));
@@ -3478,7 +3479,8 @@ function maybeOpenClientFromUrl() {
     return;
   }
   _clientDeepLinkOpened = true;
-  renderClientView(name, { preserveUrl: true });
+  _clientOnlyMode = true;
+  renderClientView(name, { preserveUrl: true, clientOnly: true });
 }
 
 function openClientView() {
@@ -3679,7 +3681,7 @@ function renderClientView(personName, opts = {}) {
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <button onclick="copyClientLink(${JSON.stringify(personName)}, event)" style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:var(--green);padding:8px 12px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🔗 Copy Link</button>
-          <button onclick="closeClientView()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--rose);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">✕ Exit</button>
+          ${opts && opts.clientOnly ? '' : '<button onclick="closeClientView()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--rose);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">✕ Exit</button>'}
         </div>
       </div>
 
@@ -3845,6 +3847,7 @@ function renderClientView(personName, opts = {}) {
 }
 
 function closeClientView() {
+  if (_clientOnlyMode) return;
   $('client-view-overlay').style.display = 'none';
   if ((window.location.hash || '').replace(/^#/, '').startsWith('client=') && window.history?.replaceState) {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);

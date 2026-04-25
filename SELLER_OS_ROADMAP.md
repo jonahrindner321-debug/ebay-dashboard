@@ -87,13 +87,33 @@ Everything should flow into normalized entities instead of platform-specific das
 - Audit logs for data access.
 - White-label or client-facing portal.
 
-## Immediate Next Steps
+## Completed Work
 
-1. Turn this repo into a real app structure while preserving the current UI.
-2. Add mock/fixture data so local development works without production API access.
-3. Move secrets and Google API reads behind a backend route.
-4. Add role-aware views before adding external platform APIs.
-5. Add a daily summary generator using the existing normalized row data.
+### Layer 1 ✅
+- Refactored from single `index.html` into `index.html` + `styles.css` + `app.js`
+- Vercel deployment live from `main` branch via GitHub auto-deploy
+- Repo: `jonahrindner321-debug/ebay-dashboard`
+
+### Layer 2 — In progress
+- ✅ Google API key moved server-side: `api/sheets.js` Vercel serverless function
+  - Set `GOOGLE_API_KEY` in Vercel project env vars
+  - Set Google Cloud Console API key Application restrictions to "None" (key is server-side only, HTTP referrer restrictions don't apply; API restriction to Sheets API is the real protection)
+  - `_proxyOk` flag in `app.js` handles proxy → direct Google API fallback automatically
+- ✅ Client link lockdown: `#client=<slug>` deep links lock the user into that view
+  - Exit button is hidden, `closeClientView()` is blocked via `_clientOnlyMode` flag
+  - Admins opening a client from inside the dashboard still see the Exit button
+
+### Immediate Next Steps
+
+1. **Daily Brief section** — "Daily Brief" card on the ops page showing today's profit, sales count, inactive account alerts, and top performer. Uses already-loaded `RAW` data, no new API calls.
+2. **Real auth** — Password-protect the dashboard using a signed token system:
+   - `api/auth.js` endpoint: checks `DASHBOARD_PASSWORD` env var, returns a signed token (HMAC-SHA256 via Node built-in `crypto`, no npm packages)
+   - Token format: `${expiry_unix_timestamp}.${hmac(expiry, TOKEN_SECRET)}`
+   - `api/sheets.js` validates token on every request
+   - Frontend shows auth overlay on load; client `#client=` links bypass auth entirely
+   - Env vars needed: `DASHBOARD_PASSWORD`, `TOKEN_SECRET`
+3. Add mock/fixture data so local development works without production API access.
+4. Add role-aware backend permission enforcement (not just hidden UI).
 
 ## Safety Rules
 

@@ -489,17 +489,55 @@ async function apiFetch(url, retry = 4) {
     throw new Error('HTTP ' + res.status);
   }
 }
+
+// ─── PROXY FETCH ────────────────────────────────────────────────────────────
+// Tries /api/sheets (server holds the key — key never touches the browser).
+// Auto-falls back to direct Google API + local API_KEY if:
+//   • proxy not deployed (404)
+//   • GOOGLE_API_KEY env var not set on server (503)
+//   • any unexpected network error
+// This means the dashboard works identically in local dev and on Vercel,
+// and a bad deploy of the proxy never takes down the dashboard.
+let _proxyOk = null; // null=untested, true=working, false=use direct
+
+async function googleFetch(type, params) {
+  if (_proxyOk === false) return _googleDirect(type, params);
+  try {
+    const qs = new URLSearchParams({ type, ...params }).toString();
+    const res = await fetch(`/api/sheets?${qs}`);
+    // 404 = proxy not deployed, 503 = env var not set → fall back silently
+    if (res.status === 404 || res.status === 405 || res.status === 503) {
+      _proxyOk = false;
+      return _googleDirect(type, params);
+    }
+    if (res.status === 429) throw new Error('HTTP 429');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    _proxyOk = true;
+    return res.json();
+  } catch(e) {
+    // Network error or unexpected failure on first attempt → fall back to direct
+    if (_proxyOk === null) { _proxyOk = false; return _googleDirect(type, params); }
+    throw e;
+  }
+}
+
+async function _googleDirect(type, { id, tab }) {
+  let url;
+  if (type === 'tabs')   url = `https://sheets.googleapis.com/v4/spreadsheets/${id}?key=${API_KEY}&fields=sheets.properties(title,sheetType)`;
+  if (type === 'values') url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(tab)}!A:Z?key=${API_KEY}`;
+  if (type === 'drive')  url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime`;
+  if (type === 'meta')   url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/_meta!A1?key=${API_KEY}`;
+  return apiFetch(url);
+}
+
 async function getDataTabs(id) {
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}?key=${API_KEY}&fields=sheets.properties(title,sheetType)`;
-  const data = await apiFetch(url);
+  const data = await googleFetch('tabs', { id });
   // No blacklist — let parseValues detect valid data tabs by looking for DATE+PRICE headers.
   // Any tab without proper headers returns 0 rows automatically, so new/renamed tabs never break anything.
   return (data.sheets||[]).filter(s=>s.properties.sheetType==='GRID').map(s=>s.properties.title);
 }
 async function getTabValues(id, tab) {
-  const enc = encodeURIComponent(tab);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${enc}!A:Z?key=${API_KEY}`;
-  const data = await apiFetch(url);
+  const data = await googleFetch('values', { id, tab });
   return data.values || [];
 }
 
@@ -603,8 +641,7 @@ async function loadAll() {
   // Fetch sheet creation dates from Drive API (fire and forget — non-blocking)
   Promise.all(ids.map(async id => {
     try {
-      const url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime`;
-      const data = await apiFetch(url);
+      const data = await googleFetch('drive', { id });
       if (data.createdTime) {
         STORE_CREATED[SHEETS[id]] = data.createdTime.substring(0, 10); // YYYY-MM-DD
       }
@@ -616,8 +653,7 @@ async function loadAll() {
     for (let i = 0; i < ids.length; i++) {
       if (i > 0) await delay(400);
       try {
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${ids[i]}/values/_meta!A1?key=${API_KEY}`;
-        const data = await apiFetch(url);
+        const data = await googleFetch('meta', { id: ids[i] });
         const val = data.values && data.values[0] && data.values[0][0];
         if (val) SHEET_MODIFIED[SHEETS[ids[i]]] = val;
       } catch(e) { /* _meta tab not yet created */ }

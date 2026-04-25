@@ -1,0 +1,10 @@
+{
+  "name": "seller-os-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static Seller OS dashboard prototype.",
+  "scripts": {
+    "dev": "python3 -m http.server 8000",
+    "serve": "python3 -m http.server 8000"
+  }
+}

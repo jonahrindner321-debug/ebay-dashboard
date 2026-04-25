@@ -85,10 +85,11 @@ function decryptJson(value) {
   }
 }
 
-function tokenExpiry(value) {
+function tokenExpiry(value, { relative = true } = {}) {
   if (!value) return null;
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
+  if (relative) return new Date(Date.now() + n * 1000).toISOString();
   return new Date(n > 100000000000 ? n : n * 1000).toISOString();
 }
 

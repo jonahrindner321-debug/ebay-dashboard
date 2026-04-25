@@ -43,6 +43,14 @@ TIKTOK_REDIRECT_URI=https://ebay-dashboard-gamma.vercel.app/api/tiktok/callback
 TIKTOK_SCOPES=<approved read-only TikTok Shop scopes>
 ```
 
+Partner Center setup notes:
+
+- Complete Developer onboarding in TikTok Shop Partner Center.
+- Create a Custom app first, not a Public App Store listing.
+- Enable API access for the app.
+- Use this Redirect URL: `https://ebay-dashboard-gamma.vercel.app/api/tiktok/callback`
+- Choose the smallest read-only scopes TikTok approves for shops, orders, products, and finance/reporting data.
+
 Optional advanced settings:
 
 ```text

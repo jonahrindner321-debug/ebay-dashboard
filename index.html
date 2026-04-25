@@ -1130,7 +1130,7 @@
     <div class="card kpi-card"><div class="kpi-label">Latest Day</div><div class="kpi-val">—</div></div>
     <div class="card kpi-card"><div class="kpi-label">Avg ROI</div><div class="kpi-val">—</div></div>
     <div class="card kpi-card"><div class="kpi-label">Total Revenue</div><div class="kpi-val">—</div></div>
-    <div class="card kpi-card"><div class="kpi-label">eBay Fees</div><div class="kpi-val">—</div></div>
+    <div class="card kpi-card"><div class="kpi-label" id="fee-label-placeholder">Platform Fees</div><div class="kpi-val">—</div></div>
   </div>
 
   <!-- Records -->
@@ -2182,6 +2182,7 @@ async function loadAll() {
     renderAllTimeBanner();
     try { applyFilters(); } catch(e) { console.error('applyFilters error:', e); }
     updateChannelSwitcherVisibility();
+    setTimeout(updateChannelSwitcherVisibility, 1000);
     $('audit-btn').style.display = '';
     try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
     if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
@@ -2459,7 +2460,7 @@ function renderKPIs(data) {
     </div>
     <div class="card kpi-card">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#ef4444,#f87171)"></div>
-      <div class="kpi-label">🏷️ eBay Fees</div>
+      <div class="kpi-label" id="fee-label">🏷️ eBay Fees</div>
       <div class="kpi-body">
         <div class="kpi-left">
           <div class="kpi-val" id="kv-fee">${fmt$(fee)}</div>
@@ -3687,6 +3688,17 @@ function setChannelFilter(ch) {
     btn.style.background = active ? (c === 'tiktok' ? '#ff6b9d' : 'var(--indigo)') : 'var(--glass)';
     btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--text2)');
   });
+  // Swap "eBay Fees" label based on channel
+  const feeLabel  = $('fee-label');
+  const feeLabelP = $('fee-label-placeholder');
+  const feeTxt = ch === 'tiktok' ? '🏷️ TikTok Fees' : ch === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
+  if (feeLabel)  feeLabel.textContent  = feeTxt;
+  if (feeLabelP) feeLabelP.textContent = feeTxt.replace('🏷️ ','');
+  // Hide Growth tab in TikTok mode — listing metrics don't apply to TikTok
+  const growthBtn = $('page-btn-growth');
+  if (growthBtn) growthBtn.style.display = ch === 'tiktok' ? 'none' : '';
+  // If on Growth page and switching to TikTok, snap back to Ops
+  if (ch === 'tiktok') { try { switchPage('ops'); } catch(e) {} }
   try { applyFilters(); } catch(e) {}
   try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
 }

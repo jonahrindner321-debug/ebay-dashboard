@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>eBay Ops · Dashboard</title>
+  <title>Selling Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1"
     integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
     crossorigin="anonymous"></script>
@@ -85,6 +85,20 @@
       --muted: #a78bfa;
       --shadow: 0 4px 24px rgba(139,92,246,.12);
       --shadow-lg: 0 8px 48px rgba(139,92,246,.18);
+    }
+    .tiktok-mode {
+      --indigo: #ff2d55;
+      --violet: #ff6b9d;
+      --cyan:   #fe2c55;
+      --green:  #25f4ee;
+      --emerald:#25f4ee;
+      --header-bg: rgba(15,4,12,.92);
+      --bg:  #0f040c;
+      --bg2: #1a0611;
+    }
+    .tiktok-mode .logo-icon {
+      background: linear-gradient(135deg, #ff2d55, #ff6b9d) !important;
+      box-shadow: 0 0 16px rgba(255,45,85,.5) !important;
     }
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -912,7 +926,7 @@
   <div class="logo">
     <div class="logo-icon">📦</div>
     <div>
-      <div class="logo-text">eBay Ops</div>
+      <div class="logo-text">Selling Dashboard</div>
       <div class="logo-sub">Operations Dashboard</div>
     </div>
   </div>
@@ -954,6 +968,11 @@
     <button class="btn btn-ghost" onclick="changeKey()">⚙ Key</button>
     <button class="btn btn-ghost" id="audit-btn" onclick="openAudit()" style="display:none">🔍 Audit</button>
     <button class="btn btn-ghost" onclick="openClientView()" style="border-color:rgba(16,185,129,.4);color:var(--green)">👤 Client View</button>
+    <div id="channel-switcher" style="display:none;align-items:center;gap:6px;padding:4px;background:var(--glass);border:1px solid var(--card-border);border-radius:24px">
+      <button id="ch-all"    onclick="setChannelFilter('all')"    style="padding:4px 14px;border-radius:20px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:var(--indigo);color:#fff;transition:all .2s">All</button>
+      <button id="ch-ebay"   onclick="setChannelFilter('ebay')"   style="padding:4px 14px;border-radius:20px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:transparent;color:var(--muted);transition:all .2s">eBay</button>
+      <button id="ch-tiktok" onclick="setChannelFilter('tiktok')" style="padding:4px 14px;border-radius:20px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:transparent;color:#ff6b9d;transition:all .2s">⟡ TikTok</button>
+    </div>
   </div>
 </header>
 
@@ -1342,6 +1361,14 @@
     <button onclick="loadListingTracker(true)" style="background:var(--glass);border:1px solid var(--glass-border);color:var(--text2);cursor:pointer;padding:5px 14px;border-radius:8px;font-size:12px;font-weight:500;transition:all .2s" onmouseover="this.style.background='var(--glass-hover)'" onmouseout="this.style.background='var(--glass)'">↻ Refresh Listings</button>
   </div>
 
+  <!-- Channel toggle — only rendered when TikTok data exists -->
+  <div id="channel-toggle-row" style="display:none;margin-bottom:14px;gap:8px;align-items:center">
+    <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Channel:</span>
+    <button id="ch-btn-all"     onclick="setChannelFilter('all')"     style="padding:5px 16px;border-radius:20px;border:1px solid var(--card-border);font-size:12px;font-weight:600;cursor:pointer;background:var(--indigo);color:#fff">All</button>
+    <button id="ch-btn-ebay"    onclick="setChannelFilter('ebay')"    style="padding:5px 16px;border-radius:20px;border:1px solid var(--card-border);font-size:12px;font-weight:600;cursor:pointer;background:var(--glass);color:var(--text2)">eBay</button>
+    <button id="ch-btn-tiktok"  onclick="setChannelFilter('tiktok')"  style="padding:5px 16px;border-radius:20px;border:1px solid #ff6b9d44;font-size:12px;font-weight:600;cursor:pointer;background:var(--glass);color:#ff6b9d">⟡ TikTok</button>
+  </div>
+
   <!-- Hero KPIs -->
   <div class="growth-kpi-row" id="growth-kpis"></div>
 
@@ -1484,12 +1511,14 @@ const SHEETS = {
   '1GpUdOGG-w2QdnTRMeYT-UTaLAMgdx8LRVmURfUJ_frQ': 'Armando',
   '159BFifTYnDNoyaXNuZ4vIzUo0gJSTCeKW0L40swiyLo': 'Austin',
   '1rrATZ5UBihrfmt0fQF55hVaaq-Ku-C6fYFm6C8kymHA': 'Jack R',
-  '1R0jAvjuQDvGJMLymX1X6abr3PLZdpIjykEYXJfB5TdE': 'Paul',
   '1ZoNmwDq6FK-R209uTsra2sPv33vAuc1pFD3NQPAGK2c': 'Delmor',
   '1UHUjPqORhDMX9McbJueVhpRkP7fc3FeOXOiaOWZwhuQ': 'Mariel',
 };
 
 const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i;
+
+// Stores that have been offboarded/banned — excluded from all data and displays
+const BANNED_STORES = new Set(['Paul']);
 
 // ─── LISTING TRACKER ───────────────────────────────────────────────────────
 const LISTING_TRACKER_ID   = '1P1k92F_RsQxSE_2qZloA99OiOBEDazch';
@@ -1504,12 +1533,12 @@ const LISTING_NAME_MAP = {
   'Armando':      'Armando',
   'Sloop':        'John Slop',
   'Austin':       'Austin',
-  'Paul':         'Paul',
   'Mariel':       'Mariel',
   'Huny (delmor)':'Delmor',
   'Jack':         'Jack R',
 };
 let LISTING_DATA = { summary: [], todayRow: null, dailyColNames: [] };
+let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok'
 
 // Store creation dates fetched from Drive API — populated on load
 const STORE_CREATED = {}; // { person: 'YYYY-MM-DD' }
@@ -1978,7 +2007,7 @@ async function getTabValues(id, tab) {
 }
 
 // ─── PARSE VALUES ──────────────────────────────────────────────────────────
-function parseValues(values, person, monthLabel) {
+function parseValues(values, person, monthLabel, channel = 'ebay') {
   const rows = [];
   if (!values || values.length < 2) return rows;
   let headerIdx = -1, colMap = {};
@@ -2015,7 +2044,7 @@ function parseValues(values, person, monthLabel) {
     if (roi !== 0 && Math.abs(roi) <= 2) roi = roi * 100;
     const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
     const dateStr = parseDate(dateRaw);
-    rows.push({ person, month: monthLabel, date: dateStr, _dateRaw: dateRaw,
+    rows.push({ person, month: monthLabel, channel, date: dateStr, _dateRaw: dateRaw,
       price: r2(price), cost: r2(cost), fee: r2(Math.abs(fee)), profit: r2(profit), roi: r2(roi) });
   }
   return rows;
@@ -2106,7 +2135,8 @@ async function loadAll() {
           });
           loadAudit.push({ person: src.person, tab: src.tab, rows: expRows.length, profit: 0, status: expRows.length > 0 ? 'ok' : 'skipped' });
         } else {
-          const parsed = parseValues(values, src.person, normSpecial(src.tab));
+          const channel = /tik.?tok/i.test(src.tab) ? 'tiktok' : 'ebay';
+          const parsed = parseValues(values, src.person, normSpecial(src.tab), channel);
           _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
           RAW.push(...parsed);
           const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
@@ -2151,6 +2181,7 @@ async function loadAll() {
     populateFilters();
     renderAllTimeBanner();
     try { applyFilters(); } catch(e) { console.error('applyFilters error:', e); }
+    updateChannelSwitcherVisibility();
     $('audit-btn').style.display = '';
     try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
     if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
@@ -2190,7 +2221,8 @@ function filtered() {
     (p==='all' || r.person===p) &&
     (m==='all' || r.month===m)  &&
     (!df || !r.date || r.date >= df) &&
-    (!dt || !r.date || r.date <= dt)
+    (!dt || !r.date || r.date <= dt) &&
+    (CHANNEL_FILTER === 'all' || (CHANNEL_FILTER === 'tiktok' ? r.channel === 'tiktok' : r.channel !== 'tiktok'))
   );
 }
 function clearDates() {
@@ -3456,6 +3488,7 @@ async function loadListingTracker(force = false) {
       const r = sumRows[i];
       if (!r[0] || /^total|^system|^monthly|^month/i.test(r[0].trim())) continue;
       if (!parseInt(r[2])) continue; // skip rows with no current listing count (headers, labels)
+      if (BANNED_STORES.has(r[0].trim())) continue; // skip offboarded stores
       summary.push({ store: r[0].trim(), operator: r[1]||'', current: parseInt(r[2])||0, target: parseInt(r[3])||5000, remaining: parseInt(r[4])||0, dailyGoal: parseInt(r[5])||40 });
     }
 
@@ -3489,6 +3522,7 @@ async function loadListingTracker(force = false) {
       for (let c = 2; c < dailyColNames.length; c++) {
         const name = dailyColNames[c];
         if (!name || name === 'Daily Total' || name === 'Notes') continue;
+        if (BANNED_STORES.has(name)) continue; // skip offboarded stores
         const v = r[c];
         if (v !== undefined && v !== '') counts[name] = parseInt(v) || 0;
       }
@@ -3630,6 +3664,39 @@ function getMonthlyListingSnapshots() {
   return JSON.parse(localStorage.getItem('ebay_listing_snapshots') || '{}');
 }
 
+function setChannelFilter(ch) {
+  CHANNEL_FILTER = ch;
+  document.body.classList.toggle('tiktok-mode', ch === 'tiktok');
+  const logoIcon = document.querySelector('.logo-icon');
+  const logoSub  = document.querySelector('.logo-sub');
+  if (logoIcon) logoIcon.textContent = ch === 'tiktok' ? '⟡' : '📦';
+  if (logoSub)  logoSub.textContent  = ch === 'tiktok' ? 'TikTok Sales' : ch === 'ebay' ? 'eBay Only' : 'Operations Dashboard';
+  // Update header channel switcher buttons
+  ['all','ebay','tiktok'].forEach(c => {
+    const btn = $('ch-'+c);
+    if (!btn) return;
+    const active = c === ch;
+    btn.style.background = active ? (c === 'tiktok' ? '#ff2d55' : 'var(--indigo)') : 'transparent';
+    btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--muted)');
+  });
+  // Update growth tab channel toggle buttons
+  ['all','ebay','tiktok'].forEach(c => {
+    const btn = $('ch-btn-'+c);
+    if (!btn) return;
+    const active = c === ch;
+    btn.style.background = active ? (c === 'tiktok' ? '#ff6b9d' : 'var(--indigo)') : 'var(--glass)';
+    btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--text2)');
+  });
+  try { applyFilters(); } catch(e) {}
+  try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
+}
+
+function updateChannelSwitcherVisibility() {
+  const hasTiktok = RAW.some(r => r.channel === 'tiktok');
+  const sw = $('channel-switcher');
+  if (sw) sw.style.display = hasTiktok ? 'flex' : 'none';
+}
+
 function renderGrowthPage() {
   const { summary, todayRow, dailyColNames, dailyHistory = [] } = LISTING_DATA;
   saveMonthlyListingSnapshot();
@@ -3668,7 +3735,10 @@ function renderGrowthPage() {
   const pd = {}; // personData keyed by tracker store name
   summary.forEach(s => {
     const dashName = LISTING_NAME_MAP[s.store] || s.store;
-    const recs = RAW.filter(r => r.person === dashName);
+    const allRecs    = RAW.filter(r => r.person === dashName);
+    const tiktokRecs = allRecs.filter(r => r.channel === 'tiktok');
+    const ebayRecs   = allRecs.filter(r => r.channel !== 'tiktok');
+    const recs       = CHANNEL_FILTER === 'tiktok' ? tiktokRecs : CHANNEL_FILTER === 'ebay' ? ebayRecs : allRecs;
 
     // Profit / revenue / sales totals (always all-time for reference)
     const totalProfit  = r2(recs.reduce((sum,r) => sum + r.profit, 0));
@@ -3712,8 +3782,10 @@ function renderGrowthPage() {
     const _now = new Date();
     const _cut30 = new Date(_now); _cut30.setDate(_now.getDate() - 30);
     const _cut60 = new Date(_now); _cut60.setDate(_now.getDate() - 60);
-    const rolling30P     = r2(recs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).reduce((s,r) => s+r.profit, 0));
-    const rolling30PrevP = r2(recs.filter(r => { const d=new Date(r.date+'T00:00:00'); return r.date && d>=_cut60 && d<_cut30; }).reduce((s,r) => s+r.profit, 0));
+    const rolling30P        = r2(recs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).reduce((s,r) => s+r.profit, 0));
+    const rolling30PrevP    = r2(recs.filter(r => { const d=new Date(r.date+'T00:00:00'); return r.date && d>=_cut60 && d<_cut30; }).reduce((s,r) => s+r.profit, 0));
+    const rolling30Tiktok   = r2(tiktokRecs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).reduce((s,r) => s+r.profit, 0));
+    const rolling30Ebay     = r2(ebayRecs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).reduce((s,r) => s+r.profit, 0));
 
     // Order analytics — from actual transaction data
     const totalGross      = r2(recs.reduce((s,r) => s+(r.price||0), 0));
@@ -3772,7 +3844,7 @@ function renderGrowthPage() {
       byMonth, mKeys, lastMo, prevMo, lastMoP, prevMoP, momPct, momDelta,
       streak, avgDailyList, histForStore, todayN,
       profitPer1k, profitPerList, proj30, proj60, proj90, effDaily, daysToTgt,
-      rolling30P, rolling30PrevP,
+      rolling30P, rolling30PrevP, rolling30Tiktok, rolling30Ebay,
       totalGross, avgSalePrice, avgProfitPerSale, marginPct, sellThrough,
       daysSinceLastSale, consistencyPct, actualPace14,
       last7Avg, momentum, weekActual,
@@ -3831,6 +3903,9 @@ function renderGrowthPage() {
   const jrTotal30d = r2(all.reduce((s,p) => s + p.jrShare30d, 0));
   const totalGoal  = summary.reduce((s,r) => s + (r.dailyGoal || 40), 0);
 
+  const totalTiktok30d = r2(all.reduce((s,p) => s + (p.rolling30Tiktok || 0), 0));
+  const totalEbay30d   = r2(all.reduce((s,p) => s + (p.rolling30Ebay   || 0), 0));
+
   const byEff      = [...all].filter(p => p.current > 0).sort((a,b) => b.profitPer1k - a.profitPer1k);
   const growingCnt  = all.filter(p => p.roll30MomPct !== null && p.roll30MomPct > 0).length;
   const momCnt      = all.filter(p => p.roll30MomPct !== null).length;
@@ -3874,7 +3949,27 @@ function renderGrowthPage() {
       <div class="growth-kpi-label">Network Momentum</div>
       <div class="growth-kpi-val" style="color:${all.filter(p=>p.momentum>1.1).length >= all.length*0.5?'var(--green)':all.filter(p=>p.momentum<0.7).length > all.length*0.4?'var(--red)':'var(--amber)'}">${all.filter(p=>p.momentum>1.1).length} accelerating</div>
       <div class="growth-kpi-sub">${all.filter(p=>p.momentum<0.7).length} slowing · ${all.filter(p=>p.momentum>=0.7&&p.momentum<=1.1).length} steady · based on 7d vs 14d pace</div>
-    </div>`;
+    </div>
+    ${totalTiktok30d > 0 ? `<div class="growth-kpi-card" style="border-color:#ff6b9d44">
+      <div class="growth-kpi-label" style="color:#ff6b9d">⟡ TikTok Revenue (30d)</div>
+      <div class="growth-kpi-val" style="color:#ff6b9d">${fmt$(totalTiktok30d)}</div>
+      <div class="growth-kpi-sub">eBay: ${fmt$(totalEbay30d)} · TikTok: ${fmt$(totalTiktok30d)} · combined: ${fmt$(r2(totalTiktok30d+totalEbay30d))}</div>
+    </div>` : ''}`;
+
+  // Show/hide channel toggle based on whether TikTok data exists in RAW
+  const hasTiktokData = RAW.some(r => r.channel === 'tiktok');
+  const toggleRow = $('channel-toggle-row');
+  if (toggleRow) {
+    toggleRow.style.display = hasTiktokData ? 'flex' : 'none';
+    // Sync button active states to current filter
+    ['all','ebay','tiktok'].forEach(c => {
+      const btn = $('ch-btn-'+c);
+      if (!btn) return;
+      const active = c === CHANNEL_FILTER;
+      btn.style.background = active ? (c === 'tiktok' ? '#ff6b9d' : 'var(--indigo)') : 'var(--glass)';
+      btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--text2)');
+    });
+  }
 
   // ════════════════════════════════════════════════════════
   // SCALE INTELLIGENCE — who to bet on
@@ -4006,6 +4101,7 @@ function renderGrowthPage() {
       <div style="font-size:10px;margin-bottom:4px"><span style="color:${paceColor}">${paceNote}</span></div>
       ${hasMonthly ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px;line-height:1.7">
         <strong style="color:var(--text2)">${p.recentMoLabel} profit:</strong> ${fmt$(p.recentMoProfit)} ÷ ${p.current.toLocaleString()} listings = <strong style="color:var(--indigo)">${fmt$(p.profitPerListMo)}/listing/mo</strong>
+        ${CHANNEL_FILTER === 'all' && p.rolling30Tiktok > 0 ? `<br><span style="color:#ff6b9d">⟡ TikTok</span> <strong style="color:#ff6b9d">${fmt$(p.rolling30Tiktok)}</strong> · <span style="color:var(--cyan)">eBay</span> <strong style="color:var(--cyan)">${fmt$(p.rolling30Ebay)}</strong> <span style="opacity:.5">(last 30d)</span>` : ''}
       </div>` : (!hasAllTime ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px">No profit data yet — projections unavailable</div>` : '')}
       ${intelBits.length ? `<div style="font-size:9px;color:var(--muted);margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px">${intelBits.join('<span style="opacity:.4">·</span>')}</div>` : ''}
       <div style="font-size:9px;color:var(--muted);margin-bottom:2px;opacity:.6">if you keep listing at current pace →</div>
@@ -5150,7 +5246,7 @@ function toggleParty() {
     btn.textContent = '🎉 Party';
     btn.classList.remove('btn-party-on');
     ball.style.display = 'none';
-    document.querySelector('.logo-text') && (document.querySelector('.logo-text').textContent = 'eBay Ops');
+    document.querySelector('.logo-text') && (document.querySelector('.logo-text').textContent = 'Selling Dashboard');
     const refreshBtn = document.querySelector('.btn-primary');
     if (refreshBtn) refreshBtn.innerHTML = '<span id="ri">↻</span> Refresh';
     revertPartyText();
@@ -5531,6 +5627,8 @@ function openWeeklyWrap() {
   const content = $('wrap-content');
   if (!RAW.length) { showToast('Load data first', 'error', '⚠️'); return; }
 
+  const chRAW = RAW.filter(r => CHANNEL_FILTER === 'all' || (CHANNEL_FILTER === 'tiktok' ? r.channel === 'tiktok' : r.channel !== 'tiktok'));
+
   // Determine last full week (Mon–Sun)
   const today = new Date();
   const dow = today.getDay(); // 0=Sun
@@ -5542,14 +5640,14 @@ function openWeeklyWrap() {
   const fmt = d => d.toISOString().slice(0, 10);
   const inRange = (r, from, to) => r.date && r.date >= fmt(from) && r.date <= fmt(to);
 
-  const thisWeek = RAW.filter(r => inRange(r, lastMon, lastSun));
-  const prevWeek = RAW.filter(r => inRange(r, prevMon, prevSun));
+  const thisWeek = chRAW.filter(r => inRange(r, lastMon, lastSun));
+  const prevWeek = chRAW.filter(r => inRange(r, prevMon, prevSun));
 
   // If no last-week data, use the last 7 available days
-  const dd = getDailyData(RAW).slice(-7);
-  const useData = thisWeek.length > 0 ? thisWeek : RAW.filter(r => dd.some(d => d.date === r.date));
-  const prevData = prevWeek.length > 0 ? prevWeek : getDailyData(RAW).slice(-14, -7).reduce((acc, d) => {
-    return acc.concat(RAW.filter(r => r.date === d.date));
+  const dd = getDailyData(chRAW).slice(-7);
+  const useData = thisWeek.length > 0 ? thisWeek : chRAW.filter(r => dd.some(d => d.date === r.date));
+  const prevData = prevWeek.length > 0 ? prevWeek : getDailyData(chRAW).slice(-14, -7).reduce((acc, d) => {
+    return acc.concat(chRAW.filter(r => r.date === d.date));
   }, []);
 
   const sumProfit  = arr => r2(arr.reduce((s,r)=>s+r.profit,0));

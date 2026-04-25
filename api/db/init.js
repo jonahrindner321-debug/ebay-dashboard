@@ -19,7 +19,13 @@ module.exports = async function handler(req, res) {
   try {
     const sql = getSql();
     const schema = fs.readFileSync(path.join(process.cwd(), 'db/schema.sql'), 'utf8');
-    await sql.query(schema);
+    const statements = schema
+      .split(/;\s*(?:\n|$)/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    for (const statement of statements) {
+      await sql.query(statement);
+    }
     res.status(200).json({ ok: true, message: 'Seller OS database schema is ready' });
   } catch (e) {
     res.status(500).json({ error: e.message });

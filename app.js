@@ -3510,31 +3510,52 @@ function renderClientView(personName, opts = {}) {
 
   const MN = {'Jan':'January','Feb':'February','Mar':'March','Apr':'April','May':'May','Jun':'June','Jul':'July','Aug':'August','Sep':'September','Oct':'October','Nov':'November','Dec':'December'};
   const latestLabel = latestMo ? (MN[latestMo.split(' ')[0]] || latestMo.split(' ')[0]) + ' ' + latestMo.split(' ')[1] : null;
-
-  // Fun milestones items list
-  const funItems = [
-    { e:'🍔', name:'Chipotle burritos',       price:10.65  },
-    { e:'☕', name:'Starbucks lattes',         price:7.50   },
-    { e:'🎵', name:'months of Spotify',        price:10.99  },
-    { e:'📺', name:'Netflix subscriptions',    price:22.99  },
-    { e:'⛽', name:'tanks of gas',             price:55     },
-    { e:'🍕', name:'large pizzas delivered',   price:18     },
-    { e:'🎮', name:'new video games',          price:69.99  },
-    { e:'🛫', name:'domestic flight tickets',  price:249    },
-    { e:'🎧', name:'pairs of AirPods',         price:179    },
-    { e:'📱', name:'iPhone 15s',               price:799    },
+  const latestRows = latestMo ? recs.filter(r => r.month === latestMo) : [];
+  const prevRows   = prevMo ? recs.filter(r => r.month === prevMo) : [];
+  const latestRev  = r2(latestRows.reduce((s,r) => s + r.price, 0));
+  const prevRev    = r2(prevRows.reduce((s,r) => s + r.price, 0));
+  const latestSales = latestRows.length;
+  const prevSales   = prevRows.length;
+  const latestMargin = latestRev > 0 ? r2(latestProfit / latestRev * 100) : 0;
+  const avgSale = latestSales ? r2(latestRev / latestSales) : 0;
+  const myDailyAvg = latestRows.length
+    ? r2(myLatest / Math.max(1, new Set(latestRows.map(r => r.date).filter(Boolean)).size))
+    : 0;
+  const validDates = recs.map(r => r.date).filter(Boolean).sort();
+  const lastDataDate = validDates[validDates.length - 1] || null;
+  const lastDataLabel = lastDataDate ? new Date(lastDataDate + 'T00:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'No dated sales yet';
+  const revPct = prevRev > 0 ? r2((latestRev - prevRev) / prevRev * 100) : null;
+  const salesPct = prevSales > 0 ? r2((latestSales - prevSales) / prevSales * 100) : null;
+  const remainingListings = Math.max(0, target - current);
+  const daysToTarget = actualPace > 0 && remainingListings > 0 ? Math.ceil(remainingListings / actualPace) : null;
+  const nextMilestone = current < 1000 ? 1000 : current < 2500 ? 2500 : current < 5000 ? 5000 : target * 2;
+  const nextMilestoneLeft = Math.max(0, nextMilestone - current);
+  const bestMonth = mKeys.map(m => ({ month: m, share: r2(byMonth[m] * ownerPct) })).sort((a,b) => b.share - a.share)[0] || null;
+  const clientStatus = momPct === null
+    ? 'Building baseline'
+    : momPct >= 25 ? 'Strong momentum'
+    : momPct >= 0 ? 'Trending up'
+    : 'Needs attention';
+  const clientStatusColor = momPct === null
+    ? 'var(--cyan)'
+    : momPct >= 0 ? 'var(--green)' : 'var(--amber)';
+  const focusItems = [
+    momPct !== null && momPct >= 25
+      ? `Momentum is strong: ${latestLabel || 'this month'} earnings are up ${Math.abs(momPct).toFixed(0)}% from ${prevMo}.`
+      : momPct !== null && momPct < 0
+        ? `Earnings are down ${Math.abs(momPct).toFixed(0)}% from ${prevMo}; the next review should focus on sales velocity and margin.`
+        : `This store is still building a clean month-over-month baseline.`,
+    !isTikTokMode && remainingListings > 0
+      ? `Listing runway: ${remainingListings.toLocaleString()} listings left to the ${target.toLocaleString()} target${daysToTarget ? `, roughly ${daysToTarget.toLocaleString()} days at the current pace` : ''}.`
+      : `Listing target reached; the next unlock is keeping profit per listing healthy.`,
+    latestMargin > 0
+      ? `Current margin is ${latestMargin.toFixed(1)}% on ${fmt$(latestRev)} in ${latestLabel || 'the latest month'}.`
+      : `Margin will appear once this month has revenue and profit data.`,
+    todayN !== null && !isTikTokMode
+      ? `Today: ${todayN.toLocaleString()} listings added against a ${dailyGoal.toLocaleString()} daily goal.`
+      : `Latest data refresh includes sales through ${lastDataLabel}.`
   ];
-  const funRows = funItems.filter(i => myLatest >= i.price).map(i => {
-    const qty = Math.floor(myLatest / i.price);
-    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:rgba(255,255,255,.04);border-radius:8px">
-      <span style="font-size:24px">${i.e}</span>
-      <div style="flex:1">
-        <div style="font-weight:700;font-size:13px">${qty.toLocaleString()} ${i.name}</div>
-        <div style="font-size:11px;color:var(--muted)">${fmt$(i.price)} each</div>
-      </div>
-      <div style="font-size:20px;font-weight:900;color:var(--amber)">${qty.toLocaleString()}x</div>
-    </div>`;
-  }).join('');
+  const kpiDelta = val => val === null ? '' : `<span style="font-size:11px;font-weight:800;color:${val>=0?'var(--green)':'var(--rose)'}">${val>=0?'↑':'↓'} ${Math.abs(val).toFixed(0)}%</span>`;
 
   // Scale calculator max
   const calcMax = Math.max(target * 2, current * 3, 10000);
@@ -3597,12 +3618,12 @@ function renderClientView(personName, opts = {}) {
   $('client-view-content').innerHTML = `
     <div style="min-height:100vh;background:var(--bg);padding:0 0 60px">
       <!-- Header -->
-      <div style="background:var(--card);border-bottom:1px solid var(--card-border);padding:16px 24px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10">
+      <div style="background:rgba(10,15,28,.92);backdrop-filter:blur(18px);border-bottom:1px solid var(--card-border);padding:14px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:10">
         <div style="display:flex;align-items:center;gap:12px">
           <div style="width:36px;height:36px;border-radius:10px;background:${cvHeaderBg};display:flex;align-items:center;justify-content:center;font-size:18px">${cvHeaderIcon}</div>
           <div>
-            <div style="font-weight:800;font-size:16px">${displayName}</div>
-            <div style="font-size:11px;color:var(--muted)">Your Store · ${ownerPctLabel} profit share</div>
+            <div style="font-size:10px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.12em">Seller OS Client Portal</div>
+            <div style="font-weight:900;font-size:17px">${displayName}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -3617,10 +3638,40 @@ function renderClientView(personName, opts = {}) {
         <div style="font-size:12px;color:var(--amber);font-weight:600">Earnings shown are <u>before</u> shared expense deductions — VPS, AutoDS & Proxy costs are split evenly across all stores and will reduce your final payout.</div>
       </div>
 
-      <div style="max-width:800px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:20px">
+      <div style="max-width:1040px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:20px">
+
+        <!-- Client Hero -->
+        <div class="card" style="overflow:hidden;border:1px solid rgba(16,185,129,.22);background:linear-gradient(135deg,rgba(16,185,129,.16),rgba(6,182,212,.08) 42%,rgba(139,92,246,.10))">
+          <div style="padding:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;align-items:stretch">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+                <span style="font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:var(--green);background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.28);padding:5px 9px;border-radius:999px">${clientStatus}</span>
+                <span style="font-size:11px;font-weight:800;color:var(--muted);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);padding:5px 9px;border-radius:999px">${ownerPctLabel} profit share</span>
+                <span style="font-size:11px;font-weight:800;color:var(--muted);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);padding:5px 9px;border-radius:999px">Updated through ${lastDataLabel}</span>
+              </div>
+              <div style="font-size:13px;color:var(--muted);font-weight:700;margin-bottom:4px">Your current month take-home</div>
+              <div style="font-size:clamp(42px,7vw,76px);line-height:.95;font-weight:1000;color:var(--green);letter-spacing:0">${myLatest > 0 ? fmt$(myLatest) : '—'}</div>
+              <div style="margin-top:12px;font-size:15px;color:var(--text2);max-width:620px">
+                ${latestLabel || 'This month'} is at <b style="color:var(--text)">${fmt$(latestProfit)}</b> store profit, which makes your share <b style="color:var(--green)">${myLatest > 0 ? fmt$(myLatest) : '—'}</b>${momPct !== null ? `, ${momPct >= 0 ? 'up' : 'down'} <b style="color:${momPct>=0?'var(--green)':'var(--rose)'}">${Math.abs(momPct).toFixed(0)}%</b> from ${prevMo}` : ''}.
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="background:rgba(0,0,0,.16);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:14px">
+                <div style="font-size:10px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px">Next Milestone</div>
+                <div style="font-size:24px;font-weight:1000;color:var(--cyan)">${nextMilestone.toLocaleString()} listings</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:2px">${nextMilestoneLeft ? `${nextMilestoneLeft.toLocaleString()} listings away` : 'milestone reached'}</div>
+              </div>
+              <div style="background:rgba(0,0,0,.16);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:14px">
+                <div style="font-size:10px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px">Best Month</div>
+                <div style="font-size:24px;font-weight:1000;color:var(--violet)">${bestMonth ? fmt$(bestMonth.share) : '—'}</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:2px">${bestMonth ? bestMonth.month : 'No history yet'}</div>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- Earnings Hero -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px">
           <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(16,185,129,.15),rgba(52,211,153,.08));border:1px solid rgba(16,185,129,.25)">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${latestLabel || 'This Month'} Earnings</div>
             <div style="font-size:36px;font-weight:900;color:var(--green)">${myLatest > 0 ? fmt$(myLatest) : '—'}</div>
@@ -3634,11 +3685,35 @@ function renderClientView(personName, opts = {}) {
             <div style="font-size:36px;font-weight:900;color:var(--cyan)">${myAllTime > 0 ? fmt$(myAllTime) : '—'}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">${cvAllTimeSub}</div>
           </div>
+          <div class="card" style="padding:20px">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Sales This Month</div>
+            <div style="font-size:36px;font-weight:900;color:var(--amber)">${latestSales.toLocaleString()}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;display:flex;justify-content:space-between;gap:8px"><span>${fmt$(avgSale)} avg sale</span>${kpiDelta(salesPct)}</div>
+          </div>
+          <div class="card" style="padding:20px">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Store Revenue</div>
+            <div style="font-size:36px;font-weight:900;color:var(--indigo)">${latestRev > 0 ? fmt$(latestRev) : '—'}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;display:flex;justify-content:space-between;gap:8px"><span>${latestMargin.toFixed(1)}% margin</span>${kpiDelta(revPct)}</div>
+          </div>
           ${myProjNow !== null ? `<div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(139,92,246,.1),rgba(99,102,241,.06));border:1px solid rgba(139,92,246,.2)">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Projected Monthly</div>
             <div style="font-size:36px;font-weight:900;color:var(--violet)">${fmt$(myProjNow)}<span style="font-size:14px;font-weight:400">/mo</span></div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">at current ${current.toLocaleString()} listings · ${latestMo || 'recent'} rate</div>
           </div>` : ''}
+        </div>
+
+        <!-- Today's Focus -->
+        <div class="card" style="padding:20px;border:1px solid rgba(6,182,212,.18);background:linear-gradient(135deg,rgba(6,182,212,.08),rgba(255,255,255,.03))">
+          <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:900">Today's Focus</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:3px">plain-English readout from the current store data</div>
+            </div>
+            <div style="font-size:12px;font-weight:900;color:${clientStatusColor};white-space:nowrap">${clientStatus}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+            ${focusItems.map(item => `<div style="padding:12px 13px;background:rgba(0,0,0,.14);border:1px solid rgba(255,255,255,.07);border-radius:8px;font-size:12px;line-height:1.45;color:var(--text2)">${item}</div>`).join('')}
+          </div>
         </div>
 
         ${cvListingsHtml}
@@ -3716,12 +3791,29 @@ function renderClientView(personName, opts = {}) {
           </div>
         </div>` : ''}
 
-        <!-- Fun Milestones -->
-        ${myLatest > 0 && funRows ? `<div class="card" style="padding:20px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:4px">🎉 This Month You Could Buy...</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:14px">based on ${latestLabel || 'this month'} earnings of ${fmt$(myLatest)} 😂</div>
-          <div style="display:flex;flex-direction:column;gap:8px">${funRows}</div>
-        </div>` : ''}
+        <!-- Payout Context -->
+        <div class="card" style="padding:20px">
+          <div style="font-size:13px;font-weight:900;margin-bottom:4px">Payout Context</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:14px">a quick breakdown of what the current month means before shared expenses</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+            <div style="padding:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px">
+              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Store Profit</div>
+              <div style="font-size:22px;font-weight:900;color:var(--text)">${latestProfit > 0 ? fmt$(latestProfit) : '—'}</div>
+            </div>
+            <div style="padding:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px">
+              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Your Share</div>
+              <div style="font-size:22px;font-weight:900;color:var(--green)">${myLatest > 0 ? fmt$(myLatest) : '—'}</div>
+            </div>
+            <div style="padding:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px">
+              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Daily Average</div>
+              <div style="font-size:22px;font-weight:900;color:var(--cyan)">${myDailyAvg > 0 ? fmt$(myDailyAvg) : '—'}</div>
+            </div>
+            <div style="padding:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px">
+              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">After Expenses</div>
+              <div style="font-size:22px;font-weight:900;color:var(--amber)">Pending</div>
+            </div>
+          </div>
+        </div>
 
         <div style="text-align:center;font-size:11px;color:var(--muted);padding-top:8px">
           Data updates whenever the dashboard refreshes · your ${ownerPctLabel} share is calculated from store profit after ${cvFeePlatform}

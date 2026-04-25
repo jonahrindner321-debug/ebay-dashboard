@@ -2,11 +2,14 @@ const {
   STATE_COOKIE,
   clearCookie,
   encryptJson,
+  encryptText,
   getRedirectUri,
   html,
   readCookies,
   setCookie,
+  tokenExpiry,
 } = require('./_lib');
+const { ensureStore, hasDb, savePlatformConnection } = require('../_lib/db');
 
 async function exchangeOAuthCode(code, req) {
   const tokenUrl = process.env.TIKTOK_TOKEN_URL || 'https://open.tiktokapis.com/v2/oauth/token/';
@@ -59,7 +62,11 @@ module.exports = async function handler(req, res) {
   }
 
   const cookies = readCookies(req);
-  if (!code || !state || !cookies[STATE_COOKIE] || cookies[STATE_COOKIE] !== state) {
+  let statePayload = null;
+  try { statePayload = JSON.parse(cookies[STATE_COOKIE] || '{}'); }
+  catch (e) { statePayload = { state: cookies[STATE_COOKIE] }; }
+
+  if (!code || !state || !statePayload.state || statePayload.state !== state) {
     html(res, 400, `<!doctype html><title>TikTok connection failed</title><body style="font-family:system-ui;background:#0b1020;color:#e5e7eb;padding:32px"><h1>TikTok connection failed</h1><p>The OAuth state did not match. Please try connecting again.</p><p><a style="color:#67e8f9" href="/">Back to Seller OS</a></p></body>`);
     return;
   }
@@ -67,6 +74,35 @@ module.exports = async function handler(req, res) {
   try {
     const tokenBundle = await exchangeOAuthCode(code, req);
     const connectedAt = new Date().toISOString();
+    let storage = 'encrypted_http_only_cookie';
+    let connectionId = null;
+
+    if (hasDb()) {
+      const store = await ensureStore({
+        storeSlug: statePayload.storeSlug,
+        storeName: statePayload.storeName,
+        clientSlug: statePayload.clientSlug,
+        clientName: statePayload.clientName,
+      });
+      const accessToken = tokenBundle.access_token || tokenBundle.data?.access_token;
+      const refreshToken = tokenBundle.refresh_token || tokenBundle.data?.refresh_token;
+      const externalAccountId = tokenBundle.open_id || tokenBundle.data?.open_id || tokenBundle.shop_id || tokenBundle.data?.shop_id || store.slug;
+      const externalAccountName = tokenBundle.seller_name || tokenBundle.shop_name || tokenBundle.data?.shop_name || store.name;
+      connectionId = await savePlatformConnection({
+        storeId: store.id,
+        platform: 'tiktok',
+        externalAccountId,
+        externalAccountName,
+        scopes: String(process.env.TIKTOK_SCOPES || '').split(/[,\s]+/).filter(Boolean),
+        encryptedAccessToken: encryptText(accessToken || JSON.stringify(tokenBundle)),
+        encryptedRefreshToken: encryptText(refreshToken),
+        accessTokenExpiresAt: tokenExpiry(tokenBundle.expires_in || tokenBundle.data?.expires_in),
+        refreshTokenExpiresAt: tokenExpiry(tokenBundle.refresh_expires_in || tokenBundle.data?.refresh_expires_in),
+        tokenPayload: { connectedAt, tokenStyle: process.env.TIKTOK_TOKEN_STYLE || 'oauth_v2' },
+      });
+      storage = 'database';
+    }
+
     const encrypted = encryptJson({ ...tokenBundle, connectedAt });
     setCookie(res, 'seller_os_tiktok', encrypted, { maxAge: 60 * 60 * 24 * 30 });
     clearCookie(res, STATE_COOKIE);
@@ -74,7 +110,8 @@ module.exports = async function handler(req, res) {
       <title>TikTok Shop connected</title>
       <body style="font-family:system-ui;background:#0b1020;color:#e5e7eb;padding:32px">
         <h1>TikTok Shop connected</h1>
-        <p>Seller OS can now use the approved read-only scopes for this browser session.</p>
+        <p>Seller OS can now use the approved read-only scopes.</p>
+        <p>Storage: ${storage}${connectionId ? ` · Connection ${connectionId}` : ''}</p>
         <p><a style="color:#67e8f9" href="/">Back to Seller OS</a></p>
         <script>setTimeout(() => location.href = '/', 1200)</script>
       </body>`);

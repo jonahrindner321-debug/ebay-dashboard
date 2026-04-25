@@ -574,6 +574,8 @@ async function refreshTikTokStatus() {
 }
 
 async function connectTikTokShop() {
+  const selectedStore = $('filter-person')?.value || 'all';
+  const store = selectedStore !== 'all' ? selectedStore : '';
   try {
     const res = await fetch('/api/tiktok/status');
     if (res.ok) {
@@ -583,7 +585,14 @@ async function connectTikTokShop() {
       }
     }
   } catch (e) { /* local static server has no API routes */ }
-  window.location.href = '/api/tiktok/connect';
+  const params = new URLSearchParams();
+  if (store) {
+    params.set('store', clientSlug(store));
+    params.set('storeName', store);
+    params.set('client', clientSlug(store));
+    params.set('clientName', store);
+  }
+  window.location.href = `/api/tiktok/connect${params.toString() ? `?${params}` : ''}`;
 }
 
 // ─── PARSE VALUES ──────────────────────────────────────────────────────────

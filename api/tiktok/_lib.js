@@ -62,6 +62,11 @@ function encryptJson(value) {
   return Buffer.concat([iv, tag, encrypted]).toString('base64url');
 }
 
+function encryptText(value) {
+  if (!value) return null;
+  return encryptJson({ value });
+}
+
 function decryptJson(value) {
   const secret = getSecret();
   if (!secret || !value) return null;
@@ -78,6 +83,13 @@ function decryptJson(value) {
   } catch (e) {
     return null;
   }
+}
+
+function tokenExpiry(value) {
+  if (!value) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return new Date(n > 100000000000 ? n : n * 1000).toISOString();
 }
 
 function getTokenBundle(req) {
@@ -107,6 +119,7 @@ module.exports = {
   STATE_COOKIE,
   clearCookie,
   encryptJson,
+  encryptText,
   getRedirectUri,
   getTokenBundle,
   html,
@@ -114,4 +127,5 @@ module.exports = {
   missingConfig,
   readCookies,
   setCookie,
+  tokenExpiry,
 };

@@ -106,13 +106,17 @@ Everything should flow into normalized entities instead of platform-specific das
   - Header button: `⟡ Link TikTok`
   - OAuth routes: `api/tiktok/connect` and `api/tiktok/callback`
   - Connection status route: `api/tiktok/status`
-  - Encrypted HttpOnly cookie stores the token bundle for the prototype
+  - Neon Postgres schema for clients, stores, platform connections, encrypted tokens, and sync runs
+  - TikTok connections can be attached to the selected dashboard store/client during OAuth
+  - Encrypted HttpOnly cookie remains only as a prototype fallback if `DATABASE_URL` is missing
   - Placeholder read-only data routes: `api/tiktok/orders` and `api/tiktok/products`
   - No posting, account control, scraping, or write scopes
 
 ### Immediate Next Steps
 
 1. **Finalize TikTok app setup**
+   - Provision Neon Postgres via Vercel Marketplace and set `DATABASE_URL`
+   - Set `DB_ADMIN_SECRET`, then initialize schema through `POST /api/db/init`
    - Create/approve the TikTok Shop app and read-only scopes
    - Set `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_TOKEN_SECRET`, `TIKTOK_REDIRECT_URI`, and `TIKTOK_SCOPES` in Vercel
    - Confirm whether the approved app uses OAuth v2 or legacy TikTok Shop token exchange

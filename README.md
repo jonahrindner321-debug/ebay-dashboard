@@ -34,6 +34,8 @@ Push changes to GitHub `main`; Vercel deploys the static site automatically.
 The TikTok connector is read-only by design. To enable the Connect button on Vercel, configure:
 
 ```text
+DATABASE_URL
+DB_ADMIN_SECRET
 TIKTOK_CLIENT_KEY
 TIKTOK_CLIENT_SECRET
 TIKTOK_TOKEN_SECRET
@@ -50,3 +52,12 @@ TIKTOK_TOKEN_STYLE=oauth_v2
 ```
 
 `oauth_v2` uses TikTok's OAuth v2 token endpoint. If the approved TikTok Shop app uses the legacy Shop Open API token exchange, set `TIKTOK_TOKEN_STYLE=shop_legacy` and provide the correct `TIKTOK_TOKEN_URL`.
+
+Initialize the database schema after adding `DATABASE_URL`:
+
+```bash
+curl -X POST https://ebay-dashboard-gamma.vercel.app/api/db/init \
+  -H "x-admin-secret: $DB_ADMIN_SECRET"
+```
+
+When linking TikTok from the dashboard, choose a store in the account filter first. Seller OS passes that store/client slug into the OAuth flow so the connected TikTok seller account is attached to the right store.

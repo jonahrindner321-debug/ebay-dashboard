@@ -21,6 +21,10 @@ module.exports = async function handler(req, res) {
   }
 
   const state = crypto.randomBytes(24).toString('base64url');
+  const storeSlug = req.query.store || req.query.storeSlug || 'unassigned-tiktok-store';
+  const storeName = req.query.storeName || req.query.store || 'Unassigned TikTok Store';
+  const clientSlug = req.query.client || req.query.clientSlug || storeSlug;
+  const clientName = req.query.clientName || req.query.storeName || storeName;
   const authUrl = new URL(process.env.TIKTOK_AUTH_URL || 'https://www.tiktok.com/v2/auth/authorize/');
   authUrl.searchParams.set('client_key', process.env.TIKTOK_CLIENT_KEY);
   authUrl.searchParams.set('response_type', 'code');
@@ -29,7 +33,7 @@ module.exports = async function handler(req, res) {
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('disable_auto_auth', '1');
 
-  setCookie(res, STATE_COOKIE, state, { maxAge: 10 * 60 });
+  setCookie(res, STATE_COOKIE, JSON.stringify({ state, storeSlug, storeName, clientSlug, clientName }), { maxAge: 10 * 60 });
   res.writeHead(302, { Location: authUrl.toString() });
   res.end();
 };

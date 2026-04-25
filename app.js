@@ -3395,19 +3395,24 @@ function copyClientLink(name, ev) {
   if (ev) ev.stopPropagation();
   const url = getClientLink(name);
   const done = () => showToast('Client link copied', 'success', '🔗');
-  const fallback = () => {
+  const legacyCopy = () => {
     const ta = document.createElement('textarea');
     ta.value = url;
     ta.style.position = 'fixed';
     ta.style.left = '-9999px';
+    ta.setAttribute('readonly', '');
     document.body.appendChild(ta);
+    ta.focus();
     ta.select();
-    try { document.execCommand('copy'); done(); }
-    catch(e) { window.prompt('Copy this client link:', url); }
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch(e) { ok = false; }
     ta.remove();
+    if (ok) done();
+    return ok;
   };
-  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(fallback);
-  else fallback();
+  if (legacyCopy()) return;
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(() => window.prompt('Copy this client link:', url));
+  else window.prompt('Copy this client link:', url);
 }
 
 function getClientSlugFromUrl() {

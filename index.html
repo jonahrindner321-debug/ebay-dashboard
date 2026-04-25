@@ -1135,7 +1135,7 @@
 
   <!-- Records -->
   <div class="records-section" id="records-section" style="display:none">
-    <div class="section-hdr"><span class="section-title">🏅 All-Time Records</span></div>
+    <div class="section-hdr"><span class="section-title" id="records-title">🏅 All-Time Records</span></div>
     <div class="records-grid" id="records-grid"></div>
   </div>
 
@@ -3054,6 +3054,10 @@ function renderMomentum(data) {
 // ─── RECORDS ─────────────────────────────────────────────────────────────────
 function renderRecords(data) {
   const section=$('records-section'), grid=$('records-grid');
+  const titleEl = $('records-title');
+  if (titleEl) titleEl.textContent = CHANNEL_FILTER === 'tiktok' ? '🏅 TikTok Records'
+                                   : CHANNEL_FILTER === 'ebay'   ? '🏅 eBay Records'
+                                   : '🏅 All-Time Records';
   const dd=getDailyData(data);
   if(!dd.length){section.style.display='none';return;}
   const bestDay=dd.reduce((a,b)=>b.profit>a.profit?b:a,dd[0]);
@@ -4841,10 +4845,12 @@ function openClientView() {
   if (!clientStores.length) { showToast('No partner stores loaded yet', 'info', '👤'); return; }
 
   const listEl = $('client-select-list');
+  const _cvChFilter = r => CHANNEL_FILTER === 'all' || (CHANNEL_FILTER === 'tiktok' ? r.channel === 'tiktok' : r.channel !== 'tiktok');
+  const _cvEarnLabel = CHANNEL_FILTER === 'tiktok' ? 'TikTok earnings' : CHANNEL_FILTER === 'ebay' ? 'eBay earnings' : 'All-time earnings';
   listEl.innerHTML = clientStores.map(name => {
     const isJacob  = JACOB_STORES.includes(name);
     const pct      = isJacob ? '10%' : '50%';
-    const recs     = RAW.filter(r => r.person === name);
+    const recs     = RAW.filter(r => r.person === name && _cvChFilter(r));
     const profit   = r2(recs.reduce((s,r) => s + r.profit, 0));
     const myShare  = isJacob ? r2(profit * 0.10) : r2(profit * 0.50);
     const displayName = name === 'John Slop' ? 'Sloop' : name;
@@ -4852,7 +4858,7 @@ function openClientView() {
       style="width:100%;text-align:left;padding:14px 16px;background:var(--card);border:1px solid var(--card-border);border-radius:12px;cursor:pointer;transition:background .15s"
       onmouseover="this.style.background='var(--glass)'" onmouseout="this.style.background='var(--card)'">
       <div style="font-weight:700;font-size:14px;color:var(--text)">${displayName}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">Your share: ${pct} · All-time earnings: <span style="color:var(--green);font-weight:700">${fmt$(myShare)}</span></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">Your share: ${pct} · ${_cvEarnLabel}: <span style="color:var(--green);font-weight:700">${fmt$(myShare)}</span></div>
     </button>`;
   }).join('');
 
@@ -4864,8 +4870,11 @@ function renderClientView(personName) {
   const ownerPct  = isJacob ? 0.10 : 0.50;
   const ownerPctLabel = isJacob ? '10%' : '50%';
   const displayName   = personName === 'John Slop' ? 'Sloop' : personName;
+  const isTikTokMode  = CHANNEL_FILTER === 'tiktok';
+  const isEbayMode    = CHANNEL_FILTER === 'ebay';
+  const cvChFilter    = r => CHANNEL_FILTER === 'all' || (isTikTokMode ? r.channel === 'tiktok' : r.channel !== 'tiktok');
 
-  const recs         = RAW.filter(r => r.person === personName);
+  const recs         = RAW.filter(r => r.person === personName && cvChFilter(r));
   const allTimeProfit = r2(recs.reduce((s,r) => s + r.profit, 0));
   const myAllTime     = r2(allTimeProfit * ownerPct);
 
@@ -4939,53 +4948,15 @@ function renderClientView(personName) {
   window._csOwnerPct = ownerPct;
   window._csProfitPerListMo = profitPerListMo;
 
-  const overlay = $('client-view-overlay');
-  overlay.style.display = 'block';
+  // Pre-compute channel-dependent labels and sections
+  const cvHeaderIcon    = isTikTokMode ? '⟡' : '📦';
+  const cvHeaderBg      = isTikTokMode ? 'linear-gradient(135deg,#ff2d55,#ff6b9d)' : 'linear-gradient(135deg,var(--green),var(--emerald))';
+  const cvAllTimeLabel  = isTikTokMode ? 'TikTok Earnings' : isEbayMode ? 'eBay Earnings' : 'All-Time Earnings';
+  const cvAllTimeSub    = isTikTokMode ? 'your TikTok total' : isEbayMode ? 'your eBay total' : 'your total since day one';
+  const cvFeePlatform   = isTikTokMode ? 'TikTok fees' : 'eBay fees';
 
-  $('client-view-content').innerHTML = `
-    <div style="min-height:100vh;background:var(--bg);padding:0 0 60px">
-      <!-- Header -->
-      <div style="background:var(--card);border-bottom:1px solid var(--card-border);padding:16px 24px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10">
-        <div style="display:flex;align-items:center;gap:12px">
-          <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--emerald));display:flex;align-items:center;justify-content:center;font-size:18px">📦</div>
-          <div>
-            <div style="font-weight:800;font-size:16px">${displayName}</div>
-            <div style="font-size:11px;color:var(--muted)">Your Store · ${ownerPctLabel} profit share</div>
-          </div>
-        </div>
-        <button onclick="closeClientView()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--rose);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">✕ Exit</button>
-      </div>
-
-      <!-- Expense Warning Banner -->
-      <div style="background:rgba(251,191,36,.12);border-bottom:1px solid rgba(251,191,36,.3);padding:10px 24px;display:flex;align-items:center;gap:10px">
-        <span style="font-size:16px">⚠️</span>
-        <div style="font-size:12px;color:var(--amber);font-weight:600">Earnings shown are <u>before</u> shared expense deductions — VPS, AutoDS & Proxy costs are split evenly across all stores and will reduce your final payout.</div>
-      </div>
-
-      <div style="max-width:800px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:20px">
-
-        <!-- Earnings Hero -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
-          <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(16,185,129,.15),rgba(52,211,153,.08));border:1px solid rgba(16,185,129,.25)">
-            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${latestLabel || 'This Month'} Earnings</div>
-            <div style="font-size:36px;font-weight:900;color:var(--green)">${myLatest > 0 ? fmt$(myLatest) : '—'}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:4px">your ${ownerPctLabel} of ${latestMo} store profit</div>
-            ${momPct !== null ? `<div style="margin-top:8px;display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${momPct>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.1)'};color:${momPct>=0?'var(--green)':'var(--rose)'}">
-              ${momPct>=0?'↑':'↓'} ${Math.abs(momPct).toFixed(0)}% vs ${prevMo}
-            </div>` : ''}
-          </div>
-          <div class="card" style="padding:20px">
-            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">All-Time Earnings</div>
-            <div style="font-size:36px;font-weight:900;color:var(--cyan)">${myAllTime > 0 ? fmt$(myAllTime) : '—'}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:4px">your total since day one</div>
-          </div>
-          ${myProjNow !== null ? `<div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(139,92,246,.1),rgba(99,102,241,.06));border:1px solid rgba(139,92,246,.2)">
-            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Projected Monthly</div>
-            <div style="font-size:36px;font-weight:900;color:var(--violet)">${fmt$(myProjNow)}<span style="font-size:14px;font-weight:400">/mo</span></div>
-            <div style="font-size:11px;color:var(--muted);margin-top:4px">at current ${current.toLocaleString()} listings · ${latestMo || 'recent'} rate</div>
-          </div>` : ''}
-        </div>
-
+  // Listing sections are eBay-only — hide in TikTok mode
+  const cvListingsHtml = isTikTokMode ? '' : `
         <!-- Listings Progress -->
         <div class="card" style="padding:20px">
           <div style="font-size:13px;font-weight:700;margin-bottom:16px">📦 Your Store Listings</div>
@@ -5020,7 +4991,56 @@ function renderClientView(personName) {
             <div style="font-size:${myProjAtTarget?'28':'40'}px;font-weight:900;color:var(--emerald)">${myProjAtTarget ? fmt$(myProjAtTarget)+'/mo' : '—'}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">your projected monthly earnings</div>
           </div>
+        </div>`;
+
+  const overlay = $('client-view-overlay');
+  overlay.style.display = 'block';
+
+  $('client-view-content').innerHTML = `
+    <div style="min-height:100vh;background:var(--bg);padding:0 0 60px">
+      <!-- Header -->
+      <div style="background:var(--card);border-bottom:1px solid var(--card-border);padding:16px 24px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:36px;height:36px;border-radius:10px;background:${cvHeaderBg};display:flex;align-items:center;justify-content:center;font-size:18px">${cvHeaderIcon}</div>
+          <div>
+            <div style="font-weight:800;font-size:16px">${displayName}</div>
+            <div style="font-size:11px;color:var(--muted)">Your Store · ${ownerPctLabel} profit share</div>
+          </div>
         </div>
+        <button onclick="closeClientView()" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--rose);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">✕ Exit</button>
+      </div>
+
+      <!-- Expense Warning Banner -->
+      <div style="background:rgba(251,191,36,.12);border-bottom:1px solid rgba(251,191,36,.3);padding:10px 24px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:16px">⚠️</span>
+        <div style="font-size:12px;color:var(--amber);font-weight:600">Earnings shown are <u>before</u> shared expense deductions — VPS, AutoDS & Proxy costs are split evenly across all stores and will reduce your final payout.</div>
+      </div>
+
+      <div style="max-width:800px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:20px">
+
+        <!-- Earnings Hero -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
+          <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(16,185,129,.15),rgba(52,211,153,.08));border:1px solid rgba(16,185,129,.25)">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${latestLabel || 'This Month'} Earnings</div>
+            <div style="font-size:36px;font-weight:900;color:var(--green)">${myLatest > 0 ? fmt$(myLatest) : '—'}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">your ${ownerPctLabel} of ${latestMo} store profit</div>
+            ${momPct !== null ? `<div style="margin-top:8px;display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${momPct>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.1)'};color:${momPct>=0?'var(--green)':'var(--rose)'}">
+              ${momPct>=0?'↑':'↓'} ${Math.abs(momPct).toFixed(0)}% vs ${prevMo}
+            </div>` : ''}
+          </div>
+          <div class="card" style="padding:20px">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${cvAllTimeLabel}</div>
+            <div style="font-size:36px;font-weight:900;color:var(--cyan)">${myAllTime > 0 ? fmt$(myAllTime) : '—'}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">${cvAllTimeSub}</div>
+          </div>
+          ${myProjNow !== null ? `<div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(139,92,246,.1),rgba(99,102,241,.06));border:1px solid rgba(139,92,246,.2)">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Projected Monthly</div>
+            <div style="font-size:36px;font-weight:900;color:var(--violet)">${fmt$(myProjNow)}<span style="font-size:14px;font-weight:400">/mo</span></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">at current ${current.toLocaleString()} listings · ${latestMo || 'recent'} rate</div>
+          </div>` : ''}
+        </div>
+
+        ${cvListingsHtml}
 
         <!-- Your Earning Trajectory -->
         ${(myProj30d||myProj60d||myProj90d) ? `<div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(52,211,153,.04));border:1px solid rgba(16,185,129,.15)">
@@ -5103,7 +5123,7 @@ function renderClientView(personName) {
         </div>` : ''}
 
         <div style="text-align:center;font-size:11px;color:var(--muted);padding-top:8px">
-          Data updates whenever the dashboard refreshes · your ${ownerPctLabel} share is calculated from store profit after eBay fees
+          Data updates whenever the dashboard refreshes · your ${ownerPctLabel} share is calculated from store profit after ${cvFeePlatform}
         </div>
       </div>
     </div>`;

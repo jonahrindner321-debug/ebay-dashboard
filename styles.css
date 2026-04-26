@@ -283,9 +283,13 @@
     }
     .take-card:hover { border-color: var(--card-border-hover); box-shadow: 0 4px 20px rgba(0,0,0,.3); }
     .take-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
-    .take-val   { font-size: 22px; font-weight: 800; letter-spacing: -.5px; }
-    .take-sub   { font-size: 11px; color: var(--muted); }
-    .take-who   { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .take-val   { font-size: 22px; font-weight: 800; letter-spacing: -.5px; margin: 2px 0; }
+    .take-who   { font-size: 10px; color: var(--muted); margin-bottom: 8px; }
+    .take-rows  { display: flex; flex-direction: column; gap: 3px; border-top: 1px solid var(--card-border); padding-top: 8px; margin-top: 2px; }
+    .take-row   { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+    .take-row-name { flex: 1; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .take-row-val  { font-weight: 700; color: var(--text); flex-shrink: 0; }
+    .take-row-pct  { font-size: 10px; color: var(--muted); flex-shrink: 0; min-width: 28px; text-align: right; }
     .kpi-card {
       padding: 18px 20px; position: relative;
       overflow: hidden; display: flex; flex-direction: column;

@@ -1274,6 +1274,23 @@ function renderKPIs(data) {
     const dayLabel = latestLabel + (isInProgress ? ' · in progress' : '');
     const ownerCount = Object.entries(byPerson).filter(([p]) => getSplit(p, 1).storeOwner > 0).length;
 
+    // Build per-account split rows
+    const personSplits = Object.entries(byPerson)
+      .map(([person, pProfit]) => ({ person, profit: pProfit, split: getSplit(person, pProfit) }))
+      .sort((a, b) => b.profit - a.profit);
+
+    const tagLabel = { owned: 'Owner', jacob: '50/50', partner: 'Partner' };
+    const tagClass = { owned: 'owned', jacob: 'jacob', partner: 'partner' };
+    const mkRows = (getValue, getPct) => personSplits
+      .filter(x => getValue(x) > 0)
+      .sort((a, b) => getValue(b) - getValue(a))
+      .map(x => `<div class="take-row">
+        <span class="take-row-name">${x.person}${x.split.type === 'jacob' ? ' <span style="color:var(--muted);font-size:10px">(name fee)</span>' : ''}</span>
+        <span class="split-tag ${tagClass[x.split.type]}">${tagLabel[x.split.type]}</span>
+        <span class="take-row-val">${fmt$(getValue(x))}</span>
+        <span class="take-row-pct">${getPct(x)}</span>
+      </div>`).join('');
+
     takeSection.style.display = 'block';
     const dateEl = $('daily-take-date');
     if (dateEl) dateEl.textContent = dayLabel;
@@ -1281,26 +1298,26 @@ function renderKPIs(data) {
       <div class="take-card">
         <div class="take-label">💚 J&R Take</div>
         <div class="take-val" style="color:#10b981">${fmt$(dayJR)}</div>
-        <div class="take-sub">${dayLabel}</div>
-        <div class="take-who">Jonah &amp; Russ</div>
+        <div class="take-who">Jonah &amp; Russ · ${dayLabel}</div>
+        <div class="take-rows">${mkRows(x => x.split.jr, x => x.split.jrPct + '%')}</div>
       </div>
       <div class="take-card">
         <div class="take-label">🟣 Operator Take</div>
         <div class="take-val" style="color:#818cf8">${fmt$(dayDanian)}</div>
-        <div class="take-sub">${dayLabel}</div>
-        <div class="take-who">Danian</div>
+        <div class="take-who">Danian · ${dayLabel}</div>
+        <div class="take-rows">${mkRows(x => x.split.danian, x => x.split.danianPct + '%')}</div>
       </div>
       ${dayOwner > 0 ? `<div class="take-card">
         <div class="take-label">🟡 Owner Take</div>
         <div class="take-val" style="color:#f59e0b">${fmt$(dayOwner)}</div>
-        <div class="take-sub">${dayLabel}</div>
-        <div class="take-who">${ownerCount} store owner${ownerCount !== 1 ? 's' : ''}</div>
+        <div class="take-who">${ownerCount} store owner${ownerCount !== 1 ? 's' : ''} · ${dayLabel}</div>
+        <div class="take-rows">${mkRows(x => x.split.storeOwner, x => x.split.type === 'jacob' ? '10% (fee)' : '50%')}</div>
       </div>` : ''}
       <div class="take-card">
         <div class="take-label">📦 Total Profit</div>
         <div class="take-val" style="color:var(--text)">${fmt$(todayProfit)}</div>
-        <div class="take-sub">${dayLabel}</div>
-        <div class="take-who">${latestRows.length} sales · ${Object.keys(byPerson).length} accounts</div>
+        <div class="take-who">${latestRows.length} sales · ${Object.keys(byPerson).length} accounts · ${dayLabel}</div>
+        <div class="take-rows">${mkRows(x => x.profit, x => '')}</div>
       </div>`;
   } else {
     takeSection.style.display = 'none';

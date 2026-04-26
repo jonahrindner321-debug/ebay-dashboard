@@ -386,12 +386,17 @@ function fmtDayLabel(dateStr) {
 function getDailyData(data) {
   const byDate = {};
   data.filter(r => r.date).forEach(r => {
-    if (!byDate[r.date]) byDate[r.date] = { date: r.date, revenue: 0, profit: 0, cost: 0, fee: 0, sales: 0 };
-    byDate[r.date].revenue = r2(byDate[r.date].revenue + r.price);
-    byDate[r.date].profit  = r2(byDate[r.date].profit  + r.profit);
-    byDate[r.date].cost    = r2(byDate[r.date].cost    + r.cost);
-    byDate[r.date].fee     = r2(byDate[r.date].fee     + r.fee);
-    byDate[r.date].sales++;
+    if (!byDate[r.date]) byDate[r.date] = { date: r.date, revenue: 0, profit: 0, cost: 0, fee: 0, sales: 0, jr: 0, danian: 0, owner: 0 };
+    const d = byDate[r.date];
+    d.revenue = r2(d.revenue + r.price);
+    d.profit  = r2(d.profit  + r.profit);
+    d.cost    = r2(d.cost    + r.cost);
+    d.fee     = r2(d.fee     + r.fee);
+    d.sales++;
+    const sp = getSplit(r.person, r.profit);
+    d.jr     = r2(d.jr     + sp.jr);
+    d.danian = r2(d.danian + sp.danian);
+    d.owner  = r2(d.owner  + sp.storeOwner);
   });
   return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -734,6 +739,38 @@ function animateChannelSwitch(ch) {
 // Safety fallback — overridden dynamically once tab count is known
 let _introSafetyTimer = setTimeout(() => { if (!_introDismissed) dismissIntro(); }, 90000);
 
+// ─── LOAD FAILURE BANNER ────────────────────────────────────────────────────
+function renderLoadBanner(audit) {
+  const existing = $('load-warn-banner');
+  if (existing) existing.remove();
+  const errors = (audit || []).filter(a => a.status === 'error');
+  const cached = (audit || []).filter(a => a.status === 'cached');
+  if (!errors.length && !cached.length) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'load-warn-banner';
+  const hasErrors = errors.length > 0;
+  const color = hasErrors ? 'var(--rose)' : 'var(--amber)';
+  const icon  = hasErrors ? '⚠️' : '⚡';
+  const parts = [];
+  if (errors.length) parts.push(`${errors.length} tab${errors.length>1?'s':''} failed to load (${errors.map(e=>e.person+' / '+e.tab).join(', ')})`);
+  if (cached.length) parts.push(`${cached.length} tab${cached.length>1?'s':''} served from cache`);
+
+  banner.innerHTML = `
+    <span style="font-size:13px">${icon} <strong>Data may be incomplete:</strong> ${parts.join(' · ')}
+      <span style="opacity:.6;font-size:11px;margin-left:6px">Click 🔍 Data Audit for details</span>
+    </span>
+    <button onclick="this.closest('#load-warn-banner').remove()" style="background:none;border:none;cursor:pointer;color:${color};font-size:16px;line-height:1;padding:0 2px">✕</button>`;
+  banner.style.cssText = `display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:10px 16px;margin-bottom:var(--gap);border-radius:var(--radius);
+    background:${hasErrors?'rgba(239,68,68,.1)':'rgba(245,158,11,.1)'};
+    border:1px solid ${hasErrors?'rgba(239,68,68,.35)':'rgba(245,158,11,.35)'};
+    color:${color};font-size:12px;`;
+
+  const kpiGrid = $('kpi-grid');
+  kpiGrid.parentNode.insertBefore(banner, kpiGrid);
+}
+
 // ─── MAIN LOAD ─────────────────────────────────────────────────────────────
 async function loadAll() {
   if (!API_KEY) { checkApiKey(); return; }
@@ -893,6 +930,7 @@ async function loadAll() {
     try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
     maybeOpenClientFromUrl();
     setTimeout(() => { if (window._initBreadcrumbObs) { window._initBreadcrumbObs(); window._initBreadcrumbObs = null; } }, 500);
+    renderLoadBanner(loadAudit);
     if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
     else showToast('Data refreshed', 'info', '🔄');
     // Give Chart.js and the DOM 400ms to finish painting before pulling the overlay.
@@ -1215,6 +1253,58 @@ function renderKPIs(data) {
     if (latestRows.length > 0) countUp($('kv-today'), todayProfit, 800);
     countUp($('kv-fee'), fee, 900);
   }, 60);
+
+  // ── Latest-day take-home strip ──
+  const strip = $('daily-take-strip');
+  const takeSection = $('daily-take-section');
+  if (latestRows.length > 0) {
+    // Sum splits per person for latest day
+    let dayJR = 0, dayDanian = 0, dayOwner = 0;
+    const byPerson = {};
+    latestRows.forEach(r => {
+      if (!byPerson[r.person]) byPerson[r.person] = 0;
+      byPerson[r.person] = r2(byPerson[r.person] + r.profit);
+    });
+    Object.entries(byPerson).forEach(([person, pProfit]) => {
+      const sp = getSplit(person, pProfit);
+      dayJR     = r2(dayJR     + sp.jr);
+      dayDanian = r2(dayDanian + sp.danian);
+      dayOwner  = r2(dayOwner  + sp.storeOwner);
+    });
+    const dayLabel = latestLabel + (isInProgress ? ' · in progress' : '');
+    const ownerCount = Object.entries(byPerson).filter(([p]) => getSplit(p, 1).storeOwner > 0).length;
+
+    takeSection.style.display = 'block';
+    const dateEl = $('daily-take-date');
+    if (dateEl) dateEl.textContent = dayLabel;
+    strip.innerHTML = `
+      <div class="take-card">
+        <div class="take-label">💚 J&R Take</div>
+        <div class="take-val" style="color:#10b981">${fmt$(dayJR)}</div>
+        <div class="take-sub">${dayLabel}</div>
+        <div class="take-who">Jonah &amp; Russ</div>
+      </div>
+      <div class="take-card">
+        <div class="take-label">🟣 Operator Take</div>
+        <div class="take-val" style="color:#818cf8">${fmt$(dayDanian)}</div>
+        <div class="take-sub">${dayLabel}</div>
+        <div class="take-who">Danian</div>
+      </div>
+      ${dayOwner > 0 ? `<div class="take-card">
+        <div class="take-label">🟡 Owner Take</div>
+        <div class="take-val" style="color:#f59e0b">${fmt$(dayOwner)}</div>
+        <div class="take-sub">${dayLabel}</div>
+        <div class="take-who">${ownerCount} store owner${ownerCount !== 1 ? 's' : ''}</div>
+      </div>` : ''}
+      <div class="take-card">
+        <div class="take-label">📦 Total Profit</div>
+        <div class="take-val" style="color:var(--text)">${fmt$(todayProfit)}</div>
+        <div class="take-sub">${dayLabel}</div>
+        <div class="take-who">${latestRows.length} sales · ${Object.keys(byPerson).length} accounts</div>
+      </div>`;
+  } else {
+    takeSection.style.display = 'none';
+  }
 }
 
 // ─── PROJECTION ────────────────────────────────────────────────────────────

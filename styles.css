@@ -270,6 +270,22 @@
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: var(--gap); margin-bottom: var(--gap);
     }
+    /* ── Daily Take Strip ── */
+    #daily-take-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: var(--gap);
+    }
+    .take-card {
+      background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius);
+      padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .take-card:hover { border-color: var(--card-border-hover); box-shadow: 0 4px 20px rgba(0,0,0,.3); }
+    .take-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+    .take-val   { font-size: 22px; font-weight: 800; letter-spacing: -.5px; }
+    .take-sub   { font-size: 11px; color: var(--muted); }
+    .take-who   { font-size: 10px; color: var(--muted); margin-top: 2px; }
     .kpi-card {
       padding: 18px 20px; position: relative;
       overflow: hidden; display: flex; flex-direction: column;

@@ -525,7 +525,7 @@
     .click-boom { position:fixed; pointer-events:none; z-index:9999; font-size:28px; animation: sparkle .5s ease forwards; }
 
     /* ── Footer ── */
-    .footer { text-align: center; font-size: 11px; color: var(--muted); padding: 24px 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .footer { text-align: center; font-size: 11px; color: var(--muted); padding: 24px 0; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
     .f-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse-dot 2s ease infinite; }
 
     /* ── Intro Overlay ── */

@@ -3808,8 +3808,8 @@ function renderClientView(personName, opts = {}) {
   const cvAllTimeSub    = isTikTokMode ? 'your TikTok total' : isEbayMode ? 'your eBay total' : 'your total since day one';
   const cvFeePlatform   = isTikTokMode ? 'TikTok fees' : 'eBay fees';
 
-  // Listing sections are eBay-only — hide in TikTok mode
-  const cvListingsHtml = isTikTokMode ? '' : `
+  // Listing sections are eBay-only — hide in TikTok mode or when tracker has no data for this store
+  const cvListingsHtml = (isTikTokMode || !storeSum) ? '' : `
         <!-- Listings Progress -->
         <div class="card" style="padding:20px">
           <div style="font-size:13px;font-weight:700;margin-bottom:16px">📦 Your Store Listings</div>

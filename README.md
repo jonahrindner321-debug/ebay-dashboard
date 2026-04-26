@@ -10,6 +10,8 @@ Static Vercel dashboard prototype for multi-store ecommerce operations.
 - `api/sheets.js` - server-side Google Sheets proxy for Vercel
 - `api/tiktok/*` - read-only TikTok Shop connector foundation
 - `SELLER_OS_ROADMAP.md` - product and technical roadmap
+- `HANDOFF.md` - current status, TikTok setup, review state, and next developer checklist
+- `legal/*` - public privacy, security, data deletion, terms, and contact pages
 
 ## Local Preview
 
@@ -28,6 +30,8 @@ The live Google Sheets API key may reject localhost if it is restricted to produ
 ## Deploy
 
 Push changes to GitHub `main`; Vercel deploys the static site automatically.
+
+For the latest working state and next-developer checklist, read [`HANDOFF.md`](./HANDOFF.md).
 
 ## TikTok Shop Connector
 
@@ -69,3 +73,12 @@ curl -X POST https://ebay-dashboard-gamma.vercel.app/api/db/init \
 ```
 
 When linking TikTok from the dashboard, choose a store in the account filter first. Seller OS passes that store/client slug into the OAuth flow so the connected TikTok seller account is attached to the right store.
+
+Current status: the TikTok Shop custom app has been created and configured in Vercel, read-only scopes have been enabled, security/privacy questionnaires have been submitted in TikTok Partner Center, and the app is waiting on TikTok review/publish before real seller OAuth can complete.
+
+Public policy pages for review:
+
+- `https://ebay-dashboard-gamma.vercel.app/legal/privacy.html`
+- `https://ebay-dashboard-gamma.vercel.app/legal/security.html`
+- `https://ebay-dashboard-gamma.vercel.app/legal/data-deletion.html`
+- `https://ebay-dashboard-gamma.vercel.app/legal/terms.html`

@@ -111,15 +111,27 @@ Everything should flow into normalized entities instead of platform-specific das
   - Encrypted HttpOnly cookie remains only as a prototype fallback if `DATABASE_URL` is missing
   - Placeholder read-only data routes: `api/tiktok/orders` and `api/tiktok/products`
   - No posting, account control, scraping, or write scopes
+- ✅ TikTok Shop Partner Center setup progress
+  - Custom app created for Seller OS
+  - Redirect URL set to production callback
+  - Read-only scopes enabled for orders, products/categories, finance, and bestsellers
+  - Vercel env vars set for TikTok Shop `shop_v2` OAuth/token endpoints
+  - Security/privacy questionnaires submitted and awaiting TikTok review
+- ✅ Public compliance/policy pages
+  - Privacy Policy
+  - Security Policy
+  - Data Deletion Policy
+  - Terms of Use
+  - Security/privacy contact page
+  - Dashboard footer links to the legal pages
 
 ### Immediate Next Steps
 
 1. **Finalize TikTok app setup**
-   - Provision Neon Postgres via Vercel Marketplace and set `DATABASE_URL`
-   - Set `DB_ADMIN_SECRET`, then initialize schema through `POST /api/db/init`
-   - Create/approve the TikTok Shop app and read-only scopes
-   - Set `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_TOKEN_SECRET`, `TIKTOK_REDIRECT_URI`, and `TIKTOK_SCOPES` in Vercel
-   - Confirm whether the approved app uses OAuth v2 or legacy TikTok Shop token exchange
+   - Wait for TikTok review to pass for company/app category/security/privacy items
+   - Publish the custom app once TikTok allows it
+   - Complete first seller OAuth from the live dashboard
+   - Confirm `/api/tiktok/status` shows a stored database connection
 2. **Wire TikTok data reads**
    - Add signed, read-only TikTok Shop order/product requests after app approval
    - Normalize TikTok orders into the existing Seller OS row model

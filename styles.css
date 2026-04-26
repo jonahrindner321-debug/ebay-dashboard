@@ -182,7 +182,11 @@
       border-bottom: 1px solid var(--header-border);
       padding: 10px 22px;
       display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      transition: padding .25s ease;
     }
+    .header.compact { padding: 5px 22px; }
+    .header.compact .logo-sub { display: none; }
+    .header.compact .header-mid { display: none; }
     .logo { display: flex; align-items: center; gap: 10px; }
     .logo-icon {
       width: 30px; height: 30px;
@@ -255,9 +259,10 @@
       border: 1px solid var(--card-border);
       border-radius: var(--radius);
       backdrop-filter: blur(12px);
-      transition: border-color .2s, box-shadow .2s;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.06), var(--shadow);
+      transition: border-color .2s, box-shadow .2s, transform .15s;
     }
-    .card:hover { border-color: rgba(255,255,255,.12); }
+    .card:hover { border-color: rgba(255,255,255,.14); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 8px 36px rgba(0,0,0,.5); }
 
     /* ── KPI Grid ── */
     .kpi-grid {
@@ -974,7 +979,7 @@
     /* ── Page Nav ── */
     .page-nav { display:flex; gap:4px; background:var(--glass); border:1px solid var(--glass-border); border-radius:10px; padding:3px; }
     .page-nav-btn { background:transparent; border:none; color:var(--text2); cursor:pointer; padding:5px 14px; border-radius:8px; font-size:13px; font-weight:500; transition:all .2s; white-space:nowrap; }
-    .page-nav-btn.active { background:var(--indigo); color:#fff; }
+    .page-nav-btn.active { background:var(--indigo); color:#fff; box-shadow: 0 0 14px rgba(99,102,241,.5); }
     .page-nav-btn:hover:not(.active) { background:var(--glass-hover); color:var(--text); }
 
     /* ── Growth Page ── */
@@ -994,3 +999,48 @@
     .growth-stat-val { font-weight:600; }
     .growth-progress-bar { background:var(--glass); border-radius:4px; height:6px; overflow:hidden; margin:8px 0 4px; }
     .growth-progress-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--indigo),var(--violet)); transition:width .8s ease; }
+
+    /* ── Page Transition ── */
+    @keyframes pageFadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    .page-enter { animation: pageFadeIn .28s ease; }
+
+    /* ── Podium Rise Animation ── */
+    @keyframes podiumRise { from{transform:scaleY(0);transform-origin:bottom;opacity:0} to{transform:scaleY(1);transform-origin:bottom;opacity:1} }
+
+    /* ── Section Breadcrumb ── */
+    #section-breadcrumb {
+      position: fixed; top: 68px; left: 50%; transform: translateX(-50%);
+      background: rgba(8,16,32,.93); border: 1px solid rgba(255,255,255,.13);
+      border-radius: 20px; padding: 5px 16px;
+      font-size: 11px; font-weight: 700; color: var(--text2);
+      z-index: 90; pointer-events: none;
+      opacity: 0; transition: opacity .25s;
+      backdrop-filter: blur(14px);
+      white-space: nowrap;
+    }
+    #section-breadcrumb.visible { opacity: 1; }
+
+    /* ── KPI Expand Panel ── */
+    .kpi-card { cursor: pointer; }
+    .kpi-expand-panel {
+      max-height: 0; overflow: hidden;
+      transition: max-height .35s cubic-bezier(.4,0,.2,1), opacity .3s;
+      opacity: 0;
+    }
+    .kpi-card.expanded .kpi-expand-panel { max-height: 130px; opacity: 1; }
+    .kpi-expand-inner { padding: 10px 0 4px; border-top: 1px solid rgba(255,255,255,.06); margin-top: 10px; }
+    .kpi-expand-stats { display: flex; gap: 16px; margin-top: 8px; }
+    .kpi-exp-stat { font-size: 10px; color: var(--muted); }
+    .kpi-exp-stat strong { display: block; font-size: 12px; font-weight: 700; color: var(--text2); }
+
+    /* ── Pinned Account ── */
+    .pin-btn {
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-size: 13px; padding: 0 3px;
+      transition: color .15s, transform .15s; line-height: 1;
+      opacity: 0; transition: opacity .15s, color .15s, transform .15s;
+    }
+    tr:hover .pin-btn { opacity: 1; }
+    .pin-btn.pinned { opacity: 1; color: var(--yellow); }
+    .pin-btn:hover { transform: scale(1.25); color: var(--yellow); }
+    .pinned-row td:first-child { border-left: 2px solid rgba(99,102,241,.4); }

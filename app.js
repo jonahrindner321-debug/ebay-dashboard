@@ -252,6 +252,39 @@ function drawSparkline(canvas, values, color) {
   ctx.fill();
 }
 
+// ─── KPI EXPAND ─────────────────────────────────────────────────────────────
+let _expandedKpi = null;
+function expandKpi(card, id, color) {
+  const same = _expandedKpi === card;
+  if (_expandedKpi && _expandedKpi !== card) _expandedKpi.classList.remove('expanded');
+  card.classList.toggle('expanded', !same);
+  _expandedKpi = same ? null : card;
+  if (!same) {
+    setTimeout(() => {
+      const lg = card.querySelector(`#sp-${id}-lg`);
+      if (lg) drawSparkline(lg, (window._kpiSparks||{})[id]||[], color);
+    }, 50);
+  }
+}
+
+// ─── PROGRESS RING ──────────────────────────────────────────────────────────
+function drawRing(canvas, pct, color) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height, R = Math.min(W,H)/2 - 4;
+  ctx.clearRect(0,0,W,H);
+  const cx = W/2, cy = H/2;
+  const start = -Math.PI/2, end = start + (Math.PI*2*(Math.min(pct,100)/100));
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2);
+  ctx.strokeStyle='rgba(255,255,255,.06)'; ctx.lineWidth=6; ctx.stroke();
+  if (pct > 0) {
+    const grad = ctx.createLinearGradient(0,0,W,H);
+    grad.addColorStop(0,color); grad.addColorStop(1,'#34d399');
+    ctx.beginPath(); ctx.arc(cx,cy,R,start,end);
+    ctx.strokeStyle=grad; ctx.lineWidth=6; ctx.lineCap='round'; ctx.stroke();
+  }
+}
+
 // ─── GAUGE CANVAS ──────────────────────────────────────────────────────────
 function drawGauge(canvas, pct, color) {
   if (!canvas) return;
@@ -801,6 +834,7 @@ async function loadAll() {
     $('audit-btn').style.display = '';
     try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
     maybeOpenClientFromUrl();
+    setTimeout(() => { if (window._initBreadcrumbObs) { window._initBreadcrumbObs(); window._initBreadcrumbObs = null; } }, 500);
     if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
     else showToast('Data refreshed', 'info', '🔄');
   } else {
@@ -1031,6 +1065,9 @@ function renderKPIs(data) {
   const salesSpark  = last30.map(d=>d.sales);
   const feeSpark    = last30.map(d=>d.fee);
   const roiSpark    = last30.map(d=>d.revenue>0?(d.profit/d.revenue*100):0);
+  // Store for expandable KPI panels
+  window._kpiSparks = { profit: profitSpark, adp: profitSpark, today: salesSpark, fee: feeSpark };
+  const _sparkStats = arr => { const v=arr.filter(isFinite); return v.length?{min:Math.min(...v),max:Math.max(...v),avg:v.reduce((a,b)=>a+b,0)/v.length}:{min:0,max:0,avg:0}; };
 
   const kpiSub = latestRows.length > 0
     ? (isInProgress ? `${latestLabel} · in progress · ${fmt$(todayRev)}` : `${latestLabel} · ${latestRows.length} sales · ${fmt$(todayRev)}`)
@@ -1040,20 +1077,33 @@ function renderKPIs(data) {
     ? `<div class="kpi-delta ${momDelta>=0?'up':'down'}">${momDelta>=0?'↑':'↓'} ${Math.abs(momDelta).toFixed(1)}% MoM</div>`
     : '';
 
+  const _mkExpand = (id, color, stats, unit='$') => {
+    const s = _sparkStats(window._kpiSparks[id]||[]);
+    const f = v => unit==='$'?fmt$(v):fmtP(v);
+    return `<div class="kpi-expand-panel"><div class="kpi-expand-inner">
+      <canvas id="sp-${id}-lg" style="width:100%;height:72px;display:block"></canvas>
+      <div class="kpi-expand-stats">
+        <div class="kpi-exp-stat"><strong style="color:${color}">${f(s.max)}</strong>30d high</div>
+        <div class="kpi-exp-stat"><strong>${f(s.avg)}</strong>30d avg</div>
+        <div class="kpi-exp-stat"><strong style="color:var(--rose)">${f(s.min)}</strong>30d low</div>
+      </div>
+    </div></div>`;
+  };
   $('kpi-grid').innerHTML = `
-    <div class="card kpi-card">
+    <div class="card kpi-card" onclick="expandKpi(this,'profit','#10b981')">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#10b981,#34d399)"></div>
       <div class="kpi-label">💰 Total Profit</div>
       <div class="kpi-body">
         <div class="kpi-left">
-          <div class="kpi-val ${profit>=0?'profit':'loss'}" id="kv-profit">${fmt$(profit)}</div>
+          <div class="kpi-val shimmer-val" id="kv-profit">${fmt$(profit)}</div>
           <div class="kpi-sub">${fmtP(margin)} margin · ${fmtN(data.length)} sales</div>
           ${deltaHtml}
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-profit" width="80" height="32"></canvas>
       </div>
+      ${_mkExpand('profit','#34d399')}
     </div>
-    <div class="card kpi-card">
+    <div class="card kpi-card" onclick="expandKpi(this,'adp','#06b6d4')">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#10b981,#06b6d4)"></div>
       <div class="kpi-label">📊 Avg Daily Profit</div>
       <div class="kpi-body">
@@ -1063,8 +1113,9 @@ function renderKPIs(data) {
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-adp" width="80" height="32"></canvas>
       </div>
+      ${_mkExpand('adp','#06b6d4')}
     </div>
-    <div class="card kpi-card">
+    <div class="card kpi-card" onclick="expandKpi(this,'today','#06b6d4')">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#06b6d4,#6366f1)"></div>
       <div class="kpi-label">⚡ Latest Day${isInProgress?' ✦':''}</div>
       <div class="kpi-body">
@@ -1074,8 +1125,9 @@ function renderKPIs(data) {
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-today" width="80" height="32"></canvas>
       </div>
+      ${_mkExpand('today','#06b6d4')}
     </div>
-    <div class="card kpi-card">
+    <div class="card kpi-card" onclick="expandKpi(this,'fee','#ef4444')">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#ef4444,#f87171)"></div>
       <div class="kpi-label" id="fee-label">🏷️ eBay Fees</div>
       <div class="kpi-body">
@@ -1085,6 +1137,7 @@ function renderKPIs(data) {
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-fee" width="80" height="32"></canvas>
       </div>
+      ${_mkExpand('fee','#ef4444')}
     </div>`;
 
   setTimeout(() => {
@@ -1092,6 +1145,10 @@ function renderKPIs(data) {
     drawSparkline($('sp-adp'),    profitSpark,  '#10b981');
     drawSparkline($('sp-today'),  salesSpark,   '#06b6d4');
     drawSparkline($('sp-fee'),    feeSpark,     '#ef4444');
+    drawSparkline($('sp-profit-lg'), profitSpark, '#10b981');
+    drawSparkline($('sp-adp-lg'),    profitSpark, '#06b6d4');
+    drawSparkline($('sp-today-lg'),  salesSpark,  '#06b6d4');
+    drawSparkline($('sp-fee-lg'),    feeSpark,    '#ef4444');
     // Animated count-up on KPI values
     countUp($('kv-profit'), profit, 1000);
     countUp($('kv-adp'),    avgDailyProfit, 900);
@@ -1160,6 +1217,18 @@ function renderProjection(data) {
 // ─── CHARTS ────────────────────────────────────────────────────────────────
 Chart.defaults.color       = '#64748b';
 Chart.defaults.borderColor = '#1e2d42';
+Chart.defaults.plugins.tooltip = {
+  backgroundColor: 'rgba(8,16,32,.96)',
+  titleColor: '#f1f5f9',
+  bodyColor: '#94a3b8',
+  borderColor: 'rgba(255,255,255,.13)',
+  borderWidth: 1,
+  padding: 12,
+  cornerRadius: 10,
+  titleFont: { size: 12, weight: '700' },
+  bodyFont: { size: 12 },
+  boxPadding: 4,
+};
 
 function mkChart(id, cfg) {
   if (CHARTS[id]) { CHARTS[id].destroy(); delete CHARTS[id]; }
@@ -1338,7 +1407,7 @@ function renderLeaderboard(data) {
     <div class="podium-item ${podiumClass[i]}">
       <div class="podium-profit">${fmt$(r.profit)}</div>
       <div class="podium-name">${r.p}</div>
-      <div class="podium-block">${podiumEmoji[i]}</div>
+      <div class="podium-block" style="animation:podiumRise .6s cubic-bezier(.34,1.56,.64,1) ${i*0.15}s both">${podiumEmoji[i]}</div>
     </div>`).join('');
 
   // Full ranked list
@@ -1382,6 +1451,8 @@ function renderTable(data) {
   });
 
   rows.sort((a,b) => {
+    const ap=PINNED.has(a.person)?0:1, bp=PINNED.has(b.person)?0:1;
+    if (ap!==bp) return ap-bp;
     const av=a[sortCol], bv=b[sortCol];
     return typeof av==='string' ? (sortDir==='asc'?av.localeCompare(bv):bv.localeCompare(av)) : (sortDir==='asc'?av-bv:bv-av);
   });
@@ -1407,9 +1478,9 @@ function renderTable(data) {
     else if (r.rank===2) rankHtml = `<span class="rank-badge rb-2">🥈</span>`;
     else if (r.rank===3) rankHtml = `<span class="rank-badge rb-3">🥉</span>`;
     else                 rankHtml = `<span style="color:var(--muted);font-size:12px;font-weight:700">${r.rank}</span>`;
-    return `<tr>
+    return `<tr class="${PINNED.has(r.person)?'pinned-row':''}">
       <td>${rankHtml}</td>
-      <td><strong>${r.person}</strong>${r.inactive !== null && r.inactive >= 5 ? `<span style="color:var(--rose);font-size:9px;margin-left:5px;font-weight:700">⚠️${r.inactive}d</span>` : ''}</td>
+      <td><button class="pin-btn ${PINNED.has(r.person)?'pinned':''}" onclick="togglePin('${r.person.replace(/'/g,"\\'")}',event)" title="Pin to top">${PINNED.has(r.person)?'★':'☆'}</button><strong>${r.person}</strong>${r.inactive !== null && r.inactive >= 5 ? `<span style="color:var(--rose);font-size:9px;margin-left:5px;font-weight:700">⚠️${r.inactive}d</span>` : ''}</td>
       <td><strong style="color:${r.profit>=0?'var(--emerald)':'var(--rose)'}">${fmt$(r.profit)}</strong></td>
       <td style="color:var(--muted)">${fmt$(r.fee)}</td>
       <td>${fmtN(r.sales)}</td>
@@ -1432,6 +1503,13 @@ function sortBy(col) {
 // ─── NOTES ─────────────────────────────────────────────────────────────────
 let NOTES = JSON.parse(localStorage.getItem('ebay_notes') || '{}');
 let _notesPerson = null;
+let PINNED = new Set(JSON.parse(localStorage.getItem('ebay_pinned') || '[]'));
+function togglePin(person, ev) {
+  ev.stopPropagation();
+  if (PINNED.has(person)) PINNED.delete(person); else PINNED.add(person);
+  localStorage.setItem('ebay_pinned', JSON.stringify([...PINNED]));
+  renderTable(filtered());
+}
 
 function openNotes(person) {
   _notesPerson = person;
@@ -1458,6 +1536,43 @@ document.addEventListener('click', e => { if(e.target.classList.contains('modal-
 function toggleMoreMenu() { $('more-menu').classList.toggle('open'); }
 function closeMoreMenu()  { const m=$('more-menu'); if(m) m.classList.remove('open'); }
 document.addEventListener('click', e => { const w=$('more-wrap'); if(w && !w.contains(e.target)) closeMoreMenu(); });
+
+// ─── SCROLL-AWARE HEADER ─────────────────────────────────────────────────────
+window.addEventListener('scroll', () => {
+  const h = document.querySelector('.header');
+  if (h) h.classList.toggle('compact', window.scrollY > 80);
+}, { passive: true });
+
+// ─── SECTION BREADCRUMB ──────────────────────────────────────────────────────
+(function initBreadcrumb() {
+  const crumb = document.createElement('div');
+  crumb.id = 'section-breadcrumb';
+  document.body.appendChild(crumb);
+  let _hideTimer = null, _lastLabel = '';
+  const sections = [
+    { sel: '#alltime-banner',  label: '🏆 All-Time' },
+    { sel: '#kpi-grid',        label: '📊 KPIs' },
+    { sel: '#proj-wrap',       label: '📈 Projection' },
+    { sel: '.charts-section',  label: '📈 Charts' },
+    { sel: '#lb-section',      label: '🏆 Leaderboard' },
+    { sel: '#health-section',  label: '💊 Account Health' },
+    { sel: '.tbl-section',     label: '📋 Account Table' },
+    { sel: '#suggest-section', label: '💡 Insights' },
+  ];
+  const show = label => {
+    if (label === _lastLabel) return;
+    _lastLabel = label;
+    crumb.textContent = label;
+    crumb.classList.add('visible');
+    clearTimeout(_hideTimer);
+    _hideTimer = setTimeout(() => { crumb.classList.remove('visible'); _lastLabel = ''; }, 1800);
+  };
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { const s = sections.find(s => e.target.matches(s.sel)); if (s) show(s.label); } });
+  }, { rootMargin: '-15% 0px -75% 0px' });
+  // Observe after first data load
+  window._initBreadcrumbObs = () => sections.forEach(s => { const el = document.querySelector(s.sel); if (el) obs.observe(el); });
+})();
 
 // ─── PAYOUT CALCULATOR ──────────────────────────────────────────────────────
 function openPayoutCalc() {
@@ -1551,10 +1666,16 @@ function renderGoalTracker(data) {
         <button class="goal-set-btn" onclick="setGoal()">Set</button>
       </div>
     </div>
-    ${GOAL>0?`<div class="goal-body">
+    ${GOAL>0?`<div class="goal-body" style="gap:20px">
+      <div style="position:relative;flex-shrink:0;width:72px;height:72px">
+        <canvas id="goal-ring" width="72" height="72"></canvas>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none">
+          <div style="font-size:14px;font-weight:900;color:${over?'var(--emerald)':'var(--text)'}">${pct.toFixed(0)}%</div>
+        </div>
+      </div>
       <div class="goal-progress-wrap">
         <div class="goal-bar-bg"><div class="goal-bar-fill${over?' over':''}" style="width:${pct}%"></div></div>
-        <div class="goal-bar-labels"><span>${fmt$(profit)} earned</span><span style="font-weight:800">${pct.toFixed(1)}%${over?' 🎉':''}</span><span>${fmt$(GOAL)}</span></div>
+        <div class="goal-bar-labels"><span>${fmt$(profit)} earned</span><span style="font-weight:800">${over?' 🎉':''}</span><span>${fmt$(GOAL)}</span></div>
         ${over
           ? `<div class="goal-msg" style="color:var(--emerald);font-weight:700;margin-top:8px">🎉 CRUSHED IT! You're ${fmt$(r2(profit-GOAL))} over target!</div>`
           : daysLeft>0
@@ -1566,6 +1687,7 @@ function renderGoalTracker(data) {
         <div class="goal-stat"><div class="goal-stat-val" style="color:var(--cyan)">${daysLeft}</div><div class="goal-stat-lbl">days left</div></div>
       </div></div>`
     : `<div style="font-size:12px;color:var(--muted)">Set a monthly profit target to track your progress toward it.</div>`}`;
+  if (GOAL > 0) setTimeout(() => drawRing($('goal-ring'), pct, over ? '#10b981' : '#6366f1'), 60);
 }
 
 // ─── ACTIVITY HEATMAP ────────────────────────────────────────────────────────
@@ -2252,12 +2374,15 @@ function switchPage(page) {
   const ops = document.querySelector('main.container');
   const growth = $('growth-page');
   const btnOps = $('page-btn-ops'), btnGrowth = $('page-btn-growth');
+  const animateIn = el => { el.classList.remove('page-enter'); void el.offsetWidth; el.classList.add('page-enter'); };
   if (page === 'growth') {
     ops.style.display = 'none'; growth.style.display = 'block';
+    animateIn(growth);
     btnOps.classList.remove('active'); btnGrowth.classList.add('active');
     renderGrowthPage();
   } else {
     growth.style.display = 'none'; ops.style.display = 'block';
+    animateIn(ops);
     btnGrowth.classList.remove('active'); btnOps.classList.add('active');
   }
 }

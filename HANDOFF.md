@@ -187,6 +187,26 @@ Expected next action:
 4. Complete seller OAuth.
 5. Verify `/api/tiktok/status` shows a connection in `connections`.
 
+## Amazon / Sellerboard Data Strategy
+
+Direct Amazon SP-API linking across multiple Amazon seller accounts is intentionally deferred for now because it may create platform relationship/linkage risk. Do not build Seller OS as the direct app connected to a portfolio of unrelated Amazon seller accounts unless that risk has been reviewed and accepted.
+
+The current planned bridge is Sellerboard or a similar established Amazon analytics/reporting tool:
+
+- Each Amazon account connects to Sellerboard or the reporting tool outside Seller OS.
+- Seller OS ingests read-only outputs from Sellerboard instead of authorizing Amazon directly.
+- Preferred first ingest paths are CSV/XLSX exports, scheduled report emails, Google Sheets/Drive outputs, or an official Sellerboard API if available.
+- Imported rows must be mapped to the correct Seller OS store/client before they appear in dashboards.
+- Do not scrape Sellerboard or automate Seller Central browser sessions.
+
+Recommended first build:
+
+1. Export one sample Sellerboard daily/profit report with private seller details removed.
+2. Define a normalized Amazon report schema: date, store, revenue, orders, fees, COGS, net profit, SKU/product where available.
+3. Add a manual CSV/XLSX or Google Sheets import path.
+4. Add source/store/client mapping and import logs.
+5. Add scheduled email/Drive ingestion later if the manual importer proves useful.
+
 ## Legal / Security Pages Added
 
 To support TikTok review, public policy pages were added:
@@ -213,6 +233,7 @@ Still needed:
 - Normalize TikTok results into the same model used by Google Sheets/eBay rows.
 - Add sync runs and error logs to the database.
 - Show real TikTok data in the dashboard instead of only the existing visual TikTok mode.
+- Build the Amazon/Sellerboard import bridge before considering any direct Amazon SP-API work.
 
 ## Recommended Next Developer Checklist
 
@@ -232,6 +253,7 @@ curl -s -D - -o /dev/null https://ebay-dashboard-gamma.vercel.app/api/tiktok/con
 8. Add a small sync job or manual sync endpoint.
 9. Merge TikTok order/product metrics into dashboard data.
 10. Add backend auth and real role enforcement before giving broader client/operator access.
+11. For Amazon, start with Sellerboard/report imports, not direct Amazon app authorization.
 
 ## Recent Commit Trail
 

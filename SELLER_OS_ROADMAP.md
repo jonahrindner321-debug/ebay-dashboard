@@ -24,7 +24,7 @@ Primary roles:
 Primary platforms:
 
 - eBay
-- Amazon Seller Central
+- Amazon reporting via Sellerboard/report imports first; direct Amazon SP-API is deferred
 - TikTok Shop
 - Prep center / inventory flow
 - Google Sheets as a temporary bridge while real integrations are added
@@ -68,7 +68,8 @@ Everything should flow into normalized entities instead of platform-specific das
 - Keep Google Sheets as one connector.
 - Add eBay API ingestion.
 - Add TikTok Shop API ingestion.
-- Add Amazon Selling Partner API ingestion.
+- Add Amazon reporting through Sellerboard exports, scheduled reports, Google Sheets, email attachments, or an official Sellerboard API if available.
+- Defer direct Amazon Selling Partner API multi-account linking unless platform/compliance risk is reviewed and accepted.
 - Store all platform data in the shared data model.
 
 ### Layer 4: Decision Layer
@@ -124,6 +125,11 @@ Everything should flow into normalized entities instead of platform-specific das
   - Terms of Use
   - Security/privacy contact page
   - Dashboard footer links to the legal pages
+- ✅ Amazon data strategy decision
+  - Do not directly link multiple Amazon seller accounts to Seller OS right now
+  - Use Sellerboard or a similar established Amazon analytics/reporting tool as the safer bridge
+  - Ingest Sellerboard-generated exports, scheduled reports, Google Sheets outputs, email attachments, or an official Sellerboard API if available
+  - Keep Amazon data read-only and mapped per store/client inside Seller OS
 
 ### Immediate Next Steps
 
@@ -136,19 +142,27 @@ Everything should flow into normalized entities instead of platform-specific das
    - Add signed, read-only TikTok Shop order/product requests after app approval
    - Normalize TikTok orders into the existing Seller OS row model
    - Keep TikTok data read-only
-3. **Real auth** — Password-protect the dashboard using a signed token system:
+3. **Amazon via Sellerboard/import bridge**
+   - Get one sample Sellerboard export or scheduled report from a non-sensitive test account/report
+   - Define the normalized Amazon import schema: date, store, revenue, orders, fees, COGS, net profit, SKU/product where available
+   - Build a manual CSV/XLSX or Google Sheets importer first
+   - Add store/client mapping so imported Amazon rows cannot bleed across clients
+   - Later, add automated email/Drive ingestion or an official Sellerboard API integration if Sellerboard supports it
+4. **Real auth** — Password-protect the dashboard using a signed token system:
    - `api/auth.js` endpoint: checks `DASHBOARD_PASSWORD` env var, returns a signed token (HMAC-SHA256 via Node built-in `crypto`, no npm packages)
    - Token format: `${expiry_unix_timestamp}.${hmac(expiry, TOKEN_SECRET)}`
    - `api/sheets.js` validates token on every request
    - Frontend shows auth overlay on load; client `#client=` links bypass auth entirely
    - Env vars needed: `DASHBOARD_PASSWORD`, `TOKEN_SECRET`
-4. Add mock/fixture data so local development works without production API access.
-5. Add role-aware backend permission enforcement (not just hidden UI).
+5. Add mock/fixture data so local development works without production API access.
+6. Add role-aware backend permission enforcement (not just hidden UI).
 
 ## Safety Rules
 
 - No browser scraping of Seller Central, TikTok Shop, or eBay accounts.
 - No account-control automation.
+- No direct multi-account Amazon SP-API linking until platform/linkage risk is reviewed.
+- No Sellerboard scraping; use exports, scheduled reports, Sheets/email delivery, or official API access.
 - No shared credentials between stores.
 - Store tokens must be encrypted and scoped per platform/store.
 - Client and operator views must be enforced by backend permissions, not just hidden UI.

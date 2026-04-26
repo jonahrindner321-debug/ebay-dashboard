@@ -1454,6 +1454,11 @@ function openModal(id)  { const el=$(id); if(el){el.classList.add('open'); docum
 function closeModal(id) { const el=$(id); if(el){el.classList.remove('open'); document.body.style.overflow='';} }
 document.addEventListener('click', e => { if(e.target.classList.contains('modal-overlay')) closeModal(e.target.id); });
 
+// ─── MORE MENU ───────────────────────────────────────────────────────────────
+function toggleMoreMenu() { $('more-menu').classList.toggle('open'); }
+function closeMoreMenu()  { const m=$('more-menu'); if(m) m.classList.remove('open'); }
+document.addEventListener('click', e => { const w=$('more-wrap'); if(w && !w.contains(e.target)) closeMoreMenu(); });
+
 // ─── PAYOUT CALCULATOR ──────────────────────────────────────────────────────
 function openPayoutCalc() {
   $('calc-profit-input').value = '';
@@ -4064,7 +4069,7 @@ function toggleParty() {
     btn.textContent = '🎉 Party';
     btn.classList.remove('btn-party-on');
     ball.style.display = 'none';
-    document.querySelector('.logo-text') && (document.querySelector('.logo-text').textContent = 'Selling Dashboard');
+    document.querySelector('.logo-text') && (document.querySelector('.logo-text').textContent = 'Seller OS');
     const refreshBtn = document.querySelector('.btn-primary');
     if (refreshBtn) refreshBtn.innerHTML = '<span id="ri">↻</span> Refresh';
     revertPartyText();

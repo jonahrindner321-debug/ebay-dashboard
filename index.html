@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Selling Dashboard</title>
+  <title>Seller OS</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1"
     integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
     crossorigin="anonymous"></script>
@@ -17,7 +17,7 @@
   <div class="intro-orb intro-orb-2"></div>
   <div class="intro-orb intro-orb-3"></div>
   <div id="intro-logo-wrap">📦</div>
-  <div id="intro-title">Selling Dashboard</div>
+  <div id="intro-title">Seller OS</div>
   <div id="intro-sub">Loading your data…</div>
   <div id="intro-dots">
     <div class="intro-dot"></div>
@@ -61,8 +61,8 @@
   <div class="logo">
     <div class="logo-icon">📦</div>
     <div>
-      <div class="logo-text">Selling Dashboard</div>
-      <div class="logo-sub">Operations Dashboard</div>
+      <div class="logo-text">Seller OS</div>
+      <div class="logo-sub">Multi-Store Command Center</div>
     </div>
   </div>
 
@@ -92,24 +92,30 @@
       <input type="date" class="date-input" id="filter-date-to"   onchange="applyFilters()" title="To date" />
       <button class="btn-clr-dates" onclick="clearDates()" title="Clear date filter">✕</button>
     </div>
-    <button class="btn btn-ghost" onclick="openPayoutCalc()">🧮 Calc</button>
-    <button class="btn btn-ghost" onclick="openPayoutReport()">🖨 Report</button>
-    <button class="btn btn-ghost" onclick="openWeeklyWrap()" style="background:linear-gradient(135deg,rgba(52,211,153,.15),rgba(99,102,241,.15));border-color:rgba(52,211,153,.3)">🏆 Wrap</button>
     <button class="btn btn-export" onclick="exportCSV()">⬇ CSV</button>
     <button class="btn btn-primary" onclick="loadAll()"><span id="ri">↻</span> Refresh</button>
+    <button class="btn btn-ghost" id="tiktok-connect-btn" onclick="connectTikTokShop()" style="border-color:rgba(255,45,85,.4);color:#ff6b9d">⟡ TikTok</button>
+    <button class="btn btn-ghost" onclick="openClientView()" style="border-color:rgba(16,185,129,.4);color:var(--green)">👤 Client</button>
     <button class="btn btn-ghost" id="theme-btn" onclick="cycleTheme()" title="Switch theme">🌙</button>
-    <button class="btn btn-ghost" id="party-btn" onclick="toggleParty()">🎉 Party</button>
-    <button class="btn btn-ghost" id="destroy-btn" onclick="toggleDestroy()" style="border-color:rgba(239,68,68,.4);color:#ef4444">💥 Destroy</button>
-    <button class="btn btn-ghost" onclick="changeKey()">⚙ Key</button>
-    <button class="btn btn-ghost" id="audit-btn" onclick="openAudit()" style="display:none">🔍 Audit</button>
-    <button class="btn btn-ghost" id="tiktok-connect-btn" onclick="connectTikTokShop()" style="border-color:rgba(255,45,85,.4);color:#ff6b9d">⟡ Link TikTok</button>
-    <a class="btn btn-ghost" href="./legal/" style="text-decoration:none">Legal</a>
-    <a class="btn btn-ghost" href="./legal/contact.html" style="text-decoration:none">Help</a>
-    <button class="btn btn-ghost" onclick="openClientView()" style="border-color:rgba(16,185,129,.4);color:var(--green)">👤 Client View</button>
     <div id="channel-switcher" style="display:none;align-items:center;gap:6px;padding:4px;background:var(--glass);border:1px solid var(--card-border);border-radius:24px">
       <button id="ch-all"    onclick="setChannelFilter('all')"    style="padding:4px 14px;border-radius:20px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:var(--indigo);color:#fff;transition:all .2s">All</button>
       <button id="ch-ebay"   onclick="setChannelFilter('ebay')"   style="padding:4px 14px;border-radius:20px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:transparent;color:var(--muted);transition:all .2s">eBay</button>
       <button id="ch-tiktok" onclick="setChannelFilter('tiktok')" style="padding:4px 14px;border-radius:20px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:transparent;color:#ff6b9d;transition:all .2s">⟡ TikTok</button>
+    </div>
+    <!-- ⋯ More overflow menu -->
+    <div class="more-wrap" id="more-wrap">
+      <button class="btn btn-ghost more-toggle" onclick="toggleMoreMenu()" title="More options">⋯</button>
+      <div class="more-menu" id="more-menu">
+        <button class="more-item" onclick="openPayoutCalc();closeMoreMenu()">🧮 Payout Calc</button>
+        <button class="more-item" onclick="openPayoutReport();closeMoreMenu()">🖨 Payout Report</button>
+        <button class="more-item" onclick="openWeeklyWrap();closeMoreMenu()">🏆 Weekly Wrap</button>
+        <div class="more-divider"></div>
+        <button class="more-item" id="party-btn" onclick="toggleParty();closeMoreMenu()">🎉 Party Mode</button>
+        <button class="more-item" id="destroy-btn" onclick="toggleDestroy();closeMoreMenu()" style="color:var(--rose)">💥 Destroy Mode</button>
+        <div class="more-divider"></div>
+        <button class="more-item" onclick="changeKey();closeMoreMenu()">⚙ Change API Key</button>
+        <button class="more-item" id="audit-btn" onclick="openAudit();closeMoreMenu()" style="display:none">🔍 Data Audit</button>
+      </div>
     </div>
   </div>
 </header>

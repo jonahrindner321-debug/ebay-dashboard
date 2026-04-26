@@ -56,10 +56,10 @@ Optional advanced settings:
 ```text
 TIKTOK_AUTH_URL
 TIKTOK_TOKEN_URL
-TIKTOK_TOKEN_STYLE=oauth_v2
+TIKTOK_TOKEN_STYLE=shop_v2
 ```
 
-`oauth_v2` uses TikTok's OAuth v2 token endpoint. If the approved TikTok Shop app uses the legacy Shop Open API token exchange, set `TIKTOK_TOKEN_STYLE=shop_legacy` and provide the correct `TIKTOK_TOKEN_URL`.
+`shop_v2` uses TikTok Shop's authorization/token endpoint family. `oauth_v2` remains available for generic TikTok OAuth, and `shop_legacy` is kept as a fallback for older Shop Open API apps.
 
 Initialize the database schema after adding `DATABASE_URL`:
 

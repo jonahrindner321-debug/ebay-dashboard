@@ -25,13 +25,24 @@ module.exports = async function handler(req, res) {
   const storeName = req.query.storeName || req.query.store || 'Unassigned TikTok Store';
   const clientSlug = req.query.client || req.query.clientSlug || storeSlug;
   const clientName = req.query.clientName || req.query.storeName || storeName;
-  const authUrl = new URL(process.env.TIKTOK_AUTH_URL || 'https://www.tiktok.com/v2/auth/authorize/');
-  authUrl.searchParams.set('client_key', process.env.TIKTOK_CLIENT_KEY);
-  authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('scope', process.env.TIKTOK_SCOPES || 'user.info.basic');
-  authUrl.searchParams.set('redirect_uri', getRedirectUri(req));
-  authUrl.searchParams.set('state', state);
-  authUrl.searchParams.set('disable_auto_auth', '1');
+  const style = process.env.TIKTOK_TOKEN_STYLE || 'oauth_v2';
+  const authUrl = new URL(
+    process.env.TIKTOK_AUTH_URL ||
+    (style.startsWith('shop') ? 'https://auth.tiktok-shops.com/api/v2/token/authorize' : 'https://www.tiktok.com/v2/auth/authorize/')
+  );
+
+  if (style.startsWith('shop')) {
+    authUrl.searchParams.set('app_key', process.env.TIKTOK_CLIENT_KEY);
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('redirect_uri', getRedirectUri(req));
+  } else {
+    authUrl.searchParams.set('client_key', process.env.TIKTOK_CLIENT_KEY);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('scope', process.env.TIKTOK_SCOPES || 'user.info.basic');
+    authUrl.searchParams.set('redirect_uri', getRedirectUri(req));
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('disable_auto_auth', '1');
+  }
 
   setCookie(res, STATE_COOKIE, JSON.stringify({ state, storeSlug, storeName, clientSlug, clientName }), { maxAge: 10 * 60 });
   res.writeHead(302, { Location: authUrl.toString() });

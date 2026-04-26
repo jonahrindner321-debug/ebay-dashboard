@@ -731,8 +731,8 @@ function animateChannelSwitch(ch) {
   setTimeout(() => el.remove(), 600);
 }
 
-// Safety: dismiss after 12s max even if data never loads
-setTimeout(() => { if (!_introDismissed) dismissIntro(); }, 12000);
+// Safety fallback — overridden dynamically once tab count is known
+let _introSafetyTimer = setTimeout(() => { if (!_introDismissed) dismissIntro(); }, 90000);
 
 // ─── MAIN LOAD ─────────────────────────────────────────────────────────────
 async function loadAll() {
@@ -810,6 +810,10 @@ async function loadAll() {
   _introSetStage('load');
   _introSetSub('Loading sales data…');
   _introSetProgress(0, totalJobs, `0 / ${totalJobs} tabs`);
+
+  // Reset safety timer now that we know tab count — give 1s per tab + 15s buffer
+  clearTimeout(_introSafetyTimer);
+  _introSafetyTimer = setTimeout(() => { if (!_introDismissed) dismissIntro(); }, totalJobs * 1000 + 15000);
 
   const loadAudit = [];
 
@@ -891,11 +895,13 @@ async function loadAll() {
     setTimeout(() => { if (window._initBreadcrumbObs) { window._initBreadcrumbObs(); window._initBreadcrumbObs = null; } }, 500);
     if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
     else showToast('Data refreshed', 'info', '🔄');
+    // Give Chart.js and the DOM 400ms to finish painting before pulling the overlay.
+    setTimeout(() => dismissIntro(), 400);
   } else {
     setStatus('error', 'No data — check API key / permissions');
     showToast('No data found', 'error', '⚠️');
+    dismissIntro();
   }
-  dismissIntro();
 }
 
 // ─── FILTERS ───────────────────────────────────────────────────────────────

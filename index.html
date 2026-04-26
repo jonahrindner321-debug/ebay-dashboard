@@ -18,7 +18,28 @@
   <div class="intro-orb intro-orb-3"></div>
   <div id="intro-logo-wrap">📦</div>
   <div id="intro-title">Seller OS</div>
-  <div id="intro-sub">Loading your data…</div>
+  <div id="intro-sub">Connecting…</div>
+  <div id="intro-stage-bar">
+    <div class="intro-stage" id="ist-connect">
+      <div class="ist-dot"></div><span>Connect</span>
+    </div>
+    <div class="intro-stage-line"></div>
+    <div class="intro-stage" id="ist-discover">
+      <div class="ist-dot"></div><span>Discover</span>
+    </div>
+    <div class="intro-stage-line"></div>
+    <div class="intro-stage" id="ist-load">
+      <div class="ist-dot"></div><span>Load</span>
+    </div>
+    <div class="intro-stage-line"></div>
+    <div class="intro-stage" id="ist-render">
+      <div class="ist-dot"></div><span>Ready</span>
+    </div>
+  </div>
+  <div id="intro-prog-wrap">
+    <div id="intro-prog-bar"><div id="intro-prog-fill"></div></div>
+    <div id="intro-prog-label"></div>
+  </div>
   <div id="intro-dots">
     <div class="intro-dot"></div>
     <div class="intro-dot"></div>
@@ -268,13 +289,13 @@
 
   <!-- KPI Grid -->
   <div class="kpi-grid" id="kpi-grid">
-    <!-- rendered by JS -->
-    <div class="card kpi-card"><div class="kpi-label">Total Profit</div><div class="kpi-val">—</div></div>
-    <div class="card kpi-card"><div class="kpi-label">Avg Daily Profit</div><div class="kpi-val">—</div></div>
-    <div class="card kpi-card"><div class="kpi-label">Latest Day</div><div class="kpi-val">—</div></div>
-    <div class="card kpi-card"><div class="kpi-label">Avg ROI</div><div class="kpi-val">—</div></div>
-    <div class="card kpi-card"><div class="kpi-label">Total Revenue</div><div class="kpi-val">—</div></div>
-    <div class="card kpi-card"><div class="kpi-label" id="fee-label-placeholder">Platform Fees</div><div class="kpi-val">—</div></div>
+    <!-- skeleton placeholders — replaced by JS on data load -->
+    <div class="card kpi-card"><div class="skel skel-kpi"></div></div>
+    <div class="card kpi-card"><div class="skel skel-kpi" style="animation-delay:.2s"></div></div>
+    <div class="card kpi-card"><div class="skel skel-kpi" style="animation-delay:.4s"></div></div>
+    <div class="card kpi-card"><div class="skel skel-kpi" style="animation-delay:.6s"></div></div>
+    <div class="card kpi-card"><div class="skel skel-kpi" style="animation-delay:.8s"></div></div>
+    <div class="card kpi-card"><div class="skel skel-kpi" style="animation-delay:1s"></div></div>
   </div>
 
   <!-- Records -->
@@ -366,7 +387,13 @@
             <th title="Account notes">Notes</th>
           </tr>
         </thead>
-        <tbody id="tbody"></tbody>
+        <tbody id="tbody">
+          <tr><td colspan="11"><div class="skel skel-row"></div></td></tr>
+          <tr><td colspan="11"><div class="skel skel-row"></div></td></tr>
+          <tr><td colspan="11"><div class="skel skel-row"></div></td></tr>
+          <tr><td colspan="11"><div class="skel skel-row"></div></td></tr>
+          <tr><td colspan="11"><div class="skel skel-row"></div></td></tr>
+        </tbody>
       </table>
     </div>
   </div>

@@ -674,19 +674,53 @@ function parseValues(values, person, monthLabel, channel = 'ebay') {
 
 // ─── INTRO / TRANSITION ANIMATIONS ────────────────────────────────────────
 let _introDismissed = false;
-let _introReadyAt   = Date.now() + 1400; // minimum display time
+
+// Stage helpers — 4 stages: connect, discover, load, render
+const _introStages = ['connect', 'discover', 'load', 'render'];
+function _introSetStage(stageName) {
+  const idx = _introStages.indexOf(stageName);
+  _introStages.forEach((s, i) => {
+    const el = $('ist-' + s);
+    if (!el) return;
+    const line = el.nextElementSibling;
+    if (i < idx) {
+      el.className = 'intro-stage done';
+      if (line && line.classList.contains('intro-stage-line')) line.classList.add('done');
+    } else if (i === idx) {
+      el.className = 'intro-stage active';
+    } else {
+      el.className = 'intro-stage';
+      if (line && line.classList.contains('intro-stage-line')) line.classList.remove('done');
+    }
+  });
+}
+function _introSetProgress(done, total, label) {
+  const fill = $('intro-prog-fill');
+  const lbl  = $('intro-prog-label');
+  if (fill) fill.style.width = total > 0 ? (done / total * 100) + '%' : '0%';
+  if (lbl)  lbl.textContent  = label || '';
+}
+function _introSetSub(text) {
+  const el = $('intro-sub');
+  if (el) {
+    el.style.opacity = '0';
+    setTimeout(() => { el.textContent = text; el.style.opacity = '1'; }, 150);
+  }
+}
 
 function dismissIntro() {
   if (_introDismissed) return;
-  const now = Date.now();
-  const delay = Math.max(0, _introReadyAt - now);
+  _introDismissed = true;
+  const ov = $('intro-overlay');
+  if (!ov) return;
+  // Flash "Ready" stage then dismiss
+  _introSetStage('render');
+  _introSetSub('All set!');
+  _introSetProgress(1, 1, '');
   setTimeout(() => {
-    const ov = $('intro-overlay');
-    if (!ov || _introDismissed) return;
-    _introDismissed = true;
     ov.classList.add('out');
     setTimeout(() => { ov.style.display = 'none'; }, 700);
-  }, delay);
+  }, 420);
 }
 
 function animateChannelSwitch(ch) {
@@ -697,8 +731,8 @@ function animateChannelSwitch(ch) {
   setTimeout(() => el.remove(), 600);
 }
 
-// Safety: dismiss intro after 5s max even if data never loads
-setTimeout(() => { _introReadyAt = 0; dismissIntro(); }, 5000);
+// Safety: dismiss after 12s max even if data never loads
+setTimeout(() => { if (!_introDismissed) dismissIntro(); }, 12000);
 
 // ─── MAIN LOAD ─────────────────────────────────────────────────────────────
 async function loadAll() {
@@ -706,8 +740,13 @@ async function loadAll() {
   setStatus('loading', 'Loading…');
   const ri = $('ri'); ri.className = 'spin'; ri.textContent = '↻';
   RAW = []; doneJobs = 0;
+
+  // Stage 1: Connect
+  _introSetStage('connect');
+  _introSetSub('Connecting to Google Sheets…');
+  _introSetProgress(0, 1, '');
+
   // Clear accumulated state so refreshes don't double-count
-  // (cache keeps last-good data; we rebuild from scratch then fill gaps from cache)
   Object.keys(EXPENSES).forEach(k => delete EXPENSES[k]);
   Object.keys(STORE_CREATED).forEach(k => delete STORE_CREATED[k]);
   Object.keys(SHEET_MODIFIED).forEach(k => delete SHEET_MODIFIED[k]);
@@ -715,13 +754,18 @@ async function loadAll() {
   const ids = Object.keys(SHEETS);
   let allSources = [], tabErrors = [];
 
-  // Fetch tab lists with stagger to avoid 429 rate limiting — 400ms between each sheet
+  // Stage 2: Discover tabs
+  _introSetStage('discover');
+  _introSetSub(`Discovering ${ids.length} store${ids.length !== 1 ? 's' : ''}…`);
+  _introSetProgress(0, ids.length, '');
+
   const delay = ms => new Promise(r => setTimeout(r, ms));
   const tabLists = [];
   for (let i = 0; i < ids.length; i++) {
     if (i > 0) await delay(400);
     const list = await getDataTabs(ids[i]).catch(e => { tabErrors.push({id: ids[i], e: e.message}); return []; });
     tabLists.push(list);
+    _introSetProgress(i + 1, ids.length, `${i + 1} / ${ids.length} stores`);
   }
   ids.forEach((id,i)=>tabLists[i].forEach(tab=>allSources.push({id,person:SHEETS[id],tab})));
 
@@ -730,9 +774,9 @@ async function loadAll() {
     try {
       const data = await googleFetch('drive', { id });
       if (data.createdTime) {
-        STORE_CREATED[SHEETS[id]] = data.createdTime.substring(0, 10); // YYYY-MM-DD
+        STORE_CREATED[SHEETS[id]] = data.createdTime.substring(0, 10);
       }
-    } catch(e) { /* ignore — creation date is optional info */ }
+    } catch(e) { /* ignore */ }
   }));
 
   // Fetch last-edit timestamps from _meta!A1 — staggered to avoid 429
@@ -748,23 +792,27 @@ async function loadAll() {
     renderSheetActivity();
   })();
 
-  // Load listing tracker (fire and forget)
   loadListingTracker();
 
   if (!allSources.length) {
     const msg = tabErrors.length ? 'API error: '+tabErrors[0].e : 'No tabs — check sheet sharing';
     setStatus('error', msg);
     $('tbody').innerHTML = `<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--rose)">❌ ${msg}</td></tr>`;
-    ri.className=''; return;
+    ri.className='';
+    dismissIntro();
+    return;
   }
 
+  // Stage 3: Load data
   totalJobs = allSources.length;
   setProgress(0, totalJobs);
   setStatus('loading', `Fetching 0 / ${totalJobs}…`);
+  _introSetStage('load');
+  _introSetSub('Loading sales data…');
+  _introSetProgress(0, totalJobs, `0 / ${totalJobs} tabs`);
 
-  const loadAudit = []; // track per-tab results
+  const loadAudit = [];
 
-  // Fetch tab data in batches of 3 with 500ms gap — smaller batches reduce 429s
   const BATCH = 3;
   for (let i = 0; i < allSources.length; i += BATCH) {
     const batch = allSources.slice(i, i + BATCH);
@@ -791,7 +839,6 @@ async function loadAll() {
           loadAudit.push({ person: src.person, tab: src.tab, rows: parsed.length, profit: tabProfit, status: parsed.length > 0 ? 'ok' : 'skipped' });
         }
       } catch(e) {
-        // Failed — fall back to cached data only if within TTL
         const now = Date.now();
         const tabCached = !isExp && _tabDataCache[cacheKey] && (now - _tabDataCache[cacheKey].ts) < TAB_CACHE_TTL;
         const expCached = isExp  && _expDataCache[cacheKey] && (now - _expDataCache[cacheKey].ts) < TAB_CACHE_TTL;
@@ -814,17 +861,24 @@ async function loadAll() {
         doneJobs++;
         setProgress(doneJobs, totalJobs);
         setStatus('loading', `Fetching ${doneJobs} / ${totalJobs}…`);
+        _introSetProgress(doneJobs, totalJobs, `${doneJobs} / ${totalJobs} tabs`);
+        if (doneJobs === Math.floor(totalJobs / 2)) _introSetSub('Crunching numbers…');
       }
     }));
-    if (i + BATCH < allSources.length) await delay(500); // 500ms gap between batches
+    if (i + BATCH < allSources.length) await delay(500);
   }
-  window._loadAudit = loadAudit; // expose for audit modal
+  window._loadAudit = loadAudit;
 
   ri.className=''; ri.textContent='↻';
   const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   $('last-upd').textContent = 'Updated ' + now;
 
   if (RAW.length) {
+    // Stage 4: Render
+    _introSetStage('render');
+    _introSetSub(`${RAW.length.toLocaleString()} records ready`);
+    _introSetProgress(1, 1, '');
+
     setStatus('live', '● LIVE');
     populateFilters();
     renderAllTimeBanner();

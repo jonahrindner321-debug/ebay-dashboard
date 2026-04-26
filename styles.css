@@ -585,10 +585,69 @@
       font-size: 13px; color: var(--muted);
       animation: introSlideUp .5s ease .48s both;
       position: relative; z-index: 1;
+      transition: opacity .15s ease;
     }
+    /* ── Intro stage progress bar ── */
+    #intro-stage-bar {
+      display: flex; align-items: center; gap: 0;
+      animation: introSlideUp .5s ease .55s both;
+      position: relative; z-index: 1;
+      margin-top: 4px;
+    }
+    .intro-stage {
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      width: 72px;
+    }
+    .intro-stage span {
+      font-size: 10px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; transition: color .3s;
+    }
+    .intro-stage.active span { color: #fff; }
+    .intro-stage.done span   { color: var(--green); }
+    .ist-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: rgba(255,255,255,.12); border: 1.5px solid rgba(255,255,255,.2);
+      transition: background .3s, border-color .3s, box-shadow .3s;
+    }
+    .intro-stage.active .ist-dot {
+      background: var(--indigo); border-color: var(--indigo);
+      box-shadow: 0 0 10px rgba(99,102,241,.7);
+      animation: introDotPulse 1s ease infinite;
+    }
+    .intro-stage.done .ist-dot {
+      background: var(--green); border-color: var(--green);
+      box-shadow: 0 0 8px rgba(16,185,129,.5);
+      animation: none;
+    }
+    .intro-stage-line {
+      flex: 1; height: 1.5px; background: rgba(255,255,255,.1);
+      margin-bottom: 16px; min-width: 20px; max-width: 36px;
+      transition: background .4s;
+    }
+    .intro-stage-line.done { background: var(--green); }
+
+    /* ── Intro mini progress bar ── */
+    #intro-prog-wrap {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      animation: introSlideUp .5s ease .65s both;
+      position: relative; z-index: 1; width: 220px;
+    }
+    #intro-prog-bar {
+      width: 100%; height: 3px; border-radius: 99px;
+      background: rgba(255,255,255,.1); overflow: hidden;
+    }
+    #intro-prog-fill {
+      height: 100%; width: 0%; border-radius: 99px;
+      background: linear-gradient(90deg, var(--indigo), var(--cyan));
+      transition: width .35s ease;
+    }
+    #intro-prog-label {
+      font-size: 11px; color: var(--muted); letter-spacing: .02em; min-height: 14px;
+      transition: opacity .2s;
+    }
+
     #intro-dots {
-      display: flex; gap: 10px; margin-top: 4px;
-      animation: introSlideUp .5s ease .6s both;
+      display: flex; gap: 10px; margin-top: 2px;
+      animation: introSlideUp .5s ease .75s both;
       position: relative; z-index: 1;
     }
     .intro-dot {
@@ -598,6 +657,20 @@
     .intro-dot:nth-child(1) { background: var(--indigo); animation-delay: 0s; }
     .intro-dot:nth-child(2) { background: var(--violet); animation-delay: .2s; }
     .intro-dot:nth-child(3) { background: var(--cyan);   animation-delay: .4s; }
+
+    /* ── Skeleton loading for background refreshes ── */
+    @keyframes skelPulse { 0%,100%{opacity:.5} 50%{opacity:1} }
+    .skel {
+      background: rgba(255,255,255,.07); border-radius: 6px;
+      animation: skelPulse 1.6s ease infinite;
+    }
+    .skel-kpi { height: 52px; border-radius: 10px; }
+    .skel-row { height: 42px; border-radius: 6px; margin-bottom: 6px; }
+    .skel-row:nth-child(2) { animation-delay: .15s; opacity: .9; }
+    .skel-row:nth-child(3) { animation-delay: .3s;  opacity: .8; }
+    .skel-row:nth-child(4) { animation-delay: .45s; opacity: .7; }
+    .skel-row:nth-child(5) { animation-delay: .6s;  opacity: .6; }
+    .skel-chart { height: 220px; border-radius: 10px; }
 
     /* ── Animations ── */
     @keyframes introFadeIn  { from { opacity: 0; } to { opacity: 1; } }

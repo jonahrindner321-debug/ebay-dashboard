@@ -3649,6 +3649,15 @@ function escapeHtml(v) {
 }
 
 let _warSelectedLever = 'all';
+let _warMoveMode = 'add';
+let _warBuilderDraft = {
+  add: { count: 0, profit: 1000, split: 'partner', account: '' },
+  improve: { target: '', benchmark: '', capture: 0 },
+  lift: { pct: 0 },
+  log: { note: '', impact: 0, split: 'partner' }
+};
+let _warScenarioMoves = [];
+let _warLastRenderedMoveMode = '';
 const WAR_LEVER_KEYS = ['clone', 'upgrade', 'floor', 'clients', 'lift'];
 const WAR_LEVER_CONTROL_IDS = {
   clone: 'war-control-clone',
@@ -3656,6 +3665,12 @@ const WAR_LEVER_CONTROL_IDS = {
   floor: 'war-control-floor',
   clients: 'war-control-clients',
   lift: 'war-control-lift'
+};
+const WAR_MOVE_TO_LEVER = {
+  add: 'clients',
+  improve: 'upgrade',
+  lift: 'lift',
+  log: 'clients'
 };
 
 function warSplitForType(type, profit) {
@@ -3715,6 +3730,315 @@ function warSetSelectOptions(id, accounts, valueKey = 'store', defaultValue = nu
   else if (defaultValue && accounts.some(p => p[valueKey] === defaultValue)) el.value = defaultValue;
 }
 
+function warSetControlValue(id, value) {
+  const el = $(id);
+  if (el) el.value = value;
+}
+
+function warResetScenarioControls() {
+  const defaults = {
+    'war-clone-count': 0,
+    'war-clone-confidence': 1,
+    'war-upgrade-capture': 0,
+    'war-benchmark-adoption': 0,
+    'war-client-count': 0,
+    'war-client-profit': 1000,
+    'war-client-split': 'partner',
+    'war-growth-lift': 0
+  };
+  Object.entries(defaults).forEach(([id, val]) => warSetControlValue(id, val));
+}
+
+function warAccountOptions(accounts, selected = '') {
+  return accounts.map(p => `<option value="${escapeHtml(p.store)}" ${p.store === selected ? 'selected' : ''}>${escapeHtml(p.store)} · ${fmt$(p.monthlyProfit)}/mo</option>`).join('');
+}
+
+function warReadBuilderFields() {
+  if (_warMoveMode === 'add') {
+    _warBuilderDraft.add.count = Math.max(0, Math.floor(warReadNumber('war-builder-count', 0)));
+    _warBuilderDraft.add.profit = Math.max(0, warReadNumber('war-builder-profit', 0));
+    _warBuilderDraft.add.split = $('war-builder-split')?.value || 'partner';
+    _warBuilderDraft.add.account = $('war-builder-account')?.value || _warBuilderDraft.add.account || '';
+  }
+  if (_warMoveMode === 'improve') {
+    _warBuilderDraft.improve.target = $('war-builder-target')?.value || _warBuilderDraft.improve.target || '';
+    _warBuilderDraft.improve.benchmark = $('war-builder-benchmark')?.value || _warBuilderDraft.improve.benchmark || '';
+    _warBuilderDraft.improve.capture = Math.max(0, Math.min(100, warReadNumber('war-builder-capture', 0)));
+  }
+  if (_warMoveMode === 'lift') {
+    _warBuilderDraft.lift.pct = Math.max(-25, Math.min(100, warReadNumber('war-builder-lift', 0)));
+  }
+  if (_warMoveMode === 'log') {
+    _warBuilderDraft.log.note = $('war-builder-note-input')?.value || '';
+    _warBuilderDraft.log.impact = Math.max(0, warReadNumber('war-builder-impact', 0));
+    _warBuilderDraft.log.split = $('war-builder-log-split')?.value || 'partner';
+  }
+}
+
+function warDraftToMove() {
+  warReadBuilderFields();
+  const id = `move_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  if (_warMoveMode === 'add') return { id, type: 'add', ..._warBuilderDraft.add };
+  if (_warMoveMode === 'improve') return { id, type: 'improve', ..._warBuilderDraft.improve };
+  if (_warMoveMode === 'lift') return { id, type: 'lift', ..._warBuilderDraft.lift };
+  return { id, type: 'log', ..._warBuilderDraft.log };
+}
+
+function warMoveLabel(move) {
+  if (!move) return 'Move';
+  if (move.type === 'add') return `Add ${move.count || 0} ${move.split || 'partner'} store${Number(move.count) === 1 ? '' : 's'}`;
+  if (move.type === 'improve') return `${move.target || 'Store'} toward ${move.benchmark || 'benchmark'}`;
+  if (move.type === 'lift') return `${move.pct || 0}% portfolio lift`;
+  return move.note || 'Logged growth move';
+}
+
+function addWarScenarioMove() {
+  const move = warDraftToMove();
+  const hasImpact = move.type === 'add' ? move.count > 0 && move.profit > 0
+    : move.type === 'improve' ? move.capture > 0 && move.target && move.benchmark
+    : move.type === 'lift' ? move.pct !== 0
+    : Boolean(move.note || move.impact > 0);
+  if (!hasImpact) return;
+  _warScenarioMoves.push(move);
+  if (move.type === 'log') {
+    _warBuilderDraft.log.note = '';
+    _warBuilderDraft.log.impact = 0;
+  }
+  renderWarRoom();
+}
+
+function removeWarScenarioMove(id) {
+  _warScenarioMoves = _warScenarioMoves.filter(move => move.id !== id);
+  renderWarRoom();
+}
+
+function clearWarScenarioMoves() {
+  _warScenarioMoves = [];
+  renderWarRoom();
+}
+
+function warMoveToLever(move, accounts, baseline) {
+  if (!move) return null;
+  if (move.type === 'add') {
+    const count = Math.max(0, Math.floor(Number(move.count) || 0));
+    const profitEach = Math.max(0, Number(move.profit) || 0);
+    const profit = r2(count * profitEach);
+    const split = warSplitForType(move.split || 'partner', profit);
+    return { id: move.id, key: 'clients', name: `${count} new ${move.split || 'partner'} store${count === 1 ? '' : 's'} at ${fmt$(profitEach)}/mo`, profit, split, move };
+  }
+  if (move.type === 'improve') {
+    const target = accounts.find(p => p.store === move.target) || accounts[accounts.length - 1];
+    const benchmark = accounts.find(p => p.store === move.benchmark) || accounts[0];
+    const capture = Math.max(0, Math.min(100, Number(move.capture) || 0)) / 100;
+    const profit = r2(Math.max(0, (benchmark?.monthlyProfit || 0) - (target?.monthlyProfit || 0)) * capture);
+    const split = getSplit(target?.dashName || target?.store || '', profit);
+    return { id: move.id, key: 'upgrade', name: `${target?.store || 'Store'} captures ${Math.round(capture * 100)}% of ${benchmark?.store || 'benchmark'} gap`, profit, split, move };
+  }
+  if (move.type === 'lift') {
+    const pct = Math.max(-25, Math.min(100, Number(move.pct) || 0));
+    const rows = accounts.map(p => {
+      const profit = r2(p.monthlyProfit * (pct / 100));
+      return { profit, split: getSplit(p.dashName || p.store, profit) };
+    });
+    const split = rows.reduce((acc, row) => warAddSplit(acc, row.split, row.profit), { profit: 0, owner: 0, danian: 0, jr: 0 });
+    return { id: move.id, key: 'lift', name: `${pct}% lift across current stores`, profit: split.profit, split, move };
+  }
+  const impact = Math.max(0, Number(move.impact) || 0);
+  return { id: move.id, key: 'clients', name: move.note || `Logged move worth ${fmt$(impact)}/mo`, profit: impact, split: warSplitForType(move.split || 'partner', impact), move };
+}
+
+function setWarMoveMode(mode) {
+  _warMoveMode = ['add', 'improve', 'lift', 'log'].includes(mode) ? mode : 'add';
+  _warSelectedLever = WAR_MOVE_TO_LEVER[_warMoveMode] || 'all';
+  warMoveChanged(false);
+}
+
+function warMoveChanged(readFields = true) {
+  if (readFields) warReadBuilderFields();
+  _warSelectedLever = WAR_MOVE_TO_LEVER[_warMoveMode] || 'all';
+  renderWarRoom();
+}
+
+function warUseSelectedRate() {
+  const accounts = warGetAccounts();
+  const selected = $('war-builder-account')?.value || _warBuilderDraft.add.account;
+  const account = accounts.find(p => p.store === selected) || accounts[0];
+  if (account) _warBuilderDraft.add.profit = Math.max(0, Math.round(account.monthlyProfit));
+  if ($('war-builder-profit')) $('war-builder-profit').value = _warBuilderDraft.add.profit;
+  warMoveChanged(false);
+}
+
+function getWarMoveLogs() {
+  try {
+    return JSON.parse(localStorage.getItem('seller_os_growth_logs') || '[]').filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveWarMoveLog() {
+  const note = $('war-builder-note-input')?.value?.trim() || _warBuilderDraft.log.note.trim();
+  const impact = Math.max(0, warReadNumber('war-builder-impact', _warBuilderDraft.log.impact));
+  if (!note && !impact) return;
+  const logs = getWarMoveLogs();
+  logs.unshift({
+    note: note || 'Growth move logged',
+    impact,
+    split: $('war-builder-log-split')?.value || _warBuilderDraft.log.split || 'partner',
+    date: new Date().toISOString()
+  });
+  localStorage.setItem('seller_os_growth_logs', JSON.stringify(logs.slice(0, 12)));
+  _warBuilderDraft.log.note = '';
+  _warBuilderDraft.log.impact = 0;
+  warMoveChanged(false);
+}
+
+function renderWarMoveBuilder(data) {
+  const fields = $('war-move-fields');
+  const note = $('war-move-note');
+  if (!fields || !note) return;
+  const accounts = data.accounts || [];
+  const top = accounts[0];
+  const weakest = [...accounts].sort((a, b) => a.monthlyProfit - b.monthlyProfit)[0];
+  if (!_warBuilderDraft.add.account && top) _warBuilderDraft.add.account = top.store;
+  if (!_warBuilderDraft.improve.target && weakest) _warBuilderDraft.improve.target = weakest.store;
+  if (!_warBuilderDraft.improve.benchmark && top) _warBuilderDraft.improve.benchmark = top.store;
+
+  document.querySelectorAll('[data-war-move]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-war-move') === _warMoveMode);
+  });
+  const activeInsideBuilder = fields.contains(document.activeElement);
+  if (activeInsideBuilder && _warLastRenderedMoveMode === _warMoveMode) {
+    renderWarMoveNote(data);
+    return;
+  }
+  _warLastRenderedMoveMode = _warMoveMode;
+
+  if (_warMoveMode === 'add') {
+    const draft = _warBuilderDraft.add;
+    fields.innerHTML = `
+      <label class="war-builder-field">What kind?
+        <select id="war-builder-split" onchange="warMoveChanged()">
+          <option value="partner" ${draft.split === 'partner' ? 'selected' : ''}>Partner/client store</option>
+          <option value="owned" ${draft.split === 'owned' ? 'selected' : ''}>Owned store</option>
+          <option value="jacob" ${draft.split === 'jacob' ? 'selected' : ''}>Name-fee store</option>
+        </select>
+      </label>
+      <label class="war-builder-field">How many?
+        <input id="war-builder-count" type="number" min="0" step="1" value="${draft.count}" oninput="warMoveChanged()" />
+      </label>
+      <label class="war-builder-field">Perform like
+        <select id="war-builder-account" onchange="warMoveChanged()">${warAccountOptions(accounts, draft.account)}</select>
+      </label>
+      <label class="war-builder-field">Profit per store / month
+        <input id="war-builder-profit" type="number" min="0" step="100" value="${Math.round(draft.profit)}" oninput="warMoveChanged()" />
+      </label>
+      <button type="button" class="war-builder-pill" onclick="warUseSelectedRate()">Use chosen store's current rate</button>
+      <button type="button" class="war-builder-pill primary" onclick="addWarScenarioMove()">Add to scenario stack</button>`;
+    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${draft.split} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
+    return;
+  }
+
+  if (_warMoveMode === 'improve') {
+    const draft = _warBuilderDraft.improve;
+    const target = accounts.find(p => p.store === draft.target) || weakest;
+    const benchmark = accounts.find(p => p.store === draft.benchmark) || top;
+    fields.innerHTML = `
+      <label class="war-builder-field">Which store lifts?
+        <select id="war-builder-target" onchange="warMoveChanged()">${warAccountOptions(accounts, target?.store || '')}</select>
+      </label>
+      <label class="war-builder-field">Perform more like
+        <select id="war-builder-benchmark" onchange="warMoveChanged()">${warAccountOptions(accounts, benchmark?.store || '')}</select>
+      </label>
+      <label class="war-builder-field wide">How much of the gap closes?
+        <input id="war-builder-capture" type="range" min="0" max="100" value="${draft.capture}" oninput="warMoveChanged()" />
+        <span>${Math.round(draft.capture)}%</span>
+      </label>
+      <button type="button" class="war-builder-pill primary" onclick="addWarScenarioMove()">Add to scenario stack</button>`;
+    const gap = target && benchmark ? Math.max(0, benchmark.monthlyProfit - target.monthlyProfit) : 0;
+    note.innerHTML = gap
+      ? `${target.store} is ${fmt$(gap)}/mo behind ${benchmark.store}. This models closing ${Math.round(draft.capture)}% of that gap.`
+      : `Pick a lower store and a stronger benchmark to model an operator lift.`;
+    return;
+  }
+
+  if (_warMoveMode === 'lift') {
+    const draft = _warBuilderDraft.lift;
+    fields.innerHTML = `
+      <label class="war-builder-field wide">Portfolio lift
+        <input id="war-builder-lift" type="range" min="-25" max="100" value="${draft.pct}" oninput="warMoveChanged()" />
+        <span>${Math.round(draft.pct)}%</span>
+      </label>
+      <div class="war-builder-card">
+        <strong>Applies to current stores</strong>
+        <span>This is the simple "operations got better across the board" model.</span>
+      </div>
+      <button type="button" class="war-builder-pill primary" onclick="addWarScenarioMove()">Add to scenario stack</button>`;
+    note.innerHTML = `${draft.pct === 0 ? 'No ops lift modeled yet.' : `${draft.pct > 0 ? '+' : ''}${Math.round(draft.pct)}% across today's account run-rate.`}`;
+    return;
+  }
+
+  const draft = _warBuilderDraft.log;
+  const logs = getWarMoveLogs();
+  fields.innerHTML = `
+    <label class="war-builder-field wide">What did we do?
+      <input id="war-builder-note-input" type="text" value="${escapeHtml(draft.note)}" placeholder="Example: Mando pricing pass, new VA, supplier test..." oninput="warMoveChanged()" />
+    </label>
+    <label class="war-builder-field">Estimated monthly impact
+      <input id="war-builder-impact" type="number" min="0" step="50" value="${Math.round(draft.impact)}" oninput="warMoveChanged()" />
+    </label>
+    <label class="war-builder-field">Who gets paid like?
+      <select id="war-builder-log-split" onchange="warMoveChanged()">
+        <option value="partner" ${draft.split === 'partner' ? 'selected' : ''}>Partner/client split</option>
+        <option value="owned" ${draft.split === 'owned' ? 'selected' : ''}>Owned split</option>
+        <option value="jacob" ${draft.split === 'jacob' ? 'selected' : ''}>Name-fee split</option>
+      </select>
+    </label>
+    <button type="button" class="war-builder-pill primary" onclick="addWarScenarioMove()">Add to scenario stack</button>
+    <button type="button" class="war-builder-pill" onclick="saveWarMoveLog()">Save move note</button>`;
+  note.innerHTML = `
+    <div class="war-log-list">
+      ${logs.length ? logs.slice(0, 4).map(log => `<div><strong>${escapeHtml(log.note)}</strong><span>${fmt$(log.impact || 0)}/mo estimate · ${new Date(log.date).toLocaleDateString()}</span></div>`).join('') : '<div><strong>No moves logged yet</strong><span>Use this for quick notes on what changed.</span></div>'}
+    </div>`;
+}
+
+function renderWarMoveNote(data) {
+  const note = $('war-move-note');
+  if (!note) return;
+  const accounts = data.accounts || [];
+  const top = accounts[0];
+  const weakest = [...accounts].sort((a, b) => a.monthlyProfit - b.monthlyProfit)[0];
+  if (_warMoveMode === 'add') {
+    const draft = _warBuilderDraft.add;
+    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${draft.split} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
+    return;
+  }
+  if (_warMoveMode === 'improve') {
+    const draft = _warBuilderDraft.improve;
+    const target = accounts.find(p => p.store === draft.target) || weakest;
+    const benchmark = accounts.find(p => p.store === draft.benchmark) || top;
+    const gap = target && benchmark ? Math.max(0, benchmark.monthlyProfit - target.monthlyProfit) : 0;
+    const label = $('war-builder-capture')?.parentElement?.querySelector('span');
+    if (label) label.textContent = `${Math.round(draft.capture)}%`;
+    note.innerHTML = gap
+      ? `${target.store} is ${fmt$(gap)}/mo behind ${benchmark.store}. This models closing ${Math.round(draft.capture)}% of that gap.`
+      : `Pick a lower store and a stronger benchmark to model an operator lift.`;
+    return;
+  }
+  if (_warMoveMode === 'lift') {
+    const draft = _warBuilderDraft.lift;
+    const label = $('war-builder-lift')?.parentElement?.querySelector('span');
+    if (label) label.textContent = `${Math.round(draft.pct)}%`;
+    note.innerHTML = `${draft.pct === 0 ? 'No ops lift modeled yet.' : `${draft.pct > 0 ? '+' : ''}${Math.round(draft.pct)}% across today's account run-rate.`}`;
+    return;
+  }
+  const logs = getWarMoveLogs();
+  note.innerHTML = `
+    <div class="war-log-list">
+      ${logs.length ? logs.slice(0, 4).map(log => `<div><strong>${escapeHtml(log.note)}</strong><span>${fmt$(log.impact || 0)}/mo estimate · ${new Date(log.date).toLocaleDateString()}</span></div>`).join('') : '<div><strong>No moves logged yet</strong><span>Use this for quick notes on what changed.</span></div>'}
+    </div>`;
+}
+
 function warBaseline(accounts) {
   return accounts.reduce((acc, p) => {
     acc.profit = r2(acc.profit + p.monthlyProfit);
@@ -3747,54 +4071,9 @@ function warScenarioData() {
   warSetSelectOptions('war-upgrade-benchmark', accounts, 'store', accounts[0].store);
 
   const baseline = warBaseline(accounts);
-  const cloneStore = $('war-clone-account')?.value || accounts[0].store;
-  const benchmarkStore = $('war-benchmark-account')?.value || accounts[0].store;
-  const upgradeTargetStore = $('war-upgrade-target')?.value || accounts[accounts.length - 1].store;
-  const upgradeBenchmarkStore = $('war-upgrade-benchmark')?.value || accounts[0].store;
-  const clone = accounts.find(p => p.store === cloneStore) || accounts[0];
-  const benchmark = accounts.find(p => p.store === benchmarkStore) || accounts[0];
-  const upgradeTarget = accounts.find(p => p.store === upgradeTargetStore) || accounts[accounts.length - 1];
-  const upgradeBenchmark = accounts.find(p => p.store === upgradeBenchmarkStore) || accounts[0];
-
-  const cloneCount = Math.max(0, Math.floor(warReadNumber('war-clone-count', 0)));
-  const cloneConfidence = Math.max(0, warReadNumber('war-clone-confidence', 1));
-  const cloneProfit = r2(cloneCount * clone.monthlyProfit * cloneConfidence);
-  const cloneSplit = getSplit(clone.dashName || clone.store, cloneProfit);
-
-  const upgradeCapture = Math.max(0, Math.min(100, warReadNumber('war-upgrade-capture', 60))) / 100;
-  const upgradeProfit = r2(Math.max(0, upgradeBenchmark.monthlyProfit - upgradeTarget.monthlyProfit) * upgradeCapture);
-  const upgradeSplit = getSplit(upgradeTarget.dashName || upgradeTarget.store, upgradeProfit);
-
-  const adoption = Math.max(0, Math.min(100, warReadNumber('war-benchmark-adoption', 50))) / 100;
-  const benchmarkRows = accounts.map(p => {
-    const gap = Math.max(0, benchmark.monthlyProfit - p.monthlyProfit);
-    const profit = r2(gap * adoption);
-    return { account: p, profit, split: getSplit(p.dashName || p.store, profit) };
-  });
-  const benchmarkProfit = r2(benchmarkRows.reduce((s, r) => s + r.profit, 0));
-  const benchmarkSplit = benchmarkRows.reduce((acc, row) => warAddSplit(acc, row.split, row.profit), { profit: 0, owner: 0, danian: 0, jr: 0 });
-
-  const clientCount = Math.max(0, Math.floor(warReadNumber('war-client-count', 0)));
-  const clientProfitEach = Math.max(0, warReadNumber('war-client-profit', 0));
-  const clientType = $('war-client-split')?.value || 'partner';
-  const clientProfit = r2(clientCount * clientProfitEach);
-  const clientSplit = warSplitForType(clientType, clientProfit);
-
-  const liftPct = Math.max(-25, Math.min(100, warReadNumber('war-growth-lift', 20)));
-  const liftRows = accounts.map(p => {
-    const profit = r2(p.monthlyProfit * (liftPct / 100));
-    return { account: p, profit, split: getSplit(p.dashName || p.store, profit) };
-  });
-  const liftSplit = liftRows.reduce((acc, row) => warAddSplit(acc, row.split, row.profit), { profit: 0, owner: 0, danian: 0, jr: 0 });
-
-  const levers = [
-    { name: `${cloneCount} account${cloneCount === 1 ? '' : 's'} like ${clone.store}`, profit: cloneProfit, split: cloneSplit },
-    { name: `${upgradeTarget.store} captures ${Math.round(upgradeCapture * 100)}% of ${upgradeBenchmark.store}'s output gap`, profit: upgradeProfit, split: upgradeSplit },
-    { name: `Raise weaker stores ${Math.round(adoption * 100)}% toward ${benchmark.store}`, profit: benchmarkProfit, split: benchmarkSplit },
-    { name: `${clientCount} new ${clientType} client${clientCount === 1 ? '' : 's'}`, profit: clientProfit, split: clientSplit },
-    { name: `${liftPct}% network-wide profit lift`, profit: liftSplit.profit, split: liftSplit }
-  ];
-
+  const levers = _warScenarioMoves
+    .map(move => warMoveToLever(move, accounts, baseline))
+    .filter(Boolean);
   const delta = levers.reduce((acc, lever) => warAddSplit(acc, lever.split, lever.profit), { profit: 0, owner: 0, danian: 0, jr: 0 });
   const projected = {
     profit: r2(baseline.profit + delta.profit),
@@ -3803,7 +4082,21 @@ function warScenarioData() {
     jr: r2(baseline.jr + delta.jr)
   };
 
-  return { accounts, baseline, projected, delta, levers, clone, benchmark, adoption, liftPct, upgradeTarget, upgradeBenchmark, upgradeCapture };
+  return {
+    accounts,
+    baseline,
+    projected,
+    delta,
+    levers,
+    moves: _warScenarioMoves,
+    clone: accounts[0],
+    benchmark: accounts[0],
+    adoption: 0,
+    liftPct: _warBuilderDraft.lift.pct || 0,
+    upgradeTarget: accounts[accounts.length - 1],
+    upgradeBenchmark: accounts[0],
+    upgradeCapture: (_warBuilderDraft.improve.capture || 0) / 100
+  };
 }
 
 function renderWarRoom() {
@@ -3829,12 +4122,16 @@ function renderWarRoom() {
   updateWarDropLabels(data);
 
   const deltaPct = data.baseline.profit > 0 ? r2(data.delta.profit / data.baseline.profit * 100) : 0;
+  updateWarInstrumentUi(data, deltaPct);
+  renderWarMoveBuilder(data);
+  renderWarScenarioStack(data);
   renderWarInstantAnswer(data, deltaPct);
+  renderWarActionBoard(data);
   $('war-scenario-title').textContent = `${fmt$(data.projected.profit)}/mo projected`;
   $('war-summary-cards').innerHTML = [
-    ['Current profit/mo', fmt$(data.baseline.profit), 'Baseline from current rolling monthly rates'],
+    ['Where we are now', fmt$(data.baseline.profit), 'Current rolling monthly run-rate'],
     ['Scenario upside', `+${fmt$(data.delta.profit)}`, `${deltaPct > 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs current`],
-    ['Projected profit/mo', fmt$(data.projected.profit), 'Current network plus all active levers']
+    ['If levers are pulled', fmt$(data.projected.profit), 'Baseline plus active scenarios']
   ].map(([label, val, sub]) => `<div class="war-stat"><span>${label}</span><strong>${val}</strong><em>${sub}</em></div>`).join('');
 
   $('war-take-grid').innerHTML = [
@@ -3848,7 +4145,8 @@ function renderWarRoom() {
       <em>${fmt$(base)} now · +${fmt$(delta)} scenario</em>
     </div>`).join('');
 
-  $('war-lever-table').innerHTML = data.levers.map(lever => `
+  const leverTable = $('war-lever-table');
+  if (leverTable) leverTable.innerHTML = data.levers.map(lever => `
     <tr>
       <td>${escapeHtml(lever.name)}</td>
       <td>${lever.profit >= 0 ? '+' : ''}${fmt$(lever.profit)}</td>
@@ -3860,39 +4158,185 @@ function renderWarRoom() {
   $('war-ai-brief').textContent = generateWarRoomBrief(data);
 }
 
+function renderWarScenarioStack(data) {
+  const stack = $('war-scenario-stack');
+  if (!stack) return;
+  if (!data.levers.length) {
+    stack.innerHTML = `
+      <div class="war-stack-empty">
+        <strong>No moves stacked yet</strong>
+        <span>Add a move above, then add another. The model will combine them into one future plan.</span>
+      </div>`;
+    return;
+  }
+  stack.innerHTML = data.levers.map((lever, index) => `
+    <article class="war-stack-card">
+      <div>
+        <span>Move ${index + 1}</span>
+        <strong>${escapeHtml(warMoveLabel(lever.move))}</strong>
+        <em>${escapeHtml(lever.name)}</em>
+      </div>
+      <div class="war-stack-money">
+        <strong>${lever.profit >= 0 ? '+' : ''}${fmt$(lever.profit)}/mo</strong>
+        <small>J&R ${lever.split.jr >= 0 ? '+' : ''}${fmt$(lever.split.jr || 0)} · Danian ${lever.split.danian >= 0 ? '+' : ''}${fmt$(lever.split.danian || 0)} · Owners ${warOwnerTake(lever.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(lever.split))}</small>
+      </div>
+      <button type="button" onclick="removeWarScenarioMove('${escapeHtml(lever.id)}')">Remove</button>
+    </article>
+  `).join('');
+}
+
+function updateWarInstrumentUi(data, deltaPct) {
+  document.querySelectorAll('.war-form-grid input[type="range"]').forEach(input => {
+    const min = parseFloat(input.min || '0');
+    const max = parseFloat(input.max || '100');
+    const val = parseFloat(input.value || '0');
+    const pct = max > min ? Math.max(0, Math.min(100, (val - min) / (max - min) * 100)) : 0;
+    input.style.setProperty('--range-pct', `${pct}%`);
+    const label = input.closest('label');
+    if (label) {
+      label.style.setProperty('--range-pct', `${pct}%`);
+      label.classList.toggle('is-hot', pct >= 70);
+      label.classList.toggle('is-cool', pct <= 25);
+    }
+  });
+  document.querySelectorAll('.war-control-block').forEach(block => block.classList.remove('war-just-updated'));
+  const key = _warSelectedLever !== 'all' ? _warSelectedLever : 'clone';
+  const activeBlock = $(WAR_LEVER_CONTROL_IDS[key]);
+  if (activeBlock) {
+    activeBlock.classList.add('war-just-updated');
+    window.setTimeout(() => activeBlock.classList.remove('war-just-updated'), 420);
+  }
+  const pool = document.querySelector('.war-pool');
+  if (pool) {
+    const rise = Math.max(-18, Math.min(18, 18 - Math.max(0, Math.min(deltaPct, 90)) * .4));
+    pool.style.setProperty('--pool-rise', `${rise}px`);
+    pool.style.setProperty('--pool-glow', `${Math.max(.08, Math.min(.32, .08 + Math.max(0, deltaPct) / 280))}`);
+  }
+  if ($('war-room-content')) {
+    $('war-room-content').classList.remove('war-pulse');
+    void $('war-room-content').offsetWidth;
+    $('war-room-content').classList.add('war-pulse');
+  }
+}
+
+function warSetValue(id, value) {
+  const el = $(id);
+  if (!el) return;
+  el.value = value;
+  updateWarRoom();
+}
+
+function renderWarActionBoard(data) {
+  const grid = $('war-action-grid');
+  if (!grid) return;
+  const accounts = data.accounts || [];
+  const top = accounts[0];
+  const weakest = [...accounts].sort((a, b) => a.monthlyProfit - b.monthlyProfit)[0];
+  const bestLever = [...data.levers].sort((a, b) => b.profit - a.profit)[0];
+  const topShare = data.baseline.profit > 0 && top ? top.monthlyProfit / data.baseline.profit * 100 : 0;
+  const noRecent = accounts.filter(p => p.recentRows === 0).slice(0, 3);
+  const underHalf = top ? accounts.filter(p => p.store !== top.store && p.monthlyProfit < top.monthlyProfit * .5) : [];
+  const focusText = weakest && top
+    ? `${weakest.store} is the lowest current output. Model it toward ${top.store} first, then decide if it needs operator attention or a different playbook.`
+    : 'Load account data to identify the weakest current output.';
+  const cards = [
+    {
+      type: 'move',
+      title: 'Best money lever',
+      metric: bestLever && bestLever.profit > 0 ? `+${fmt$(bestLever.profit)}/mo` : 'No upside yet',
+      body: bestLever && bestLever.profit > 0
+        ? `${bestLever.name} is the strongest modeled path right now. Use this as the first strategic conversation, not the fifth.`
+        : 'Change a lever or drag accounts into the pool to create a positive scenario.',
+      action: "selectWarLever('clone')",
+      cta: 'Spotlight lever'
+    },
+    {
+      type: 'focus',
+      title: 'Operator focus',
+      metric: weakest ? `${weakest.store}: ${fmt$(weakest.monthlyProfit)}/mo` : 'Waiting',
+      body: focusText,
+      action: "applyWarPreset('bestGap');selectWarLever('upgrade')",
+      cta: 'Load fix scenario'
+    },
+    {
+      type: topShare > 35 ? 'risk' : 'health',
+      title: topShare > 35 ? 'Concentration risk' : 'Portfolio balance',
+      metric: top ? `${top.store}: ${topShare.toFixed(0)}%` : 'Waiting',
+      body: topShare > 35
+        ? `${top.store} is carrying a big chunk of current profit. Clone what works, but also raise the floor so one account does not become the whole story.`
+        : `Current profit is not overly dependent on one account. Keep scaling winners while pulling the bottom group upward.`,
+      action: "selectWarLever('floor')",
+      cta: 'Raise floor'
+    },
+    {
+      type: noRecent.length ? 'risk' : 'move',
+      title: 'Data pulse',
+      metric: noRecent.length ? `${noRecent.length} quiet` : `${accounts.length} active`,
+      body: noRecent.length
+        ? `${noRecent.map(p => p.store).join(', ')} have no sales inside this Growth Lab window. Check whether that is a real slowdown or just a data timing issue.`
+        : `${accounts.length} accounts have recent activity in this window. This model is using live momentum, not old averages.`,
+      action: "document.getElementById('war-recent-window')?.focus()",
+      cta: 'Change window'
+    }
+  ];
+  grid.innerHTML = cards.map(card => `
+    <article class="war-action-card ${card.type}">
+      <span>${escapeHtml(card.title)}</span>
+      <strong>${escapeHtml(card.metric)}</strong>
+      <p>${escapeHtml(card.body)}</p>
+      <button type="button" onclick="${card.action}">${escapeHtml(card.cta)}</button>
+    </article>
+  `).join('');
+  if ($('war-data-chip') && underHalf.length && top) {
+    $('war-data-chip').textContent = `${accounts.length} accounts · ${underHalf.length} below half of ${top.store}`;
+  }
+}
+
 function renderWarInstantAnswer(data, deltaPct) {
   const sortedLevers = [...data.levers].sort((a, b) => b.profit - a.profit);
   const best = sortedLevers[0];
-  const selectedIndex = WAR_LEVER_KEYS.indexOf(_warSelectedLever);
-  const selectedLever = selectedIndex >= 0 ? data.levers[selectedIndex] : null;
+  const selectedLever = best || null;
   if ($('war-answer-headline')) {
-    $('war-answer-headline').textContent = selectedLever
-      ? `${selectedLever.name} adds ${selectedLever.profit >= 0 ? '+' : ''}${fmt$(selectedLever.profit)}/mo.`
-      : `This scenario adds ${fmt$(data.delta.profit)}/mo and lands at ${fmt$(data.projected.profit)}/mo.`;
+    $('war-answer-headline').textContent = data.delta.profit === 0
+        ? `Current baseline is ${fmt$(data.baseline.profit)}/mo.`
+        : `${data.levers.length} stacked move${data.levers.length === 1 ? '' : 's'} add ${fmt$(data.delta.profit)}/mo and land at ${fmt$(data.projected.profit)}/mo.`;
   }
   if ($('war-answer-subline')) {
-    $('war-answer-subline').textContent = selectedLever
-      ? `Selected lever impact: J&R ${selectedLever.split.jr >= 0 ? '+' : ''}${fmt$(selectedLever.split.jr || 0)}/mo, Danian ${selectedLever.split.danian >= 0 ? '+' : ''}${fmt$(selectedLever.split.danian || 0)}/mo, owners ${warOwnerTake(selectedLever.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(selectedLever.split))}/mo. The full stacked scenario is still ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs today.`
-      : `Based on ${data.accounts[0]?.recentBasisLabel || 'recent'} run-rate, that is ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs today. J&R moves from ${fmt$(data.baseline.jr)} to ${fmt$(data.projected.jr)}/mo, Danian to ${fmt$(data.projected.danian)}/mo, and client/owner take to ${fmt$(data.projected.owner)}/mo.`;
+    $('war-answer-subline').textContent = data.delta.profit === 0
+        ? `Based on ${data.accounts[0]?.recentBasisLabel || 'recent'} run-rate. No growth levers are active yet, so this is just the business as it sits right now: J&R ${fmt$(data.baseline.jr)}/mo, Danian ${fmt$(data.baseline.danian)}/mo, owners ${fmt$(data.baseline.owner)}/mo.`
+        : `Based on ${data.accounts[0]?.recentBasisLabel || 'recent'} run-rate, that is ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs today. J&R moves from ${fmt$(data.baseline.jr)} to ${fmt$(data.projected.jr)}/mo, Danian to ${fmt$(data.projected.danian)}/mo, and client/owner take to ${fmt$(data.projected.owner)}/mo. Biggest move: ${best ? best.name : 'none yet'}.`;
   }
   if ($('war-best-move')) {
-    $('war-best-move').textContent = best && best.profit > 0 ? `${best.name} (${fmt$(best.profit)}/mo)` : 'No positive lever yet';
+    $('war-best-move').textContent = data.levers.length
+      ? `${data.levers.length} move${data.levers.length === 1 ? '' : 's'} stacked · +${fmt$(data.delta.profit)}/mo`
+      : 'No moves stacked yet';
   }
   if ($('war-lever-cards')) {
-    const maxLeverProfit = Math.max(...data.levers.map(l => Math.abs(l.profit)), 1);
-    $('war-lever-cards').innerHTML = data.levers.map((lever, i) => {
-      const isBest = best && lever.name === best.name && lever.profit > 0;
-      const key = WAR_LEVER_KEYS[i] || 'all';
-      const isSelected = _warSelectedLever === key;
-      const width = Math.min(100, Math.round(Math.abs(lever.profit) / maxLeverProfit * 100));
-      return `<button type="button" class="war-lever-card ${isBest ? 'best' : ''} ${isSelected ? 'selected' : ''}" onclick="selectWarLever('${key}')">
-        <span>${isSelected ? 'Selected' : isBest ? 'Best move' : `Lever ${i + 1}`}</span>
-        <strong>${lever.profit >= 0 ? '+' : ''}${fmt$(lever.profit)}/mo</strong>
-        <em>${escapeHtml(lever.name)}</em>
-        <small>J&R ${lever.split.jr >= 0 ? '+' : ''}${fmt$(lever.split.jr || 0)} · Danian ${lever.split.danian >= 0 ? '+' : ''}${fmt$(lever.split.danian || 0)} · Owners ${warOwnerTake(lever.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(lever.split))}</small>
+    const active = best || { name: 'No future moves stacked', profit: 0, split: { jr: 0, danian: 0, storeOwner: 0 } };
+    const totalLift = Math.max(Math.abs(data.delta.profit), 1);
+    const width = Math.min(100, Math.round(Math.abs(active.profit) / totalLift * 100));
+    $('war-lever-cards').innerHTML = `
+      <div class="war-lever-card selected">
+        <span>Today</span>
+        <strong>${fmt$(data.baseline.profit)}/mo</strong>
+        <em>Current baseline from ${data.accounts[0]?.recentBasisLabel || 'recent'} performance.</em>
+        <small>J&R ${fmt$(data.baseline.jr)} · Danian ${fmt$(data.baseline.danian)} · Owners ${fmt$(data.baseline.owner)}</small>
+        <div class="war-mini-meter"><i style="width:100%"></i></div>
+      </div>
+      <div class="war-lever-card ${active.profit ? 'best selected' : ''}">
+        <span>Biggest move</span>
+        <strong>${active.profit >= 0 ? '+' : ''}${fmt$(active.profit)}/mo</strong>
+        <em>${escapeHtml(active.name)}</em>
+        <small>J&R ${active.split.jr >= 0 ? '+' : ''}${fmt$(active.split.jr || 0)} · Danian ${active.split.danian >= 0 ? '+' : ''}${fmt$(active.split.danian || 0)} · Owners ${warOwnerTake(active.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(active.split))}</small>
         <div class="war-mini-meter"><i style="width:${width}%"></i></div>
-      </button>`;
-    }).join('');
+      </div>
+      <div class="war-lever-card">
+        <span>After</span>
+        <strong>${fmt$(data.projected.profit)}/mo</strong>
+        <em>${data.delta.profit === 0 ? 'Same as current baseline until you add a move.' : `${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs current.`}</em>
+        <small>J&R ${fmt$(data.projected.jr)} · Danian ${fmt$(data.projected.danian)} · Owners ${fmt$(data.projected.owner)}</small>
+        <div class="war-mini-meter"><i style="width:${Math.max(6, Math.min(100, 60 + deltaPct))}%"></i></div>
+      </div>`;
   }
   document.querySelectorAll('[data-war-control]').forEach(block => {
     block.classList.toggle('active', block.getAttribute('data-war-control') === _warSelectedLever);
@@ -3950,17 +4394,16 @@ function selectWarLever(key) {
 }
 
 function resetWarRoom() {
-  const defaults = {
-    'war-clone-count': 3,
-    'war-clone-confidence': 1,
-    'war-upgrade-capture': 60,
-    'war-benchmark-adoption': 50,
-    'war-client-count': 5,
-    'war-client-profit': 1000,
-    'war-client-split': 'partner',
-    'war-growth-lift': 20
+  _warSelectedLever = WAR_MOVE_TO_LEVER[_warMoveMode] || 'all';
+  _warLastRenderedMoveMode = '';
+  _warScenarioMoves = [];
+  _warBuilderDraft = {
+    add: { count: 0, profit: 1000, split: 'partner', account: _warBuilderDraft.add.account || '' },
+    improve: { target: _warBuilderDraft.improve.target || '', benchmark: _warBuilderDraft.improve.benchmark || '', capture: 0 },
+    lift: { pct: 0 },
+    log: { note: '', impact: 0, split: 'partner' }
   };
-  Object.entries(defaults).forEach(([id, val]) => { if ($(id)) $(id).value = val; });
+  warResetScenarioControls();
   renderWarRoom();
 }
 

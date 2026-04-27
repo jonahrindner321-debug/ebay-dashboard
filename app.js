@@ -1001,6 +1001,7 @@ function applyFilters() {
   checkMilestones(r2(d.reduce((s,r)=>s+r.profit,0)));
   // Re-render Growth tab so month filter affects efficiency/profit views there too
   if (LISTING_DATA.summary && LISTING_DATA.summary.length) { try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); } }
+  if ($('war-room-page')?.style.display === 'block') { try { renderWarRoom(); } catch(e) { console.error('renderWarRoom error:', e); } }
 }
 
 // ─── PROFIT SPLIT SUMMARY ─────────────────────────────────────────────────
@@ -2540,17 +2541,24 @@ let _growthCharts = {};
 function switchPage(page) {
   const ops = document.querySelector('main.container');
   const growth = $('growth-page');
-  const btnOps = $('page-btn-ops'), btnGrowth = $('page-btn-growth');
+  const war = $('war-room-page');
+  const btnOps = $('page-btn-ops'), btnGrowth = $('page-btn-growth'), btnWar = $('page-btn-war');
   const animateIn = el => { el.classList.remove('page-enter'); void el.offsetWidth; el.classList.add('page-enter'); };
   if (page === 'growth') {
-    ops.style.display = 'none'; growth.style.display = 'block';
+    ops.style.display = 'none'; growth.style.display = 'block'; if (war) war.style.display = 'none';
     animateIn(growth);
-    btnOps.classList.remove('active'); btnGrowth.classList.add('active');
+    btnOps.classList.remove('active'); btnGrowth.classList.add('active'); btnWar?.classList.remove('active');
     renderGrowthPage();
+  } else if (page === 'war') {
+    ops.style.display = 'none'; growth.style.display = 'none'; if (war) war.style.display = 'block';
+    if (war) animateIn(war);
+    btnOps.classList.remove('active'); btnGrowth.classList.remove('active'); btnWar?.classList.add('active');
+    renderGrowthPage();
+    renderWarRoom();
   } else {
-    growth.style.display = 'none'; ops.style.display = 'block';
+    growth.style.display = 'none'; if (war) war.style.display = 'none'; ops.style.display = 'block';
     animateIn(ops);
-    btnGrowth.classList.remove('active'); btnOps.classList.add('active');
+    btnGrowth.classList.remove('active'); btnWar?.classList.remove('active'); btnOps.classList.add('active');
   }
 }
 
@@ -2640,8 +2648,21 @@ function updateChannelSwitcherVisibility() {
 }
 
 function renderGrowthPage() {
-  const { summary, todayRow, dailyColNames, dailyHistory = [] } = LISTING_DATA;
+  const { summary: listingSummary, todayRow, dailyColNames, dailyHistory = [] } = LISTING_DATA;
   saveMonthlyListingSnapshot();
+
+  const _growthPersonFilter = ($('filter-person') && $('filter-person').value !== 'all') ? $('filter-person').value : null;
+  const _growthMonthFilter = ($('filter-month') && $('filter-month').value !== 'all') ? $('filter-month').value : null;
+  const _growthDateFrom = ($('filter-date-from')?.value) || '';
+  const _growthDateTo = ($('filter-date-to')?.value) || '';
+  const _recInGrowthScope = r =>
+    (!_growthMonthFilter || r.month === _growthMonthFilter) &&
+    (!_growthDateFrom || !r.date || r.date >= _growthDateFrom) &&
+    (!_growthDateTo || !r.date || r.date <= _growthDateTo);
+  const summary = listingSummary.filter(s => {
+    const dashName = LISTING_NAME_MAP[s.store] || s.store;
+    return !_growthPersonFilter || dashName === _growthPersonFilter;
+  });
 
   // Pre-compute today's hist entry so all stores use the same source
   const _todayD = new Date();
@@ -2671,13 +2692,10 @@ function renderGrowthPage() {
   // ════════════════════════════════════════════════════════
   const sortedHistDesc = [...dailyHistory].sort((a,b) => b.date - a.date);
 
-  // Respect the global month filter — when a specific month is selected, show that month's efficiency
-  const _growthMonthFilter = ($('filter-month') && $('filter-month').value !== 'all') ? $('filter-month').value : null;
-
   const pd = {}; // personData keyed by tracker store name
   summary.forEach(s => {
     const dashName = LISTING_NAME_MAP[s.store] || s.store;
-    const allRecs    = RAW.filter(r => r.person === dashName);
+    const allRecs    = RAW.filter(r => r.person === dashName && _recInGrowthScope(r));
     const tiktokRecs = allRecs.filter(r => r.channel === 'tiktok');
     const ebayRecs   = allRecs.filter(r => r.channel !== 'tiktok');
     const recs       = CHANNEL_FILTER === 'tiktok' ? tiktokRecs : CHANNEL_FILTER === 'ebay' ? ebayRecs : allRecs;
@@ -3621,6 +3639,452 @@ function updateProfitCalc() {
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--card-border);font-size:11px;color:var(--muted)">
       Rate: ${rateLabelP} · <em>all figures are monthly profit estimates</em>
     </div>`;
+}
+
+// ─── WAR ROOM / STRATEGY SANDBOX ─────────────────────────────────────────────
+function escapeHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+let _warSelectedLever = 'all';
+const WAR_LEVER_KEYS = ['clone', 'upgrade', 'floor', 'clients', 'lift'];
+const WAR_LEVER_CONTROL_IDS = {
+  clone: 'war-control-clone',
+  upgrade: 'war-control-upgrade',
+  floor: 'war-control-floor',
+  clients: 'war-control-clients',
+  lift: 'war-control-lift'
+};
+
+function warSplitForType(type, profit) {
+  const key = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : '__partner__';
+  return getSplit(key, profit);
+}
+
+function warGetAccounts() {
+  const baseAccounts = Object.values(_growthPersonData || {}).filter(p => p && p.store && p.current > 0);
+  const windowDays = Math.max(1, Math.floor(warReadNumber('war-recent-window', 14)));
+  const latestTs = baseAccounts.reduce((max, p) => {
+    (p.recs || []).forEach(r => {
+      if (!r.date) return;
+      const ts = new Date(r.date + 'T00:00:00').getTime();
+      if (Number.isFinite(ts) && ts > max) max = ts;
+    });
+    return max;
+  }, 0);
+  const cutoffTs = latestTs ? latestTs - ((windowDays - 1) * 86400000) : 0;
+  return baseAccounts
+    .filter(p => p && p.store && p.current > 0)
+    .map(p => {
+      const recentRows = latestTs
+        ? (p.recs || []).filter(r => r.date && new Date(r.date + 'T00:00:00').getTime() >= cutoffTs)
+        : [];
+      const recentProfit = r2(recentRows.reduce((s, r) => s + (r.profit || 0), 0));
+      const recentRevenue = r2(recentRows.reduce((s, r) => s + (r.price || 0), 0));
+      const monthlyProfit = r2(recentProfit / windowDays * 30);
+  const split = getSplit(p.dashName || p.store, monthlyProfit);
+  return {
+    ...p,
+    monthlyProfit,
+    monthlyRate: 0,
+        split,
+        recentRows: recentRows.length,
+        recentProfit,
+        recentRevenue,
+        recentWindowDays: windowDays,
+        recentBasisLabel: `Last ${windowDays}d`
+      };
+    })
+    .sort((a, b) => b.monthlyProfit - a.monthlyProfit);
+}
+
+function warReadNumber(id, fallback = 0) {
+  const el = $(id);
+  const val = el ? parseFloat(el.value) : NaN;
+  return Number.isFinite(val) ? val : fallback;
+}
+
+function warSetSelectOptions(id, accounts, valueKey = 'store', defaultValue = null) {
+  const el = $(id);
+  if (!el || !accounts.length) return;
+  const current = el.value;
+  el.innerHTML = accounts.map(p => `<option value="${escapeHtml(p[valueKey])}">${escapeHtml(p.store)} · ${fmt$(p.monthlyProfit)}/mo</option>`).join('');
+  if (current && accounts.some(p => p[valueKey] === current)) el.value = current;
+  else if (defaultValue && accounts.some(p => p[valueKey] === defaultValue)) el.value = defaultValue;
+}
+
+function warBaseline(accounts) {
+  return accounts.reduce((acc, p) => {
+    acc.profit = r2(acc.profit + p.monthlyProfit);
+    acc.owner = r2(acc.owner + warOwnerTake(p.split));
+    acc.danian = r2(acc.danian + (p.split.danian || 0));
+    acc.jr = r2(acc.jr + (p.split.jr || 0));
+    return acc;
+  }, { profit: 0, owner: 0, danian: 0, jr: 0 });
+}
+
+function warOwnerTake(split) {
+  return split?.storeOwner || split?.owner || 0;
+}
+
+function warAddSplit(totals, split, profit) {
+  totals.profit = r2(totals.profit + profit);
+  totals.owner = r2(totals.owner + warOwnerTake(split));
+  totals.danian = r2(totals.danian + (split.danian || 0));
+  totals.jr = r2(totals.jr + (split.jr || 0));
+  return totals;
+}
+
+function warScenarioData() {
+  const accounts = warGetAccounts();
+  if (!accounts.length) return null;
+
+  warSetSelectOptions('war-clone-account', accounts, 'store', accounts[0].store);
+  warSetSelectOptions('war-benchmark-account', accounts, 'store', accounts[0].store);
+  warSetSelectOptions('war-upgrade-target', accounts, 'store', accounts[accounts.length - 1].store);
+  warSetSelectOptions('war-upgrade-benchmark', accounts, 'store', accounts[0].store);
+
+  const baseline = warBaseline(accounts);
+  const cloneStore = $('war-clone-account')?.value || accounts[0].store;
+  const benchmarkStore = $('war-benchmark-account')?.value || accounts[0].store;
+  const upgradeTargetStore = $('war-upgrade-target')?.value || accounts[accounts.length - 1].store;
+  const upgradeBenchmarkStore = $('war-upgrade-benchmark')?.value || accounts[0].store;
+  const clone = accounts.find(p => p.store === cloneStore) || accounts[0];
+  const benchmark = accounts.find(p => p.store === benchmarkStore) || accounts[0];
+  const upgradeTarget = accounts.find(p => p.store === upgradeTargetStore) || accounts[accounts.length - 1];
+  const upgradeBenchmark = accounts.find(p => p.store === upgradeBenchmarkStore) || accounts[0];
+
+  const cloneCount = Math.max(0, Math.floor(warReadNumber('war-clone-count', 0)));
+  const cloneConfidence = Math.max(0, warReadNumber('war-clone-confidence', 1));
+  const cloneProfit = r2(cloneCount * clone.monthlyProfit * cloneConfidence);
+  const cloneSplit = getSplit(clone.dashName || clone.store, cloneProfit);
+
+  const upgradeCapture = Math.max(0, Math.min(100, warReadNumber('war-upgrade-capture', 60))) / 100;
+  const upgradeProfit = r2(Math.max(0, upgradeBenchmark.monthlyProfit - upgradeTarget.monthlyProfit) * upgradeCapture);
+  const upgradeSplit = getSplit(upgradeTarget.dashName || upgradeTarget.store, upgradeProfit);
+
+  const adoption = Math.max(0, Math.min(100, warReadNumber('war-benchmark-adoption', 50))) / 100;
+  const benchmarkRows = accounts.map(p => {
+    const gap = Math.max(0, benchmark.monthlyProfit - p.monthlyProfit);
+    const profit = r2(gap * adoption);
+    return { account: p, profit, split: getSplit(p.dashName || p.store, profit) };
+  });
+  const benchmarkProfit = r2(benchmarkRows.reduce((s, r) => s + r.profit, 0));
+  const benchmarkSplit = benchmarkRows.reduce((acc, row) => warAddSplit(acc, row.split, row.profit), { profit: 0, owner: 0, danian: 0, jr: 0 });
+
+  const clientCount = Math.max(0, Math.floor(warReadNumber('war-client-count', 0)));
+  const clientProfitEach = Math.max(0, warReadNumber('war-client-profit', 0));
+  const clientType = $('war-client-split')?.value || 'partner';
+  const clientProfit = r2(clientCount * clientProfitEach);
+  const clientSplit = warSplitForType(clientType, clientProfit);
+
+  const liftPct = Math.max(-25, Math.min(100, warReadNumber('war-growth-lift', 20)));
+  const liftRows = accounts.map(p => {
+    const profit = r2(p.monthlyProfit * (liftPct / 100));
+    return { account: p, profit, split: getSplit(p.dashName || p.store, profit) };
+  });
+  const liftSplit = liftRows.reduce((acc, row) => warAddSplit(acc, row.split, row.profit), { profit: 0, owner: 0, danian: 0, jr: 0 });
+
+  const levers = [
+    { name: `${cloneCount} account${cloneCount === 1 ? '' : 's'} like ${clone.store}`, profit: cloneProfit, split: cloneSplit },
+    { name: `${upgradeTarget.store} captures ${Math.round(upgradeCapture * 100)}% of ${upgradeBenchmark.store}'s output gap`, profit: upgradeProfit, split: upgradeSplit },
+    { name: `Raise weaker stores ${Math.round(adoption * 100)}% toward ${benchmark.store}`, profit: benchmarkProfit, split: benchmarkSplit },
+    { name: `${clientCount} new ${clientType} client${clientCount === 1 ? '' : 's'}`, profit: clientProfit, split: clientSplit },
+    { name: `${liftPct}% network-wide profit lift`, profit: liftSplit.profit, split: liftSplit }
+  ];
+
+  const delta = levers.reduce((acc, lever) => warAddSplit(acc, lever.split, lever.profit), { profit: 0, owner: 0, danian: 0, jr: 0 });
+  const projected = {
+    profit: r2(baseline.profit + delta.profit),
+    owner: r2(baseline.owner + delta.owner),
+    danian: r2(baseline.danian + delta.danian),
+    jr: r2(baseline.jr + delta.jr)
+  };
+
+  return { accounts, baseline, projected, delta, levers, clone, benchmark, adoption, liftPct, upgradeTarget, upgradeBenchmark, upgradeCapture };
+}
+
+function renderWarRoom() {
+  const empty = $('war-empty');
+  const content = $('war-room-content');
+  const data = warScenarioData();
+  if (!data) {
+    if (empty) empty.style.display = 'block';
+    if (content) content.style.display = 'none';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'block';
+
+  const adoptionLabel = $('war-benchmark-adoption-label');
+  const upgradeLabel = $('war-upgrade-capture-label');
+  const liftLabel = $('war-growth-lift-label');
+  if (adoptionLabel) adoptionLabel.textContent = `${Math.round(data.adoption * 100)}%`;
+  if (upgradeLabel) upgradeLabel.textContent = `${Math.round(data.upgradeCapture * 100)}%`;
+  if (liftLabel) liftLabel.textContent = `${data.liftPct}%`;
+  if ($('war-data-chip')) $('war-data-chip').textContent = `${data.accounts.length} accounts loaded`;
+  renderWarAccountBank(data.accounts);
+  updateWarDropLabels(data);
+
+  const deltaPct = data.baseline.profit > 0 ? r2(data.delta.profit / data.baseline.profit * 100) : 0;
+  renderWarInstantAnswer(data, deltaPct);
+  $('war-scenario-title').textContent = `${fmt$(data.projected.profit)}/mo projected`;
+  $('war-summary-cards').innerHTML = [
+    ['Current profit/mo', fmt$(data.baseline.profit), 'Baseline from current rolling monthly rates'],
+    ['Scenario upside', `+${fmt$(data.delta.profit)}`, `${deltaPct > 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs current`],
+    ['Projected profit/mo', fmt$(data.projected.profit), 'Current network plus all active levers']
+  ].map(([label, val, sub]) => `<div class="war-stat"><span>${label}</span><strong>${val}</strong><em>${sub}</em></div>`).join('');
+
+  $('war-take-grid').innerHTML = [
+    ['Store owners', data.baseline.owner, data.delta.owner, data.projected.owner],
+    ['Danian', data.baseline.danian, data.delta.danian, data.projected.danian],
+    ['J&R', data.baseline.jr, data.delta.jr, data.projected.jr]
+  ].map(([label, base, delta, total]) => `
+    <div class="war-take-card">
+      <span>${label}</span>
+      <strong>${fmt$(total)}/mo</strong>
+      <em>${fmt$(base)} now · +${fmt$(delta)} scenario</em>
+    </div>`).join('');
+
+  $('war-lever-table').innerHTML = data.levers.map(lever => `
+    <tr>
+      <td>${escapeHtml(lever.name)}</td>
+      <td>${lever.profit >= 0 ? '+' : ''}${fmt$(lever.profit)}</td>
+      <td>${warOwnerTake(lever.split) ? '+' + fmt$(warOwnerTake(lever.split)) : '—'}</td>
+      <td>${lever.split.danian ? '+' + fmt$(lever.split.danian) : '—'}</td>
+      <td>${lever.split.jr ? '+' + fmt$(lever.split.jr) : '—'}</td>
+    </tr>`).join('');
+
+  $('war-ai-brief').textContent = generateWarRoomBrief(data);
+}
+
+function renderWarInstantAnswer(data, deltaPct) {
+  const sortedLevers = [...data.levers].sort((a, b) => b.profit - a.profit);
+  const best = sortedLevers[0];
+  const selectedIndex = WAR_LEVER_KEYS.indexOf(_warSelectedLever);
+  const selectedLever = selectedIndex >= 0 ? data.levers[selectedIndex] : null;
+  if ($('war-answer-headline')) {
+    $('war-answer-headline').textContent = selectedLever
+      ? `${selectedLever.name} adds ${selectedLever.profit >= 0 ? '+' : ''}${fmt$(selectedLever.profit)}/mo.`
+      : `This scenario adds ${fmt$(data.delta.profit)}/mo and lands at ${fmt$(data.projected.profit)}/mo.`;
+  }
+  if ($('war-answer-subline')) {
+    $('war-answer-subline').textContent = selectedLever
+      ? `Selected lever impact: J&R ${selectedLever.split.jr >= 0 ? '+' : ''}${fmt$(selectedLever.split.jr || 0)}/mo, Danian ${selectedLever.split.danian >= 0 ? '+' : ''}${fmt$(selectedLever.split.danian || 0)}/mo, owners ${warOwnerTake(selectedLever.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(selectedLever.split))}/mo. The full stacked scenario is still ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs today.`
+      : `Based on ${data.accounts[0]?.recentBasisLabel || 'recent'} run-rate, that is ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs today. J&R moves from ${fmt$(data.baseline.jr)} to ${fmt$(data.projected.jr)}/mo, Danian to ${fmt$(data.projected.danian)}/mo, and client/owner take to ${fmt$(data.projected.owner)}/mo.`;
+  }
+  if ($('war-best-move')) {
+    $('war-best-move').textContent = best && best.profit > 0 ? `${best.name} (${fmt$(best.profit)}/mo)` : 'No positive lever yet';
+  }
+  if ($('war-lever-cards')) {
+    const maxLeverProfit = Math.max(...data.levers.map(l => Math.abs(l.profit)), 1);
+    $('war-lever-cards').innerHTML = data.levers.map((lever, i) => {
+      const isBest = best && lever.name === best.name && lever.profit > 0;
+      const key = WAR_LEVER_KEYS[i] || 'all';
+      const isSelected = _warSelectedLever === key;
+      const width = Math.min(100, Math.round(Math.abs(lever.profit) / maxLeverProfit * 100));
+      return `<button type="button" class="war-lever-card ${isBest ? 'best' : ''} ${isSelected ? 'selected' : ''}" onclick="selectWarLever('${key}')">
+        <span>${isSelected ? 'Selected' : isBest ? 'Best move' : `Lever ${i + 1}`}</span>
+        <strong>${lever.profit >= 0 ? '+' : ''}${fmt$(lever.profit)}/mo</strong>
+        <em>${escapeHtml(lever.name)}</em>
+        <small>J&R ${lever.split.jr >= 0 ? '+' : ''}${fmt$(lever.split.jr || 0)} · Danian ${lever.split.danian >= 0 ? '+' : ''}${fmt$(lever.split.danian || 0)} · Owners ${warOwnerTake(lever.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(lever.split))}</small>
+        <div class="war-mini-meter"><i style="width:${width}%"></i></div>
+      </button>`;
+    }).join('');
+  }
+  document.querySelectorAll('[data-war-control]').forEach(block => {
+    block.classList.toggle('active', block.getAttribute('data-war-control') === _warSelectedLever);
+  });
+  if ($('war-visual-flow')) {
+    const total = Math.max(data.projected.profit, 1);
+    const pct = v => Math.max(4, Math.min(100, Math.round(v / total * 100)));
+    $('war-visual-flow').innerHTML = `
+      <div class="war-flow-node base">
+        <span>Now</span>
+        <strong>${fmt$(data.baseline.profit)}</strong>
+        <em>${data.accounts[0]?.recentBasisLabel || 'recent'} run-rate</em>
+      </div>
+      <div class="war-flow-beam"><i style="width:${pct(data.delta.profit)}%"></i></div>
+      <div class="war-flow-node upside">
+        <span>Added</span>
+        <strong>+${fmt$(data.delta.profit)}</strong>
+        <em>scenario lift</em>
+      </div>
+      <div class="war-flow-beam"><i style="width:${pct(data.projected.profit)}%"></i></div>
+      <div class="war-flow-node projected">
+        <span>Projected</span>
+        <strong>${fmt$(data.projected.profit)}</strong>
+        <em>monthly profit</em>
+      </div>
+      <div class="war-flow-splits">
+        <div style="--split:${pct(data.projected.jr)}%"><span>J&R</span><strong>${fmt$(data.projected.jr)}</strong></div>
+        <div style="--split:${pct(data.projected.danian)}%"><span>Danian</span><strong>${fmt$(data.projected.danian)}</strong></div>
+        <div style="--split:${pct(data.projected.owner)}%"><span>Owners</span><strong>${fmt$(data.projected.owner)}</strong></div>
+      </div>`;
+  }
+  const impacts = [
+    ['war-impact-clone', data.levers[0]],
+    ['war-impact-upgrade', data.levers[1]],
+    ['war-impact-floor', data.levers[2]],
+    ['war-impact-clients', data.levers[3]],
+    ['war-impact-lift', data.levers[4]]
+  ];
+  impacts.forEach(([id, lever]) => {
+    if (!$(id) || !lever) return;
+    $(id).innerHTML = `<strong>${lever.profit >= 0 ? '+' : ''}${fmt$(lever.profit)}/mo</strong><span>J&R ${lever.split.jr >= 0 ? '+' : ''}${fmt$(lever.split.jr || 0)} · Danian ${lever.split.danian >= 0 ? '+' : ''}${fmt$(lever.split.danian || 0)} · Owners ${warOwnerTake(lever.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(lever.split))}</span>`;
+  });
+}
+
+function updateWarRoom() {
+  renderWarRoom();
+}
+
+function selectWarLever(key) {
+  _warSelectedLever = _warSelectedLever === key ? 'all' : key;
+  renderWarRoom();
+  const targetId = WAR_LEVER_CONTROL_IDS[_warSelectedLever];
+  const target = targetId ? $(targetId) : null;
+  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function resetWarRoom() {
+  const defaults = {
+    'war-clone-count': 3,
+    'war-clone-confidence': 1,
+    'war-upgrade-capture': 60,
+    'war-benchmark-adoption': 50,
+    'war-client-count': 5,
+    'war-client-profit': 1000,
+    'war-client-split': 'partner',
+    'war-growth-lift': 20
+  };
+  Object.entries(defaults).forEach(([id, val]) => { if ($(id)) $(id).value = val; });
+  renderWarRoom();
+}
+
+function applyWarPreset(kind) {
+  const accounts = warGetAccounts();
+  const best = accounts[0];
+  const weakest = accounts[accounts.length - 1];
+  if (kind === 'bestGap') {
+    if ($('war-upgrade-target') && weakest) $('war-upgrade-target').value = weakest.store;
+    if ($('war-upgrade-benchmark') && best) $('war-upgrade-benchmark').value = best.store;
+    if ($('war-upgrade-capture')) $('war-upgrade-capture').value = 75;
+    if ($('war-benchmark-account') && best) $('war-benchmark-account').value = best.store;
+    if ($('war-benchmark-adoption')) $('war-benchmark-adoption').value = 65;
+  }
+  if (kind === 'clientPush') {
+    if ($('war-client-count')) $('war-client-count').value = 10;
+    if ($('war-client-profit')) $('war-client-profit').value = 1500;
+    if ($('war-client-split')) $('war-client-split').value = 'partner';
+  }
+  if (kind === 'conservative') {
+    if ($('war-clone-confidence')) $('war-clone-confidence').value = .75;
+    if ($('war-benchmark-adoption')) $('war-benchmark-adoption').value = 35;
+    if ($('war-upgrade-capture')) $('war-upgrade-capture').value = 40;
+    if ($('war-growth-lift')) $('war-growth-lift').value = 10;
+  }
+  renderWarRoom();
+}
+
+function renderWarAccountBank(accounts) {
+  const bank = $('war-account-bank');
+  if (!bank) return;
+  const topProfit = Math.max(...accounts.map(a => a.monthlyProfit), 0);
+  bank.innerHTML = accounts.map(p => {
+    const rankTone = p.monthlyProfit === topProfit ? 'best' : p.monthlyProfit <= accounts[accounts.length - 1].monthlyProfit ? 'quiet' : '';
+    return `<button class="war-account-card ${rankTone}" draggable="true" ondragstart="warDragAccount(event, ${JSON.stringify(p.store).replace(/"/g, '&quot;')})">
+      <span>${escapeHtml(p.store)}</span>
+      <strong>${fmt$(p.monthlyProfit)}/mo</strong>
+      <em>${p.split.type} split · ${p.recentBasisLabel} run-rate</em>
+      <small>${fmt$(p.recentProfit)} profit · ${p.recentRows} sales in ${p.recentBasisLabel}</small>
+    </button>`;
+  }).join('');
+}
+
+function updateWarDropLabels(data) {
+  if ($('war-drop-clone')) $('war-drop-clone').textContent = data.clone?.store || 'Drop a top account here';
+  if ($('war-drop-upgrade-target')) $('war-drop-upgrade-target').textContent = data.upgradeTarget?.store || 'Drop a weaker account here';
+  if ($('war-drop-upgrade-benchmark')) $('war-drop-upgrade-benchmark').textContent = data.upgradeBenchmark?.store || 'Drop a stronger account here';
+  document.querySelectorAll('.war-drop-zone').forEach(zone => {
+    zone.classList.add('filled');
+    zone.ondragover = warAllowDrop;
+    zone.ondragenter = () => zone.classList.add('hovering');
+    zone.ondragleave = () => zone.classList.remove('hovering');
+    zone.ondrop = warDropAccount;
+  });
+}
+
+function warDragAccount(ev, store) {
+  ev.dataTransfer.setData('text/plain', store);
+}
+
+function warAllowDrop(ev) {
+  ev.preventDefault();
+}
+
+function warDropAccount(ev) {
+  ev.preventDefault();
+  ev.currentTarget?.classList?.remove('hovering');
+  const store = ev.dataTransfer.getData('text/plain');
+  const target = ev.currentTarget?.dataset?.warDrop;
+  if (!store || !target) return;
+  if (target === 'clone' && $('war-clone-account')) $('war-clone-account').value = store;
+  if (target === 'upgrade-target' && $('war-upgrade-target')) $('war-upgrade-target').value = store;
+  if (target === 'upgrade-benchmark' && $('war-upgrade-benchmark')) $('war-upgrade-benchmark').value = store;
+  renderWarRoom();
+}
+
+function generateWarRoomBrief(data = warScenarioData()) {
+  if (!data) return 'Seller OS War Room: no account data loaded yet.';
+  const top = data.accounts.slice(0, 5);
+  const weakest = [...data.accounts].sort((a, b) => a.monthlyProfit - b.monthlyProfit).slice(0, 3);
+  const leverLines = data.levers.map(l => `- ${l.name}: ${l.profit >= 0 ? '+' : ''}${fmt$(l.profit)}/mo profit, J&R ${l.split.jr >= 0 ? '+' : ''}${fmt$(l.split.jr || 0)}, Danian ${l.split.danian >= 0 ? '+' : ''}${fmt$(l.split.danian || 0)}, owners ${warOwnerTake(l.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(l.split))}`);
+  const accountLines = data.accounts.map(p => `| ${p.store} | ${p.recentBasisLabel} | ${fmt$(p.monthlyProfit)} | ${fmt$(p.recentProfit)} | ${p.split.type} | ${fmt$(p.split.jr || 0)} | ${fmt$(p.split.danian || 0)} | ${fmt$(warOwnerTake(p.split))} |`);
+  return `# Seller OS War Room Brief
+
+Generated: ${new Date().toLocaleString()}
+
+## Current Baseline
+- Active accounts: ${data.accounts.length}
+- Performance basis: ${data.accounts[0]?.recentBasisLabel || 'recent'} run-rate, annualized to monthly
+- Current projected monthly profit: ${fmt$(data.baseline.profit)}
+- J&R monthly take: ${fmt$(data.baseline.jr)}
+- Danian monthly take: ${fmt$(data.baseline.danian)}
+- Store owner/client monthly take: ${fmt$(data.baseline.owner)}
+
+## Scenario Output
+- Projected monthly profit: ${fmt$(data.projected.profit)}
+- Scenario profit upside: +${fmt$(data.delta.profit)}
+- Projected J&R take: ${fmt$(data.projected.jr)} (+${fmt$(data.delta.jr)})
+- Projected Danian take: ${fmt$(data.projected.danian)} (+${fmt$(data.delta.danian)})
+- Projected owner/client take: ${fmt$(data.projected.owner)} (+${fmt$(data.delta.owner)})
+
+## Active Levers
+${leverLines.join('\n')}
+
+## Top Accounts By Monthly Profit
+${top.map((p, i) => `${i + 1}. ${p.store}: ${fmt$(p.monthlyProfit)}/mo run-rate, ${fmt$(p.recentProfit)} actual profit in ${p.recentBasisLabel}, split ${p.split.type}`).join('\n')}
+
+## Weakest Accounts By Monthly Profit
+${weakest.map((p, i) => `${i + 1}. ${p.store}: ${fmt$(p.monthlyProfit)}/mo run-rate, ${fmt$(p.recentProfit)} actual profit in ${p.recentBasisLabel}, split ${p.split.type}`).join('\n')}
+
+## Account Table
+| Account | Recent basis | Monthly run-rate | Actual recent profit | Split | J&R | Danian | Owner |
+|---|---|---:|---:|---|---:|---:|---:|
+${accountLines.join('\n')}
+
+## Prompt
+Analyze this ecommerce portfolio. Recommend the best 3 growth paths, the riskiest assumptions in this scenario, and what operational actions should happen this week. Focus on total profit and each party's take-home.`;
+}
+
+function copyWarRoomBrief() {
+  const text = $('war-ai-brief')?.textContent || generateWarRoomBrief();
+  const done = () => showToast('War Room brief copied', 'success', '📋');
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(() => window.prompt('Copy this War Room brief:', text));
+  else window.prompt('Copy this War Room brief:', text);
 }
 
 // ─── DATA GUIDE ───────────────────────────────────────────────────────────────

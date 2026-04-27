@@ -90,6 +90,7 @@
   <div class="page-nav">
     <button class="page-nav-btn active" id="page-btn-ops" onclick="switchPage('ops')">📊 Operations</button>
     <button class="page-nav-btn" id="page-btn-growth" onclick="switchPage('growth')">📦 Growth</button>
+    <button class="page-nav-btn" id="page-btn-war" onclick="switchPage('war')">🌱 Growth Lab</button>
   </div>
 
   <div class="header-mid">
@@ -685,6 +686,177 @@
     <a href="./legal/privacy.html" style="color:var(--muted)">Privacy</a>
     <a href="./legal/security.html" style="color:var(--muted)">Security</a>
     <a href="./legal/data-deletion.html" style="color:var(--muted)">Data Deletion</a>
+  </div>
+</div>
+
+<!-- ── Growth Lab / Strategy Sandbox ── -->
+<div id="war-room-page" class="container war-room">
+  <div class="war-hero">
+    <div>
+      <div class="war-kicker">Seller OS Experiment Lab</div>
+      <h1>Growth Lab</h1>
+      <p>Drag accounts into experiments, clone winners, lift weaker stores toward stronger ones, and see how the take-home changes for everyone.</p>
+    </div>
+    <div class="war-actions">
+      <label class="war-basis-select">Basis
+        <select id="war-recent-window" onchange="updateWarRoom()">
+          <option value="7">Last 7d</option>
+          <option value="14" selected>Last 14d</option>
+          <option value="30">Last 30d</option>
+        </select>
+      </label>
+      <button class="war-btn secondary" onclick="applyWarPreset('bestGap')">Best Gap</button>
+      <button class="war-btn secondary" onclick="applyWarPreset('clientPush')">+10 Clients</button>
+      <button class="war-btn secondary" onclick="applyWarPreset('conservative')">Conservative</button>
+      <button class="war-btn secondary" onclick="resetWarRoom()">Reset</button>
+      <button class="war-btn" onclick="copyWarRoomBrief()">Copy AI Brief</button>
+    </div>
+  </div>
+
+  <div id="war-empty" class="war-empty" style="display:none">
+    Refresh the dashboard first so the Growth Lab can read recent account performance.
+  </div>
+
+  <div id="war-room-content">
+    <section class="war-answer-panel">
+      <div class="war-answer-main">
+        <span class="war-label">Instant Answer</span>
+        <h2 id="war-answer-headline">Change a scenario to see the outcome</h2>
+        <p id="war-answer-subline">The lab will summarize profit, upside, and take-home as soon as account data is loaded.</p>
+      </div>
+      <div class="war-answer-side">
+        <span>Best single lever</span>
+        <strong id="war-best-move">Waiting for data</strong>
+      </div>
+      <div id="war-lever-cards" class="war-lever-cards"></div>
+      <div id="war-visual-flow" class="war-visual-flow"></div>
+    </section>
+
+    <section class="war-panel war-playground">
+      <div class="war-panel-head">
+        <div>
+          <span class="war-label">Account Garden</span>
+          <h2>Drag accounts into an experiment</h2>
+        </div>
+        <span class="war-chip">Live account cards</span>
+      </div>
+      <div id="war-account-bank" class="war-account-bank"></div>
+      <div class="war-drop-grid war-pool">
+        <div class="war-drop-zone" data-war-drop="clone">
+          <span>Clone source</span>
+          <strong id="war-drop-clone">Drop a top account here</strong>
+        </div>
+        <div class="war-drop-zone" data-war-drop="upgrade-target">
+          <span>Improve this account</span>
+          <strong id="war-drop-upgrade-target">Drop a weaker account here</strong>
+        </div>
+        <div class="war-drop-zone" data-war-drop="upgrade-benchmark">
+          <span>Toward this benchmark</span>
+          <strong id="war-drop-upgrade-benchmark">Drop a stronger account here</strong>
+        </div>
+      </div>
+    </section>
+
+    <div class="war-grid">
+      <section class="war-panel">
+        <div class="war-panel-head">
+          <div>
+            <span class="war-label">Scenario Controls</span>
+            <h2>Build the future</h2>
+          </div>
+          <span class="war-chip" id="war-data-chip">Waiting for data</span>
+        </div>
+
+        <div class="war-control-block" id="war-control-clone" data-war-control="clone">
+          <div class="war-control-title">Clone a proven account</div>
+          <div class="war-control-copy">Add new accounts that perform like the recent monthly output of one current account.</div>
+          <div class="war-form-grid">
+            <label>Benchmark account<select id="war-clone-account" onchange="updateWarRoom()"></select></label>
+            <label>New accounts<input id="war-clone-count" type="number" value="3" min="0" step="1" oninput="updateWarRoom()" /></label>
+            <label>Rate confidence<select id="war-clone-confidence" onchange="updateWarRoom()">
+              <option value="1">Base case · 100%</option>
+              <option value=".75">Conservative · 75%</option>
+              <option value="1.25">Aggressive · 125%</option>
+            </select></label>
+          </div>
+          <div class="war-control-impact" id="war-impact-clone"></div>
+        </div>
+
+        <div class="war-control-block" id="war-control-upgrade" data-war-control="upgrade">
+          <div class="war-control-title">Account transformation</div>
+          <div class="war-control-copy">Model one account improving toward another account's recent monthly output.</div>
+          <div class="war-form-grid">
+            <label>Account to improve<select id="war-upgrade-target" onchange="updateWarRoom()"></select></label>
+            <label>Benchmark account<select id="war-upgrade-benchmark" onchange="updateWarRoom()"></select></label>
+            <label>Capture<input id="war-upgrade-capture" type="range" min="0" max="100" value="60" oninput="updateWarRoom()" /><span id="war-upgrade-capture-label">60%</span></label>
+          </div>
+          <div class="war-control-impact" id="war-impact-upgrade"></div>
+        </div>
+
+        <div class="war-control-block" id="war-control-floor" data-war-control="floor">
+          <div class="war-control-title">Raise the whole floor</div>
+          <div class="war-control-copy">Model every weaker account moving toward one benchmark.</div>
+          <div class="war-form-grid">
+            <label>Target benchmark<select id="war-benchmark-account" onchange="updateWarRoom()"></select></label>
+            <label>Adoption<input id="war-benchmark-adoption" type="range" min="0" max="100" value="50" oninput="updateWarRoom()" /><span id="war-benchmark-adoption-label">50%</span></label>
+          </div>
+          <div class="war-control-impact" id="war-impact-floor"></div>
+        </div>
+
+        <div class="war-control-block" id="war-control-clients" data-war-control="clients">
+          <div class="war-control-title">Onboard more clients</div>
+          <div class="war-control-copy">Add clean new client revenue without tying it to a current account.</div>
+          <div class="war-form-grid">
+            <label>New clients<input id="war-client-count" type="number" value="5" min="0" step="1" oninput="updateWarRoom()" /></label>
+            <label>Profit/client/mo<input id="war-client-profit" type="number" value="1000" min="0" step="50" oninput="updateWarRoom()" /></label>
+            <label>Split type<select id="war-client-split" onchange="updateWarRoom()">
+              <option value="partner">Partner/client · 50/30/20</option>
+              <option value="owned">Owned · 0/40/60</option>
+              <option value="jacob">Name-fee · 10/40/50</option>
+            </select></label>
+          </div>
+          <div class="war-control-impact" id="war-impact-clients"></div>
+        </div>
+
+        <div class="war-control-block" id="war-control-lift" data-war-control="lift">
+          <div class="war-control-title">Network-wide lift</div>
+          <div class="war-control-copy">Pretend the whole portfolio gets better from process, sourcing, or operator improvements.</div>
+          <div class="war-form-grid">
+            <label>Profit lift<input id="war-growth-lift" type="range" min="-25" max="100" value="20" oninput="updateWarRoom()" /><span id="war-growth-lift-label">20%</span></label>
+          </div>
+          <div class="war-control-impact" id="war-impact-lift"></div>
+        </div>
+      </section>
+
+      <section class="war-panel war-results">
+        <div class="war-panel-head">
+          <div>
+            <span class="war-label">Projected Outcome</span>
+            <h2 id="war-scenario-title">Scenario impact</h2>
+          </div>
+          <span class="war-chip">Monthly model</span>
+        </div>
+        <div id="war-summary-cards" class="war-summary-cards"></div>
+        <div id="war-take-grid" class="war-take-grid"></div>
+        <div class="war-table-wrap">
+          <table class="war-table">
+            <thead><tr><th>Lever</th><th>Profit/mo</th><th>Owner</th><th>Danian</th><th>J&amp;R</th></tr></thead>
+            <tbody id="war-lever-table"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="war-panel">
+      <div class="war-panel-head">
+        <div>
+          <span class="war-label">AI Brief</span>
+          <h2>Copy this into an agent</h2>
+        </div>
+        <button class="war-btn small" onclick="copyWarRoomBrief()">Copy Brief</button>
+      </div>
+      <pre id="war-ai-brief" class="war-brief"></pre>
+    </section>
   </div>
 </div>
 

@@ -14,6 +14,22 @@ const SHEETS = {
 
 const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i;
 
+const AMAZON_FBM_SOURCES = [
+  {
+    id: '1IKET6AiIc5sWHEQG8yAuDOxVGxldC9uqzNm0hX_3LhQ',
+    tab: '2 step DS',
+    person: 'Johna',
+    channel: 'amazon_fbm',
+  },
+];
+const CHANNEL_KEYS = ['all', 'ebay', 'tiktok', 'amazon_fbm'];
+const CHANNEL_STYLE = {
+  all:        { label: 'All',        title: 'All-Time',      color: 'var(--indigo)', muted: 'var(--muted)', icon: '📦' },
+  ebay:       { label: 'eBay',       title: 'eBay',          color: 'var(--indigo)', muted: 'var(--muted)', icon: '📦' },
+  tiktok:     { label: 'TikTok',     title: 'TikTok',        color: '#ff2d55',       muted: '#ff6b9d',     icon: '⟡' },
+  amazon_fbm: { label: 'Amazon FBM', title: 'Amazon FBM',    color: '#f59e0b',       muted: '#fbbf24',     icon: 'A' },
+};
+
 // Stores that have been offboarded/banned — excluded from all data and displays
 const BANNED_STORES = new Set(['Paul']);
 
@@ -35,7 +51,7 @@ const LISTING_NAME_MAP = {
   'Jack':         'Jack R',
 };
 let LISTING_DATA = { summary: [], todayRow: null, dailyColNames: [] };
-let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok'
+let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok' | 'amazon_fbm'
 
 // Store creation dates fetched from Drive API — populated on load
 const STORE_CREATED = {}; // { person: 'YYYY-MM-DD' }
@@ -382,6 +398,30 @@ function fmtDayLabel(dateStr) {
   return mos[dt.getMonth()] + ' ' + dt.getDate();
 }
 
+function monthLabelFromDate(dateStr, fallback = 'Amazon FBM') {
+  if (!dateStr) return fallback;
+  const dt = new Date(dateStr + 'T00:00:00');
+  if (isNaN(dt.getTime())) return fallback;
+  const mos = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${mos[dt.getMonth()]} ${dt.getFullYear()}`;
+}
+
+function channelMeta(ch = CHANNEL_FILTER) {
+  return CHANNEL_STYLE[ch] || CHANNEL_STYLE.all;
+}
+
+function channelMatches(r, ch = CHANNEL_FILTER) {
+  return ch === 'all' || r.channel === ch;
+}
+
+function channelFilterRows(rows, ch = CHANNEL_FILTER) {
+  return ch === 'all' ? rows : rows.filter(r => r.channel === ch);
+}
+
+function channelTitle(ch = CHANNEL_FILTER) {
+  return channelMeta(ch).title;
+}
+
 // ─── DAILY AGGREGATION ─────────────────────────────────────────────────────
 function getDailyData(data) {
   const byDate = {};
@@ -677,6 +717,93 @@ function parseValues(values, person, monthLabel, channel = 'ebay') {
   return rows;
 }
 
+function parseMoney(v) {
+  if (v === null || v === undefined) return 0;
+  const s = String(v).trim();
+  if (!s || s === '-' || s === '—') return 0;
+  const negative = /^\(.*\)$/.test(s) || /^-/.test(s);
+  const f = parseFloat(s.replace(/[,$%\s()]/g, '').replace(/^[-+]/, ''));
+  if (!isFinite(f)) return 0;
+  return negative ? -f : f;
+}
+
+function parseAmazonFbmValues(values, person = 'Johna') {
+  const rows = [];
+  if (!values || values.length < 2) return rows;
+  let headerIdx = -1;
+  let colMap = {};
+  const norm = h => String(h || '').toUpperCase().replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < Math.min(12, values.length); i++) {
+    const header = (values[i] || []).map(norm);
+    if (header.includes('DATE') && (header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('PROFIT'))) {
+      headerIdx = i;
+      header.forEach((h, idx) => {
+        if (h === 'DATE') colMap.date = idx;
+        else if (h === 'SELLER ORDER ID') colMap.orderId = idx;
+        else if (h === 'SKU') colMap.sku = idx;
+        else if (h === 'PRODUCT NAME') colMap.product = idx;
+        else if (h === 'STATUS') colMap.status = idx;
+        else if (h === 'QTY') colMap.qty = idx;
+        else if (h === 'SALE PRICE') colMap.price = idx;
+        else if (h === 'AMAZON FEE') colMap.amazonFee = idx;
+        else if (h === 'LABEL') colMap.label = idx;
+        else if (h === 'UNIT COST' && colMap.unitCost === undefined) colMap.unitCost = idx;
+        else if (h === 'TOTAL COST' && colMap.totalCost === undefined) colMap.totalCost = idx;
+        else if (h === 'REFUND FROM AMZ') colMap.refund = idx;
+        else if (h === 'PARTIAL REFUND') colMap.partialRefund = idx;
+        else if (h === 'PROFIT') colMap.profit = idx;
+        else if (h === 'ROI') colMap.roi = idx;
+        else if (h === 'TAX') colMap.tax = idx;
+      });
+      break;
+    }
+  }
+  if (headerIdx < 0 || (colMap.price === undefined && colMap.profit === undefined)) return rows;
+
+  for (let i = headerIdx + 1; i < values.length; i++) {
+    const row = values[i] || [];
+    const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
+    const dateStr = parseDate(dateRaw);
+    const orderId = String(row[colMap.orderId] || '').trim();
+    const status = String(row[colMap.status] || '').trim();
+    const qty = Math.max(1, Math.round(parseMoney(row[colMap.qty])) || 1);
+    const price = parseMoney(row[colMap.price]);
+    const amazonFee = Math.abs(parseMoney(row[colMap.amazonFee]));
+    const label = Math.abs(parseMoney(row[colMap.label]));
+    const unitCost = Math.abs(parseMoney(row[colMap.unitCost]));
+    const totalCost = Math.abs(parseMoney(row[colMap.totalCost])) || r2(unitCost * qty + label);
+    const tax = Math.abs(parseMoney(row[colMap.tax]));
+    const profit = parseMoney(row[colMap.profit]);
+    let roi = parseMoney(row[colMap.roi]);
+    if (roi !== 0 && Math.abs(roi) <= 2) roi = roi * 100;
+    const hasData = Boolean(dateStr || orderId || status || price || amazonFee || totalCost || profit);
+    if (!hasData) continue;
+    if (!dateStr && !orderId && !status && !price && !profit) continue;
+
+    rows.push({
+      person,
+      month: monthLabelFromDate(dateStr, 'Amazon FBM'),
+      channel: 'amazon_fbm',
+      platform: 'amazon',
+      source: 'JER Seller Order Sheet',
+      date: dateStr,
+      _dateRaw: dateRaw,
+      orderId,
+      sku: String(row[colMap.sku] || '').trim(),
+      product: String(row[colMap.product] || '').trim(),
+      status,
+      sales: qty,
+      price: r2(price),
+      cost: r2(totalCost),
+      fee: r2(amazonFee + tax),
+      label: r2(label),
+      profit: r2(profit),
+      roi: r2(roi),
+    });
+  }
+  return rows;
+}
+
 // ─── INTRO / TRANSITION ANIMATIONS ────────────────────────────────────────
 let _introDismissed = false;
 
@@ -729,7 +856,7 @@ function dismissIntro() {
 }
 
 function animateChannelSwitch(ch) {
-  const colors = { tiktok: 'rgba(255,45,85,.13)', ebay: 'rgba(99,102,241,.13)', all: 'rgba(139,92,246,.11)' };
+  const colors = { tiktok: 'rgba(255,45,85,.13)', ebay: 'rgba(99,102,241,.13)', amazon_fbm: 'rgba(245,158,11,.14)', all: 'rgba(139,92,246,.11)' };
   const el = document.createElement('div');
   el.style.cssText = `position:fixed;inset:0;z-index:9990;pointer-events:none;background:${colors[ch]||colors.all};animation:channelFlash .55s ease forwards`;
   document.body.appendChild(el);
@@ -805,6 +932,7 @@ async function loadAll() {
     _introSetProgress(i + 1, ids.length, `${i + 1} / ${ids.length} stores`);
   }
   ids.forEach((id,i)=>tabLists[i].forEach(tab=>allSources.push({id,person:SHEETS[id],tab})));
+  AMAZON_FBM_SOURCES.forEach(src => allSources.push({ ...src, sourceType: 'amazon_fbm' }));
 
   // Fetch sheet creation dates from Drive API (fire and forget — non-blocking)
   Promise.all(ids.map(async id => {
@@ -858,12 +986,18 @@ async function loadAll() {
   for (let i = 0; i < allSources.length; i += BATCH) {
     const batch = allSources.slice(i, i + BATCH);
     await Promise.all(batch.map(async src => {
-      const cacheKey = `${src.person}::${src.tab}`;
+      const cacheKey = `${src.id}::${src.person}::${src.tab}`;
       const isExp = /^expenses?$/i.test(src.tab.trim());
       try {
         const values = await getTabValues(src.id, src.tab);
 
-        if (isExp) {
+        if (src.sourceType === 'amazon_fbm') {
+          const parsed = parseAmazonFbmValues(values, src.person);
+          _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
+          RAW.push(...parsed);
+          const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
+          loadAudit.push({ person: src.person, tab: 'Amazon FBM / ' + src.tab, rows: parsed.length, profit: tabProfit, status: parsed.length > 0 ? 'ok' : 'skipped', channel: 'amazon_fbm' });
+        } else if (isExp) {
           const expRows = parseExpenseTab(values, src.person);
           _expDataCache[cacheKey] = { records: expRows, ts: Date.now() };
           expRows.forEach(e => {
@@ -972,7 +1106,7 @@ function filtered() {
     (m==='all' || r.month===m)  &&
     (!df || !r.date || r.date >= df) &&
     (!dt || !r.date || r.date <= dt) &&
-    (CHANNEL_FILTER === 'all' || (CHANNEL_FILTER === 'tiktok' ? r.channel === 'tiktok' : r.channel !== 'tiktok'))
+    channelMatches(r)
   );
 }
 function clearDates() {
@@ -1967,9 +2101,7 @@ function renderMomentum(data) {
 function renderRecords(data) {
   const section=$('records-section'), grid=$('records-grid');
   const titleEl = $('records-title');
-  if (titleEl) titleEl.textContent = CHANNEL_FILTER === 'tiktok' ? '🏅 TikTok Records'
-                                   : CHANNEL_FILTER === 'ebay'   ? '🏅 eBay Records'
-                                   : '🏅 All-Time Records';
+  if (titleEl) titleEl.textContent = `🏅 ${channelTitle()} Records`;
   const dd=getDailyData(data);
   if(!dd.length){section.style.display='none';return;}
   const bestDay=dd.reduce((a,b)=>b.profit>a.profit?b:a,dd[0]);
@@ -2139,9 +2271,7 @@ function renderAllTimeBanner() {
   const banner=$('alltime-banner');
   if(!RAW.length){banner.style.display='none';return;}
   // Filter by active channel
-  const data = CHANNEL_FILTER === 'tiktok' ? RAW.filter(r=>r.channel==='tiktok')
-             : CHANNEL_FILTER === 'ebay'   ? RAW.filter(r=>r.channel!=='tiktok')
-             : RAW;
+  const data = channelFilterRows(RAW);
   if(!data.length){banner.style.display='none';return;}
   const allProfit=r2(data.reduce((s,r)=>s+r.profit,0));
   const allDates=[...new Set(data.filter(r=>r.date).map(r=>r.date))];
@@ -2154,9 +2284,7 @@ function renderAllTimeBanner() {
   });
   // Update label based on channel
   const bannerLabel = banner.querySelector('.alltime-label');
-  if (bannerLabel) bannerLabel.textContent = CHANNEL_FILTER === 'tiktok' ? '🏆 TikTok Total Profit'
-                                           : CHANNEL_FILTER === 'ebay'   ? '🏆 eBay Total Profit'
-                                           : '🏆 All-Time Total Profit';
+  if (bannerLabel) bannerLabel.textContent = `🏆 ${channelTitle()} Total Profit`;
   banner.style.display='flex';
   $('alltime-val').className  = 'alltime-val shimmer-val';
   $('alltime-val').textContent   = fmt$(allProfit);
@@ -2602,49 +2730,52 @@ function getMonthlyListingSnapshots() {
 }
 
 function setChannelFilter(ch) {
+  if (!CHANNEL_KEYS.includes(ch)) ch = 'all';
   animateChannelSwitch(ch);
   CHANNEL_FILTER = ch;
   document.body.classList.toggle('tiktok-mode', ch === 'tiktok');
+  document.body.classList.toggle('amazon-mode', ch === 'amazon_fbm');
   const logoIcon = document.querySelector('.logo-icon');
   const logoSub  = document.querySelector('.logo-sub');
-  if (logoIcon) logoIcon.textContent = ch === 'tiktok' ? '⟡' : '📦';
-  if (logoSub)  logoSub.textContent  = ch === 'tiktok' ? 'TikTok Sales' : ch === 'ebay' ? 'eBay Only' : 'Operations Dashboard';
+  const meta = channelMeta(ch);
+  if (logoIcon) logoIcon.textContent = meta.icon || '📦';
+  if (logoSub)  logoSub.textContent  = ch === 'all' ? 'Operations Dashboard' : `${meta.label} Sales`;
   // Update header channel switcher buttons
-  ['all','ebay','tiktok'].forEach(c => {
+  CHANNEL_KEYS.forEach(c => {
     const btn = $('ch-'+c);
     if (!btn) return;
     const active = c === ch;
-    btn.style.background = active ? (c === 'tiktok' ? '#ff2d55' : 'var(--indigo)') : 'transparent';
-    btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--muted)');
+    btn.style.background = active ? channelMeta(c).color : 'transparent';
+    btn.style.color = active ? '#fff' : channelMeta(c).muted;
   });
   // Update growth tab channel toggle buttons
-  ['all','ebay','tiktok'].forEach(c => {
+  CHANNEL_KEYS.forEach(c => {
     const btn = $('ch-btn-'+c);
     if (!btn) return;
     const active = c === ch;
-    btn.style.background = active ? (c === 'tiktok' ? '#ff6b9d' : 'var(--indigo)') : 'var(--glass)';
-    btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--text2)');
+    btn.style.background = active ? channelMeta(c).color : 'var(--glass)';
+    btn.style.color = active ? '#fff' : channelMeta(c).muted;
   });
   // Swap "eBay Fees" label based on channel
   const feeLabel  = $('fee-label');
   const feeLabelP = $('fee-label-placeholder');
-  const feeTxt = ch === 'tiktok' ? '🏷️ TikTok Fees' : ch === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
+  const feeTxt = ch === 'tiktok' ? '🏷️ TikTok Fees' : ch === 'amazon_fbm' ? '🏷️ Amazon Fees' : ch === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
   if (feeLabel)  feeLabel.textContent  = feeTxt;
   if (feeLabelP) feeLabelP.textContent = feeTxt.replace('🏷️ ','');
-  // Hide Growth tab in TikTok mode — listing metrics don't apply to TikTok
+  // Hide listing-growth tab for channels that don't use the eBay listing tracker.
   const growthBtn = $('page-btn-growth');
-  if (growthBtn) growthBtn.style.display = ch === 'tiktok' ? 'none' : '';
-  // If on Growth page and switching to TikTok, snap back to Ops
-  if (ch === 'tiktok') { try { switchPage('ops'); } catch(e) {} }
+  const hideListingGrowth = ch === 'tiktok' || ch === 'amazon_fbm';
+  if (growthBtn) growthBtn.style.display = hideListingGrowth ? 'none' : '';
+  if (hideListingGrowth) { try { switchPage('ops'); } catch(e) {} }
   try { applyFilters(); } catch(e) {}
   try { renderAllTimeBanner(); } catch(e) { console.error('renderAllTimeBanner error:', e); }
   try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
 }
 
 function updateChannelSwitcherVisibility() {
-  const hasTiktok = RAW.some(r => r.channel === 'tiktok');
+  const hasAltChannel = RAW.some(r => r.channel && r.channel !== 'ebay');
   const sw = $('channel-switcher');
-  if (sw) sw.style.display = hasTiktok ? 'flex' : 'none';
+  if (sw) sw.style.display = hasAltChannel ? 'flex' : 'none';
 }
 
 function renderGrowthPage() {
@@ -2697,12 +2828,13 @@ function renderGrowthPage() {
     const dashName = LISTING_NAME_MAP[s.store] || s.store;
     const allRecs    = RAW.filter(r => r.person === dashName && _recInGrowthScope(r));
     const tiktokRecs = allRecs.filter(r => r.channel === 'tiktok');
-    const ebayRecs   = allRecs.filter(r => r.channel !== 'tiktok');
-    const recs       = CHANNEL_FILTER === 'tiktok' ? tiktokRecs : CHANNEL_FILTER === 'ebay' ? ebayRecs : allRecs;
+    const ebayRecs   = allRecs.filter(r => r.channel === 'ebay');
+    const amazonFbmRecs = allRecs.filter(r => r.channel === 'amazon_fbm');
+    const recs       = channelFilterRows(allRecs);
 
     // Profit / revenue / sales totals (always all-time for reference)
     const totalProfit  = r2(recs.reduce((sum,r) => sum + r.profit, 0));
-    const totalRevenue = r2(recs.reduce((sum,r) => sum + r.revenue, 0));
+    const totalRevenue = r2(recs.reduce((sum,r) => sum + (r.price || 0), 0));
     const totalSales   = recs.reduce((sum,r) => sum + (r.sales || 1), 0);
     const avgSale      = totalSales > 0 ? r2(totalProfit / totalSales) : 0;
 
@@ -2746,6 +2878,7 @@ function renderGrowthPage() {
     const rolling30PrevP    = r2(recs.filter(r => { const d=new Date(r.date+'T00:00:00'); return r.date && d>=_cut60 && d<_cut30; }).reduce((s,r) => s+r.profit, 0));
     const rolling30Tiktok   = r2(tiktokRecs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).reduce((s,r) => s+r.profit, 0));
     const rolling30Ebay     = r2(ebayRecs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).reduce((s,r) => s+r.profit, 0));
+    const rolling30AmazonFbm = r2(amazonFbmRecs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).reduce((s,r) => s+r.profit, 0));
 
     // Order analytics — from actual transaction data
     const totalGross      = r2(recs.reduce((s,r) => s+(r.price||0), 0));
@@ -2804,7 +2937,7 @@ function renderGrowthPage() {
       byMonth, mKeys, lastMo, prevMo, lastMoP, prevMoP, momPct, momDelta,
       streak, avgDailyList, histForStore, todayN,
       profitPer1k, profitPerList, proj30, proj60, proj90, effDaily, daysToTgt,
-      rolling30P, rolling30PrevP, rolling30Tiktok, rolling30Ebay,
+      rolling30P, rolling30PrevP, rolling30Tiktok, rolling30Ebay, rolling30AmazonFbm,
       totalGross, avgSalePrice, avgProfitPerSale, marginPct, sellThrough,
       daysSinceLastSale, consistencyPct, actualPace14,
       last7Avg, momentum, weekActual,
@@ -2865,6 +2998,7 @@ function renderGrowthPage() {
 
   const totalTiktok30d = r2(all.reduce((s,p) => s + (p.rolling30Tiktok || 0), 0));
   const totalEbay30d   = r2(all.reduce((s,p) => s + (p.rolling30Ebay   || 0), 0));
+  const totalAmazonFbm30d = r2(all.reduce((s,p) => s + (p.rolling30AmazonFbm || 0), 0));
 
   const byEff      = [...all].filter(p => p.current > 0).sort((a,b) => b.profitPer1k - a.profitPer1k);
   const growingCnt  = all.filter(p => p.roll30MomPct !== null && p.roll30MomPct > 0).length;
@@ -2910,24 +3044,24 @@ function renderGrowthPage() {
       <div class="growth-kpi-val" style="color:${all.filter(p=>p.momentum>1.1).length >= all.length*0.5?'var(--green)':all.filter(p=>p.momentum<0.7).length > all.length*0.4?'var(--red)':'var(--amber)'}">${all.filter(p=>p.momentum>1.1).length} accelerating</div>
       <div class="growth-kpi-sub">${all.filter(p=>p.momentum<0.7).length} slowing · ${all.filter(p=>p.momentum>=0.7&&p.momentum<=1.1).length} steady · based on 7d vs 14d pace</div>
     </div>
-    ${totalTiktok30d > 0 ? `<div class="growth-kpi-card" style="border-color:#ff6b9d44">
-      <div class="growth-kpi-label" style="color:#ff6b9d">⟡ TikTok Revenue (30d)</div>
-      <div class="growth-kpi-val" style="color:#ff6b9d">${fmt$(totalTiktok30d)}</div>
-      <div class="growth-kpi-sub">eBay: ${fmt$(totalEbay30d)} · TikTok: ${fmt$(totalTiktok30d)} · combined: ${fmt$(r2(totalTiktok30d+totalEbay30d))}</div>
+    ${(totalTiktok30d > 0 || totalAmazonFbm30d > 0) ? `<div class="growth-kpi-card" style="border-color:rgba(245,158,11,.32)">
+      <div class="growth-kpi-label" style="color:var(--amber)">Platform Profit (30d)</div>
+      <div class="growth-kpi-val" style="color:var(--amber)">${fmt$(r2(totalTiktok30d + totalAmazonFbm30d))}</div>
+      <div class="growth-kpi-sub">eBay: ${fmt$(totalEbay30d)} · TikTok: ${fmt$(totalTiktok30d)} · Amazon FBM: ${fmt$(totalAmazonFbm30d)} · combined: ${fmt$(r2(totalTiktok30d+totalEbay30d+totalAmazonFbm30d))}</div>
     </div>` : ''}`;
 
-  // Show/hide channel toggle based on whether TikTok data exists in RAW
-  const hasTiktokData = RAW.some(r => r.channel === 'tiktok');
+  // Show/hide channel toggle based on whether non-eBay data exists in RAW
+  const hasAltChannelData = RAW.some(r => r.channel && r.channel !== 'ebay');
   const toggleRow = $('channel-toggle-row');
   if (toggleRow) {
-    toggleRow.style.display = hasTiktokData ? 'flex' : 'none';
+    toggleRow.style.display = hasAltChannelData ? 'flex' : 'none';
     // Sync button active states to current filter
-    ['all','ebay','tiktok'].forEach(c => {
+    CHANNEL_KEYS.forEach(c => {
       const btn = $('ch-btn-'+c);
       if (!btn) return;
       const active = c === CHANNEL_FILTER;
-      btn.style.background = active ? (c === 'tiktok' ? '#ff6b9d' : 'var(--indigo)') : 'var(--glass)';
-      btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--text2)');
+      btn.style.background = active ? channelMeta(c).color : 'var(--glass)';
+      btn.style.color = active ? '#fff' : channelMeta(c).muted;
     });
   }
 
@@ -3061,7 +3195,7 @@ function renderGrowthPage() {
       <div style="font-size:10px;margin-bottom:4px"><span style="color:${paceColor}">${paceNote}</span></div>
       ${hasMonthly ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px;line-height:1.7">
         <strong style="color:var(--text2)">${p.recentMoLabel} profit:</strong> ${fmt$(p.recentMoProfit)} ÷ ${p.current.toLocaleString()} listings = <strong style="color:var(--indigo)">${fmt$(p.profitPerListMo)}/listing/mo</strong>
-        ${CHANNEL_FILTER === 'all' && p.rolling30Tiktok > 0 ? `<br><span style="color:#ff6b9d">⟡ TikTok</span> <strong style="color:#ff6b9d">${fmt$(p.rolling30Tiktok)}</strong> · <span style="color:var(--cyan)">eBay</span> <strong style="color:var(--cyan)">${fmt$(p.rolling30Ebay)}</strong> <span style="opacity:.5">(last 30d)</span>` : ''}
+        ${CHANNEL_FILTER === 'all' && (p.rolling30Tiktok > 0 || p.rolling30AmazonFbm > 0) ? `<br><span style="color:var(--cyan)">eBay</span> <strong style="color:var(--cyan)">${fmt$(p.rolling30Ebay)}</strong> · <span style="color:#ff6b9d">⟡ TikTok</span> <strong style="color:#ff6b9d">${fmt$(p.rolling30Tiktok)}</strong> · <span style="color:var(--amber)">Amazon FBM</span> <strong style="color:var(--amber)">${fmt$(p.rolling30AmazonFbm)}</strong> <span style="opacity:.5">(last 30d)</span>` : ''}
       </div>` : (!hasAllTime ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px">No profit data yet — projections unavailable</div>` : '')}
       ${intelBits.length ? `<div style="font-size:9px;color:var(--muted);margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px">${intelBits.join('<span style="opacity:.4">·</span>')}</div>` : ''}
       <div style="font-size:9px;color:var(--muted);margin-bottom:2px;opacity:.6">if you keep listing at current pace →</div>
@@ -4747,8 +4881,8 @@ function openClientView() {
   if (!clientStores.length) { showToast('No partner stores loaded yet', 'info', '👤'); return; }
 
   const listEl = $('client-select-list');
-  const _cvChFilter = r => CHANNEL_FILTER === 'all' || (CHANNEL_FILTER === 'tiktok' ? r.channel === 'tiktok' : r.channel !== 'tiktok');
-  const _cvEarnLabel = CHANNEL_FILTER === 'tiktok' ? 'TikTok earnings' : CHANNEL_FILTER === 'ebay' ? 'eBay earnings' : 'All-time earnings';
+  const _cvChFilter = r => channelMatches(r);
+  const _cvEarnLabel = CHANNEL_FILTER === 'all' ? 'All-time earnings' : `${channelTitle()} earnings`;
   listEl.innerHTML = clientStores.map(name => {
     const isJacob  = JACOB_STORES.includes(name);
     const pct      = isJacob ? '10%' : '50%';
@@ -4782,8 +4916,8 @@ function renderClientView(personName, opts = {}) {
   const ownerPctLabel = isJacob ? '10%' : '50%';
   const displayName   = personName === 'John Slop' ? 'Sloop' : personName;
   const isTikTokMode  = CHANNEL_FILTER === 'tiktok';
-  const isEbayMode    = CHANNEL_FILTER === 'ebay';
-  const cvChFilter    = r => CHANNEL_FILTER === 'all' || (isTikTokMode ? r.channel === 'tiktok' : r.channel !== 'tiktok');
+  const isAltStoreMode = CHANNEL_FILTER === 'tiktok' || CHANNEL_FILTER === 'amazon_fbm';
+  const cvChFilter    = r => channelMatches(r);
 
   const recs         = RAW.filter(r => r.person === personName && cvChFilter(r));
   const allTimeProfit = r2(recs.reduce((s,r) => s + r.profit, 0));
@@ -4856,7 +4990,7 @@ function renderClientView(personName, opts = {}) {
       : momPct !== null && momPct >= 0
         ? `${latestLabel || 'This month'} is trending higher than ${prevMo}, with your share continuing to grow.`
         : `This store is still early in the month, with ${myAllTime > 0 ? fmt$(myAllTime) : 'earnings'} already built all-time.`,
-    !isTikTokMode && remainingListings > 0
+    !isAltStoreMode && remainingListings > 0
       ? `The store is at ${current.toLocaleString()} active listings, with a clear path toward the ${target.toLocaleString()} listing goal.`
       : `The listing goal is in great shape, which gives the store more room to compound earnings.`,
     latestMargin > 0
@@ -4876,14 +5010,15 @@ function renderClientView(personName, opts = {}) {
   window._csProfitPerListMo = profitPerListMo;
 
   // Pre-compute channel-dependent labels and sections
-  const cvHeaderIcon    = isTikTokMode ? '⟡' : '📦';
-  const cvHeaderBg      = isTikTokMode ? 'linear-gradient(135deg,#ff2d55,#ff6b9d)' : 'linear-gradient(135deg,var(--green),var(--emerald))';
-  const cvAllTimeLabel  = isTikTokMode ? 'TikTok Earnings' : isEbayMode ? 'eBay Earnings' : 'All-Time Earnings';
-  const cvAllTimeSub    = isTikTokMode ? 'your TikTok total' : isEbayMode ? 'your eBay total' : 'your total since day one';
-  const cvFeePlatform   = isTikTokMode ? 'TikTok fees' : 'eBay fees';
+  const cvMeta          = channelMeta();
+  const cvHeaderIcon    = cvMeta.icon || '📦';
+  const cvHeaderBg      = isTikTokMode ? 'linear-gradient(135deg,#ff2d55,#ff6b9d)' : CHANNEL_FILTER === 'amazon_fbm' ? 'linear-gradient(135deg,#f59e0b,#fbbf24)' : 'linear-gradient(135deg,var(--green),var(--emerald))';
+  const cvAllTimeLabel  = CHANNEL_FILTER === 'all' ? 'All-Time Earnings' : `${cvMeta.label} Earnings`;
+  const cvAllTimeSub    = CHANNEL_FILTER === 'all' ? 'your total since day one' : `your ${cvMeta.label} total`;
+  const cvFeePlatform   = CHANNEL_FILTER === 'amazon_fbm' ? 'Amazon fees' : isTikTokMode ? 'TikTok fees' : 'eBay fees';
 
   // Listing sections are eBay-only — hide in TikTok mode or when tracker has no data for this store
-  const cvListingsHtml = (isTikTokMode || !storeSum) ? '' : `
+  const cvListingsHtml = (isAltStoreMode || !storeSum) ? '' : `
         <!-- Listings Progress -->
         <div class="card" style="padding:20px">
           <div style="font-size:13px;font-weight:700;margin-bottom:16px">📦 Your Store Listings</div>
@@ -5649,7 +5784,7 @@ function openWeeklyWrap() {
   const content = $('wrap-content');
   if (!RAW.length) { showToast('Load data first', 'error', '⚠️'); return; }
 
-  const chRAW = RAW.filter(r => CHANNEL_FILTER === 'all' || (CHANNEL_FILTER === 'tiktok' ? r.channel === 'tiktok' : r.channel !== 'tiktok'));
+  const chRAW = channelFilterRows(RAW);
 
   // Determine last full week (Mon–Sun)
   const today = new Date();

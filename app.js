@@ -747,6 +747,8 @@ function parseAmazonFbmValues(values, person = 'Johna') {
         else if (h === 'SALE PRICE') colMap.price = idx;
         else if (h === 'AMAZON FEE') colMap.amazonFee = idx;
         else if (h === 'LABEL') colMap.label = idx;
+        else if (h.includes('PREP')) colMap.prep = idx;
+        else if (h === 'SHIP' || h === 'SHIPPING' || h.includes('SHIPPING COST')) colMap.ship = idx;
         else if (h === 'UNIT COST' && colMap.unitCost === undefined) colMap.unitCost = idx;
         else if (h === 'TOTAL COST' && colMap.totalCost === undefined) colMap.totalCost = idx;
         else if (h === 'REFUND FROM AMZ') colMap.refund = idx;
@@ -770,8 +772,11 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     const price = parseMoney(row[colMap.price]);
     const amazonFee = Math.abs(parseMoney(row[colMap.amazonFee]));
     const label = Math.abs(parseMoney(row[colMap.label]));
+    const prep = Math.abs(parseMoney(row[colMap.prep]));
+    const ship = Math.abs(parseMoney(row[colMap.ship]));
     const unitCost = Math.abs(parseMoney(row[colMap.unitCost]));
-    const totalCost = Math.abs(parseMoney(row[colMap.totalCost])) || r2(unitCost * qty + label);
+    const unitCostTotal = r2(unitCost * qty);
+    const totalCost = Math.abs(parseMoney(row[colMap.totalCost])) || r2(unitCostTotal + label + prep + ship);
     const tax = Math.abs(parseMoney(row[colMap.tax]));
     const profit = parseMoney(row[colMap.profit]);
     let roi = parseMoney(row[colMap.roi]);
@@ -795,8 +800,14 @@ function parseAmazonFbmValues(values, person = 'Johna') {
       sales: qty,
       price: r2(price),
       cost: r2(totalCost),
-      fee: r2(amazonFee + tax),
+      fee: r2(amazonFee),
+      amazonFee: r2(amazonFee),
+      tax: r2(tax),
       label: r2(label),
+      prep: r2(prep),
+      ship: r2(ship),
+      unitCost: r2(unitCost),
+      unitCostTotal,
       profit: r2(profit),
       roi: r2(roi),
     });
@@ -1266,6 +1277,17 @@ function renderKPIs(data) {
   const cost   = data.reduce((s,r)=>s+r.cost,   0);
   const roi    = cost > 0 ? profit / cost * 100 : 0;
   const margin = rev  > 0 ? profit / rev  * 100 : 0;
+  const isAmazonMode = CHANNEL_FILTER === 'amazon_fbm';
+  const amazonFee = r2(data.reduce((s,r)=>s+(r.amazonFee || (r.channel === 'amazon_fbm' ? r.fee : 0)), 0));
+  const amazonLabel = r2(data.reduce((s,r)=>s+(r.label || 0), 0));
+  const amazonPrep = r2(data.reduce((s,r)=>s+(r.prep || 0), 0));
+  const amazonShip = r2(data.reduce((s,r)=>s+(r.ship || 0), 0));
+  const amazonUnit = r2(data.reduce((s,r)=>s+(r.unitCostTotal || 0), 0));
+  const amazonTax = r2(data.reduce((s,r)=>s+(r.tax || 0), 0));
+  const amazonOpsCost = r2(amazonUnit + amazonLabel + amazonPrep + amazonShip);
+  const feeCardLabel = isAmazonMode ? '📦 Amazon Costs' : CHANNEL_FILTER === 'tiktok' ? '🏷️ TikTok Fees' : CHANNEL_FILTER === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
+  const feeCardValue = isAmazonMode ? r2(amazonFee + amazonOpsCost + amazonTax) : fee;
+  const feeCardPct = rev > 0 ? feeCardValue / rev * 100 : 0;
 
   const dd = getDailyData(data);
   const dCount = dd.length || 1;
@@ -1296,7 +1318,13 @@ function renderKPIs(data) {
   const profitSpark = last30.map(d=>d.profit);
   const revSpark    = last30.map(d=>d.revenue);
   const salesSpark  = last30.map(d=>d.sales);
-  const feeSpark    = last30.map(d=>d.fee);
+  const feeCardSpark = isAmazonMode
+    ? last30.map(d => {
+        const dayRows = data.filter(r => r.date === d.date);
+        return r2(dayRows.reduce((s,r)=>s+(r.amazonFee||r.fee||0)+(r.cost||0)+(r.tax||0),0));
+      })
+    : null;
+  const feeSpark    = feeCardSpark || last30.map(d=>d.fee);
   const roiSpark    = last30.map(d=>d.revenue>0?(d.profit/d.revenue*100):0);
   // Store for expandable KPI panels
   window._kpiSparks = { profit: profitSpark, adp: profitSpark, today: salesSpark, fee: feeSpark };
@@ -1362,11 +1390,12 @@ function renderKPIs(data) {
     </div>
     <div class="card kpi-card" onclick="expandKpi(this,'fee','#ef4444')">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#ef4444,#f87171)"></div>
-      <div class="kpi-label" id="fee-label">🏷️ eBay Fees</div>
+      <div class="kpi-label" id="fee-label">${feeCardLabel}</div>
       <div class="kpi-body">
         <div class="kpi-left">
-          <div class="kpi-val" id="kv-fee">${fmt$(fee)}</div>
-          <div class="kpi-sub">${fmtP(rev>0?fee/rev*100:0)} of revenue</div>
+          <div class="kpi-val" id="kv-fee">${fmt$(feeCardValue)}</div>
+          <div class="kpi-sub">${fmtP(feeCardPct)} of revenue</div>
+          ${isAmazonMode ? `<div class="kpi-sub" style="font-size:10px;line-height:1.45;margin-top:2px">Amazon fees ${fmt$(amazonFee)} · unit/prep ${fmt$(r2(amazonUnit+amazonPrep))} · label/ship ${fmt$(r2(amazonLabel+amazonShip))}${amazonTax?` · tax ${fmt$(amazonTax)}`:''}</div>` : ''}
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-fee" width="80" height="32"></canvas>
       </div>
@@ -1386,7 +1415,7 @@ function renderKPIs(data) {
     countUp($('kv-profit'), profit, 1000);
     countUp($('kv-adp'),    avgDailyProfit, 900);
     if (latestRows.length > 0) countUp($('kv-today'), todayProfit, 800);
-    countUp($('kv-fee'), fee, 900);
+    countUp($('kv-fee'), feeCardValue, 900);
   }, 60);
 
   // ── Latest-day take-home strip ──

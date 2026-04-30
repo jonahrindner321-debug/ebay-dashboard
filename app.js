@@ -406,6 +406,12 @@ function monthLabelFromDate(dateStr, fallback = 'Amazon FBM') {
   return `${mos[dt.getMonth()]} ${dt.getFullYear()}`;
 }
 
+function currentMonthLabel() {
+  const dt = new Date();
+  const mos = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${mos[dt.getMonth()]} ${dt.getFullYear()}`;
+}
+
 function channelMeta(ch = CHANNEL_FILTER) {
   return CHANNEL_STYLE[ch] || CHANNEL_STYLE.all;
 }
@@ -740,13 +746,20 @@ function parseAmazonFbmValues(values, person = 'Johna') {
       header.forEach((h, idx) => {
         if (h === 'DATE') colMap.date = idx;
         else if (h === 'SELLER ORDER ID') colMap.orderId = idx;
+        else if (h === 'URL') colMap.url = idx;
         else if (h === 'SKU') colMap.sku = idx;
         else if (h === 'PRODUCT NAME') colMap.product = idx;
+        else if (h === 'BUYER ORDER MAIL') colMap.buyerMail = idx;
+        else if (h === 'BUYER ORDER NUMBER') colMap.buyerOrderNumber = idx;
+        else if (h === 'TRACKING') colMap.tracking = idx;
+        else if (h === 'CARD ENDING') colMap.cardEnding = idx;
+        else if (h === 'SHORT CODE') colMap.shortCode = idx;
         else if (h === 'STATUS') colMap.status = idx;
+        else if (h === 'ADDRESS') colMap.address = idx;
         else if (h === 'QTY') colMap.qty = idx;
         else if (h === 'SALE PRICE') colMap.price = idx;
         else if (h === 'AMAZON FEE') colMap.amazonFee = idx;
-        else if (h === 'LABEL') colMap.label = idx;
+        else if (h.includes('LABEL')) colMap.label = idx;
         else if (h.includes('PREP')) colMap.prep = idx;
         else if (h === 'SHIP' || h === 'SHIPPING' || h.includes('SHIPPING COST')) colMap.ship = idx;
         else if (h === 'UNIT COST' && colMap.unitCost === undefined) colMap.unitCost = idx;
@@ -767,6 +780,16 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
     const dateStr = parseDate(dateRaw);
     const orderId = String(row[colMap.orderId] || '').trim();
+    const url = String(row[colMap.url] || '').trim();
+    const buyerMail = String(row[colMap.buyerMail] || '').trim();
+    const buyerOrderNumber = String(row[colMap.buyerOrderNumber] || '').trim();
+    const trackingRaw = String(row[colMap.tracking] || '').trim();
+    const tracking = /^tracking\s*#?$/i.test(trackingRaw) ? '' : trackingRaw;
+    const cardEnding = String(row[colMap.cardEnding] || '').trim();
+    const shortCode = String(row[colMap.shortCode] || '').trim();
+    const address = String(row[colMap.address] || '').trim();
+    const sku = String(row[colMap.sku] || '').trim();
+    const product = String(row[colMap.product] || '').trim();
     const status = String(row[colMap.status] || '').trim();
     const qty = Math.max(1, Math.round(parseMoney(row[colMap.qty])) || 1);
     const price = parseMoney(row[colMap.price]);
@@ -784,18 +807,28 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     const hasData = Boolean(dateStr || orderId || status || price || amazonFee || totalCost || profit);
     if (!hasData) continue;
     if (!dateStr && !orderId && !status && !price && !profit) continue;
+    const hasRealUrl = Boolean(url && !/sellercentral\.amazon\.com\/orders-v3\/order\/?$/i.test(url));
+    const hasRowIdentity = Boolean(dateStr || orderId || buyerMail || buyerOrderNumber || hasRealUrl || tracking || cardEnding || shortCode || address || status);
+    if (!hasRowIdentity) continue;
 
     rows.push({
       person,
-      month: monthLabelFromDate(dateStr, 'Amazon FBM'),
+      month: monthLabelFromDate(dateStr, currentMonthLabel()),
       channel: 'amazon_fbm',
       platform: 'amazon',
       source: 'JER Seller Order Sheet',
       date: dateStr,
       _dateRaw: dateRaw,
       orderId,
-      sku: String(row[colMap.sku] || '').trim(),
-      product: String(row[colMap.product] || '').trim(),
+      sku,
+      product,
+      url,
+      buyerMail,
+      buyerOrderNumber,
+      tracking,
+      cardEnding,
+      shortCode,
+      address,
       status,
       sales: qty,
       price: r2(price),

@@ -103,6 +103,20 @@ const MONTH_ORDER = [
   'Feb 2026','Mar 2026','Apr 2026','May 2026','Jun 2026',
   'Jul 2026','Aug 2026','Sep 2026','Oct 2026','Nov 2026','Dec 2026',
 ];
+const MONTH_NAME_MAP = {
+  jan: 1, january: 1,
+  feb: 2, february: 2,
+  mar: 3, march: 3,
+  apr: 4, april: 4,
+  may: 5,
+  jun: 6, june: 6,
+  jul: 7, july: 7,
+  aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12,
+};
 
 const COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#14b8a6','#3b82f6'];
 
@@ -154,7 +168,25 @@ function fmtFull$(v) { if (!isFinite(v)) return '—'; const s = v<0?'-':''; ret
 function fmtP(v) { return isFinite(v) ? v.toFixed(1) + '%' : '—'; }
 function fmtN(v) { return isFinite(v) ? v.toLocaleString() : '—'; }
 function r2(v)   { return Math.round((v + Number.EPSILON) * 100) / 100; }
-function monthIndex(m) { const i = MONTH_ORDER.indexOf(m); return i >= 0 ? i : 999; }
+function monthIndex(m) {
+  const label = String(m || '').trim();
+  if (!label) return 999999;
+  const specialIdx = MONTH_ORDER.indexOf(label);
+  if (specialIdx >= 0) {
+    const special = {
+      'Nov 2025': 2025 * 12 + 11,
+      'Dec 2025': 2025 * 12 + 12,
+      'Dec/Jan 2026': 2026 * 12 + 0.5,
+    };
+    return special[label] || specialIdx;
+  }
+  const match = label.replace(/[_-]/g, ' ').match(/^([A-Za-z]+)\s+(\d{2,4})$/);
+  if (!match) return 999999;
+  const mo = MONTH_NAME_MAP[match[1].toLowerCase()];
+  if (!mo) return 999999;
+  const yr = match[2].length === 2 ? 2000 + parseInt(match[2], 10) : parseInt(match[2], 10);
+  return yr * 12 + mo;
+}
 
 function setStatus(type, text) {
   const dot = $('s-dot'), tx = $('s-text');
@@ -531,7 +563,7 @@ function calcProjection(data) {
 function normMonth(title) {
   const t = title.replace(/\(.*\)/g,'').trim();
   const m = {JAN:'Jan',FEB:'Feb',MAR:'Mar',MARC:'Mar',MARCH:'Mar',APR:'Apr',APRIL:'Apr',MAY:'May',JUN:'Jun',JUNE:'Jun',JUL:'Jul',JULY:'Jul',AUG:'Aug',SEPT:'Sep',SEP:'Sep',OCT:'Oct',NOV:'Nov',DEC:'Dec'};
-  const match = t.match(/^([A-Za-z]+)[\-_](\d{2,4})$/);
+  const match = t.match(/^([A-Za-z]+)[\s\-_](\d{2,4})$/);
   if (!match) return title;
   const mon = m[match[1].toUpperCase().substring(0,4)] || m[match[1].toUpperCase().substring(0,3)] || match[1];
   let yr = match[2]; if (yr.length===2) yr='20'+yr;

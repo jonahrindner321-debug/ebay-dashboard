@@ -37,6 +37,10 @@ const BANNED_STORES = new Set(['Paul']);
 const LISTING_TRACKER_ID   = '1P1k92F_RsQxSE_2qZloA99OiOBEDazch';
 const LISTING_TRACKER_SUMMARY_GID = 1098129568;
 const LISTING_TRACKER_DAILY_GID   = 2077321990;
+const LISTING_TRACKER_DAILY_GIDS = [
+  LISTING_TRACKER_DAILY_GID, // Daily Tracking April
+  799679394,  // Daily Tracking May
+];
 // Map listing tracker store names → dashboard person names
 const LISTING_NAME_MAP = {
   'Russ':         'Russell',
@@ -2623,12 +2627,12 @@ async function loadListingTracker(force = false) {
       });
     }
     const base = `https://docs.google.com/spreadsheets/d/${LISTING_TRACKER_ID}/export?format=csv`;
-    const [sumRes, dayRes] = await Promise.all([
+    const [sumRes, ...dayResponses] = await Promise.all([
       fetch(`${base}&gid=${LISTING_TRACKER_SUMMARY_GID}`),
-      fetch(`${base}&gid=${LISTING_TRACKER_DAILY_GID}`)
+      ...LISTING_TRACKER_DAILY_GIDS.map(gid => fetch(`${base}&gid=${gid}`))
     ]);
-    if (!sumRes.ok || !dayRes.ok) throw new Error('CSV fetch failed');
-    const [sumText, dayText] = await Promise.all([sumRes.text(), dayRes.text()]);
+    if (!sumRes.ok || dayResponses.some(res => !res.ok)) throw new Error('CSV fetch failed');
+    const [sumText, ...dayTexts] = await Promise.all([sumRes.text(), ...dayResponses.map(res => res.text())]);
 
     // Parse summary (row 0 = header)
     const sumRows = parseCSV(sumText);
@@ -2641,43 +2645,50 @@ async function loadListingTracker(force = false) {
       summary.push({ store: r[0].trim(), operator: r[1]||'', current: parseInt(r[2])||0, target: parseInt(r[3])||5000, remaining: parseInt(r[4])||0, dailyGoal: parseInt(r[5])||40 });
     }
 
-    // Parse daily — find today's row
-    const dayRows = parseCSV(dayText);
-    // Sheet has title/empty rows before real headers — find the row starting with "Date"
-    let _hdrIdx = 0;
-    for (let i = 0; i < Math.min(dayRows.length, 6); i++) {
-      if (dayRows[i][0]?.trim() === 'Date') { _hdrIdx = i; break; }
-    }
-    const dailyColNames = dayRows[_hdrIdx].map(c => c.trim()); // trim \r and whitespace
-    const _dataStart = _hdrIdx + 1;
     const today = new Date();
     const todayStrPad   = `${String(today.getMonth()+1).padStart(2,'0')}/${String(today.getDate()).padStart(2,'0')}`;
     const todayStrShort = `${today.getMonth()+1}/${today.getDate()}`;
-    const todayRow = dayRows.slice(_dataStart).find(r => r[0]?.trim() === todayStrPad || r[0]?.trim() === todayStrShort) || null;
 
-    // Parse ALL daily rows for history (skip DAILY TARGET row and empty rows)
-    const dailyHistory = []; // [{ dateStr, date, counts:{storeName:n} }]
-    for (let i = _dataStart; i < dayRows.length; i++) {
-      const r = dayRows[i];
-      const r0 = r[0]?.trim() || '';
-      if (!r0 || r0.toUpperCase().includes('TARGET') || r0 === 'Date') continue;
-      const parts = r0.split('/');
-      if (parts.length < 2) continue;
-      const mm = parseInt(parts[0]), dd = parseInt(parts[1]);
-      if (isNaN(mm) || isNaN(dd)) continue;
-      const yr = (mm >= 1 && mm <= 12) ? (mm < 9 ? 2026 : 2025) : 2026;
-      const dateObj = new Date(yr, mm-1, dd);
-      const counts = {};
-      for (let c = 2; c < dailyColNames.length; c++) {
-        const name = dailyColNames[c];
-        if (!name || name === 'Daily Total' || name === 'Notes') continue;
-        if (BANNED_STORES.has(name)) continue; // skip offboarded stores
-        const v = r[c];
-        if (v !== undefined && v !== '') counts[name] = parseInt(v) || 0;
+    function parseDailyTrackerCsv(dayText) {
+      const dayRows = parseCSV(dayText);
+      // Sheet has title/empty rows before real headers — find the row starting with "Date"
+      let hdrIdx = 0;
+      for (let i = 0; i < Math.min(dayRows.length, 8); i++) {
+        if (dayRows[i][0]?.trim() === 'Date') { hdrIdx = i; break; }
       }
-      if (Object.keys(counts).length > 0)
-        dailyHistory.push({ dateStr: r0, date: dateObj, counts });
+      const cols = (dayRows[hdrIdx] || []).map(c => c.trim()); // trim \r and whitespace
+      const dataStart = hdrIdx + 1;
+      const foundToday = dayRows.slice(dataStart).find(r => r[0]?.trim() === todayStrPad || r[0]?.trim() === todayStrShort) || null;
+      const history = []; // [{ dateStr, date, counts:{storeName:n} }]
+      for (let i = dataStart; i < dayRows.length; i++) {
+        const r = dayRows[i];
+        const r0 = r[0]?.trim() || '';
+        if (!r0 || r0.toUpperCase().includes('TARGET') || r0 === 'Date') continue;
+        const parts = r0.split('/');
+        if (parts.length < 2) continue;
+        const mm = parseInt(parts[0]), dd = parseInt(parts[1]);
+        if (isNaN(mm) || isNaN(dd)) continue;
+        const yr = (mm >= 1 && mm <= 12) ? (mm < 9 ? 2026 : 2025) : 2026;
+        const dateObj = new Date(yr, mm-1, dd);
+        const counts = {};
+        for (let c = 2; c < cols.length; c++) {
+          const name = cols[c];
+          if (!name || name === 'Daily Total' || name === 'Notes') continue;
+          if (BANNED_STORES.has(name)) continue; // skip offboarded stores
+          const v = r[c];
+          if (v !== undefined && v !== '') counts[name] = parseInt(v) || 0;
+        }
+        if (Object.keys(counts).length > 0)
+          history.push({ dateStr: r0, date: dateObj, counts });
+      }
+      return { dailyColNames: cols, todayRow: foundToday, dailyHistory: history };
     }
+
+    const dailyParts = dayTexts.map(parseDailyTrackerCsv);
+    const dailyHistory = dailyParts.flatMap(part => part.dailyHistory).sort((a,b) => a.date - b.date);
+    const todayPart = dailyParts.find(part => part.todayRow);
+    const dailyColNames = (todayPart || dailyParts[dailyParts.length - 1] || dailyParts[0])?.dailyColNames || [];
+    const todayRow = todayPart?.todayRow || null;
 
     LISTING_DATA = { summary, todayRow, dailyColNames, dailyHistory };
     _listingCacheTime = Date.now();

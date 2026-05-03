@@ -2604,6 +2604,18 @@ function renderSheetActivity() {
 const LISTING_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 let _listingCacheTime = 0;
 
+async function getListingTrackerDailyGids() {
+  try {
+    const res = await fetch(`/api/listing-tabs?id=${encodeURIComponent(LISTING_TRACKER_ID)}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const gids = (data.dailyGids || []).filter(Boolean);
+    return gids.length ? gids : LISTING_TRACKER_DAILY_GIDS;
+  } catch (e) {
+    return LISTING_TRACKER_DAILY_GIDS;
+  }
+}
+
 async function loadListingTracker(force = false) {
   // Serve from cache if fresh enough
   const now = Date.now();
@@ -2627,9 +2639,10 @@ async function loadListingTracker(force = false) {
       });
     }
     const base = `https://docs.google.com/spreadsheets/d/${LISTING_TRACKER_ID}/export?format=csv`;
+    const dailyGids = await getListingTrackerDailyGids();
     const [sumRes, ...dayResponses] = await Promise.all([
       fetch(`${base}&gid=${LISTING_TRACKER_SUMMARY_GID}`),
-      ...LISTING_TRACKER_DAILY_GIDS.map(gid => fetch(`${base}&gid=${gid}`))
+      ...dailyGids.map(gid => fetch(`${base}&gid=${gid}`))
     ]);
     if (!sumRes.ok || dayResponses.some(res => !res.ok)) throw new Error('CSV fetch failed');
     const [sumText, ...dayTexts] = await Promise.all([sumRes.text(), ...dayResponses.map(res => res.text())]);

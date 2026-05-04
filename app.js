@@ -163,13 +163,11 @@ let firstLoad = true;
 const $ = id => document.getElementById(id);
 function fmt$(v) {
   if (!isFinite(v)) return '—';
-  const a = Math.abs(v), s = v < 0 ? '-' : '';
-  if (a >= 1000000) return s + '$' + (a / 1000000).toFixed(2) + 'M';
-  if (a >= 1000)    return s + '$' + (a / 1000).toFixed(1) + 'k';
-  return s + '$' + a.toFixed(2);
+  const s = v < 0 ? '-' : '';
+  return s + '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-function fmtFull$(v) { if (!isFinite(v)) return '—'; const s = v<0?'-':''; return s+'$'+Math.abs(v).toFixed(2); }
-function fmtP(v) { return isFinite(v) ? v.toFixed(1) + '%' : '—'; }
+function fmtFull$(v) { if (!isFinite(v)) return '—'; const s = v<0?'-':''; return s+'$'+Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtP(v) { return isFinite(v) ? v.toFixed(2) + '%' : '—'; }
 function fmtN(v) { return isFinite(v) ? v.toLocaleString() : '—'; }
 function r2(v)   { return Math.round((v + Number.EPSILON) * 100) / 100; }
 function monthIndex(m) {
@@ -207,26 +205,25 @@ function roiPill(r) {
 }
 
 // ─── COUNT-UP ANIMATION ────────────────────────────────────────────────────
-function countUp(el, target, duration = 900, prefix = '$', decimals = 1) {
+function countUp(el, target, duration = 900, prefix = '$', decimals = 2) {
   if (!el) return;
-  const start = 0, startTime = performance.now();
+  const startTime = performance.now();
   const isNeg = target < 0;
   const abs = Math.abs(target);
   function tick(now) {
     const elapsed = now - startTime;
     const progress = Math.min(elapsed / duration, 1);
-    // Ease out cubic
     const eased = 1 - Math.pow(1 - progress, 3);
     const cur = abs * eased;
-    let display;
-    if (abs >= 1000000) display = (cur/1000000).toFixed(2) + 'M';
-    else if (abs >= 1000) display = (cur/1000).toFixed(decimals) + 'k';
-    else display = cur.toFixed(2);
-    el.textContent = (isNeg ? '-' : '') + prefix + display;
-    if (progress < 1) requestAnimationFrame(tick);
-    else {
-      el.textContent = prefix === '$' ? (isNeg?'-$':' $') + (abs>=1000000?(abs/1000000).toFixed(2)+'M':abs>=1000?(abs/1000).toFixed(decimals)+'k':abs.toFixed(2)) : target.toFixed(decimals) + (prefix === '%' ? '%' : '');
-      if (prefix === '$') el.textContent = (isNeg?'-':'') + '$' + (abs>=1000000?(abs/1000000).toFixed(2)+'M':abs>=1000?(abs/1000).toFixed(1)+'k':abs.toFixed(2));
+    if (progress < 1) {
+      el.textContent = (isNeg ? '-' : '') + prefix + cur.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      requestAnimationFrame(tick);
+    } else {
+      if (prefix === '$') {
+        el.textContent = (isNeg?'-':'') + '$' + abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      } else {
+        el.textContent = target.toFixed(decimals) + (prefix === '%' ? '%' : '');
+      }
     }
   }
   requestAnimationFrame(tick);
@@ -503,7 +500,7 @@ function renderComparison(data) {
   const pct = (cur,prev) => prev===0?null:r2((cur-prev)/Math.abs(prev)*100);
   const fmtD = d => {
     if (d===null) return '<span class="d-neu">—</span>';
-    return `<span class="${d>=0?'d-up':'d-down'}">${d>=0?'▲':'▼'} ${Math.abs(d).toFixed(1)}%</span>`;
+    return `<span class="${d>=0?'d-up':'d-down'}">${d>=0?'▲':'▼'} ${Math.abs(d).toFixed(2)}%</span>`;
   };
   const months = show.map(m => ({ label: m, data: calc(data.filter(r=>r.month===m)) }));
   const prev = months.length >= 2 ? months[months.length-2] : null;
@@ -557,7 +554,7 @@ function calcProjection(data) {
     rev, profit, sales,
     projectedRev:    isCurrentMonth ? r2(rev/daysElapsed*daysInMonth) : rev,
     projectedProfit: isCurrentMonth ? r2(profit/daysElapsed*daysInMonth) : profit,
-    projectedSales:  isCurrentMonth ? Math.round(sales/daysElapsed*daysInMonth) : sales,
+    projectedSales:  isCurrentMonth ? sales/daysElapsed*daysInMonth : sales,
     dailyRevRate:    r2(rev/daysElapsed),
     dailyProfitRate: r2(profit/daysElapsed),
   };
@@ -1404,7 +1401,7 @@ function renderKPIs(data) {
     : 'No data yet';
 
   const deltaHtml = momDelta !== null
-    ? `<div class="kpi-delta ${momDelta>=0?'up':'down'}">${momDelta>=0?'↑':'↓'} ${Math.abs(momDelta).toFixed(1)}% MoM</div>`
+    ? `<div class="kpi-delta ${momDelta>=0?'up':'down'}">${momDelta>=0?'↑':'↓'} ${Math.abs(momDelta).toFixed(2)}% MoM</div>`
     : '';
 
   const _mkExpand = (id, color, stats, unit='$') => {
@@ -2070,7 +2067,7 @@ function renderGoalTracker(data) {
       <div style="position:relative;flex-shrink:0;width:72px;height:72px">
         <canvas id="goal-ring" width="72" height="72"></canvas>
         <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none">
-          <div style="font-size:14px;font-weight:900;color:${over?'var(--emerald)':'var(--text)'}">${pct.toFixed(0)}%</div>
+          <div style="font-size:14px;font-weight:900;color:${over?'var(--emerald)':'var(--text)'}">${pct.toFixed(2)}%</div>
         </div>
       </div>
       <div class="goal-progress-wrap">
@@ -2178,7 +2175,7 @@ function renderMomentum(data) {
     const col=pct===null?'var(--muted)':pct>=0?'var(--emerald)':'var(--rose)';
     return `<div class="card mom-card" style="animation:fadeUp .4s ease both">
       <div class="mom-label">${label}</div>
-      <div class="mom-val ${cls}">${pct!==null?`${arrow} ${Math.abs(pct).toFixed(1)}%`:'—'}</div>
+      <div class="mom-val ${cls}">${pct!==null?`${arrow} ${Math.abs(pct).toFixed(2)}%`:'—'}</div>
       <div class="mom-sub"><span style="color:${col};font-weight:700">${fmtFn(cur)}</span> <span style="color:var(--muted)">vs ${fmtFn(prev)}</span></div>
       <div class="mom-icon">${icon}</div></div>`;
   };
@@ -2295,7 +2292,7 @@ function renderHealthScores(data) {
       const created = new Date(createdDate + 'T00:00:00');
       const now = new Date();
       const storeAgeDays = Math.floor((now - created) / 86400000);
-      const storeAgeMonths = (storeAgeDays / 30.44).toFixed(1);
+      const storeAgeMonths = (storeAgeDays / 30.44).toFixed(2);
       storeAgeLabel = storeAgeDays < 60
         ? `${storeAgeDays} days old`
         : `${storeAgeMonths} months old`;
@@ -2501,10 +2498,10 @@ function renderSuggestions(data) {
       const pct = r2((lastMp-prevMp)/Math.abs(prevMp)*100);
       if (pct < -10) insights.push({ type:'warning', icon:'📉', title:`${lastM} is trailing ${prevM}`,
         body:`Profit is down vs last month. Check if any accounts have slowed, prices have dropped, or fees have increased.`,
-        metric:`${pct.toFixed(1)}% vs prior month` });
+        metric:`${pct.toFixed(2)}% vs prior month` });
       else if (pct > 10) insights.push({ type:'opportunity', icon:'🚀', title:`${lastM} is beating ${prevM}`,
         body:`You're running ahead of last month's pace. Keep momentum going — this is a good time to scale.`,
-        metric:`+${pct.toFixed(1)}% vs prior month` });
+        metric:`+${pct.toFixed(2)}% vs prior month` });
     }
   }
 
@@ -2521,7 +2518,7 @@ function renderSuggestions(data) {
     const top = personStats.reduce((a,b) => b.profit > a.profit ? b : a, personStats[0]);
     if (totalProfit > 0) {
       const share = r2(top.profit/totalProfit*100);
-      insights.push({ type:'info', icon:'🏆', title:`${top.p} drives ${share.toFixed(0)}% of profits`,
+      insights.push({ type:'info', icon:'🏆', title:`${top.p} drives ${share.toFixed(2)}% of profits`,
         body:`This is your highest-grossing account in the current period. ${share >= 60 ? 'Heavy concentration — consider growing other accounts to balance risk.' : 'Good contributor alongside your other accounts.'}`,
         metric:`${fmt$(top.profit)} of ${fmt$(totalProfit)} total` });
     }
@@ -2538,8 +2535,8 @@ function renderSuggestions(data) {
   if (profitDaysByPerson.length) {
     const best = profitDaysByPerson.sort((a,b)=>b.pct-a.pct)[0];
     insights.push({ type:'opportunity', icon:'🎯', title:`${best.p} is remarkably consistent`,
-      body:`This account has a profitable day ${best.pct.toFixed(0)}% of the time it's active — that's elite consistency. Reliable and low-risk.`,
-      metric:`${best.pct.toFixed(0)}% profitable days` });
+      body:`This account has a profitable day ${best.pct.toFixed(2)}% of the time it's active — that's elite consistency. Reliable and low-risk.`,
+      metric:`${best.pct.toFixed(2)}% profitable days` });
   }
 
 
@@ -3201,7 +3198,7 @@ function renderGrowthPage() {
         const barC   = i===0?'var(--green)': p.profitPer1k>=avgPer1k?'var(--indigo)':'var(--muted)';
         const tag    = p.profitPer1k >= avgPer1k*1.4 ? '<span style="background:rgba(16,185,129,.15);color:var(--green);font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">🚀 scale</span>'
                      : p.profitPer1k > 0 && p.profitPer1k <= avgPer1k*0.5 ? '<span style="background:rgba(239,68,68,.1);color:var(--red);font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px">⚠️ review</span>' : '';
-        const momT   = p.roll30MomPct !== null ? `<span style="font-size:10px;color:${p.roll30MomPct>=0?'var(--green)':'var(--red)'}">${p.roll30MomPct>=0?'↑':'↓'}${Math.abs(p.roll30MomPct).toFixed(0)}% profit (30d)</span>` : '';
+        const momT   = p.roll30MomPct !== null ? `<span style="font-size:10px;color:${p.roll30MomPct>=0?'var(--green)':'var(--red)'}">${p.roll30MomPct>=0?'↑':'↓'}${Math.abs(p.roll30MomPct).toFixed(2)}% profit (30d)</span>` : '';
         return `<div style="padding:10px 0;border-bottom:1px solid var(--card-border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
             <div style="display:flex;align-items:center;gap:6px">
@@ -3224,9 +3221,9 @@ function renderGrowthPage() {
           </div>
           ${(p.avgSalePrice>0||p.marginPct>0||p.sellThrough>0||p.daysSinceLastSale!==null||p.consistencyPct!==null) ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px;font-size:9px">
             ${p.avgSalePrice>0?`<span style="color:var(--muted)">avg sale ${fmt$(p.avgSalePrice)}</span>`:''}
-            ${p.marginPct>0?`<span style="color:${p.marginPct>=20?'var(--green)':p.marginPct>=10?'var(--amber)':'var(--red)'}">${p.marginPct.toFixed(0)}% margin</span>`:''}
+            ${p.marginPct>0?`<span style="color:${p.marginPct>=20?'var(--green)':p.marginPct>=10?'var(--amber)':'var(--red)'}">${p.marginPct.toFixed(2)}% margin</span>`:''}
             ${p.avgProfitPerSale>0?`<span style="color:var(--muted)">${fmt$(p.avgProfitPerSale)}/sale</span>`:''}
-            ${p.sellThrough>0?`<span style="color:${p.sellThrough>=0.5?'var(--green)':p.sellThrough>=0.2?'var(--indigo)':'var(--muted)'}">${(p.sellThrough*100).toFixed(0)}% sell-through</span>`:''}
+            ${p.sellThrough>0?`<span style="color:${p.sellThrough>=0.5?'var(--green)':p.sellThrough>=0.2?'var(--indigo)':'var(--muted)'}">${(p.sellThrough*100).toFixed(2)}% sell-through</span>`:''}
             ${p.daysSinceLastSale!==null?`<span style="color:${p.daysSinceLastSale>7?'var(--red)':p.daysSinceLastSale>3?'var(--amber)':'var(--green)'}">${p.daysSinceLastSale}d since sale</span>`:''}
             ${p.consistencyPct!==null?`<span style="color:${p.consistencyPct>=70?'var(--green)':p.consistencyPct>=40?'var(--amber)':'var(--red)'}">${p.consistencyPct}% active days (14d)</span>`:''}
             ${p.marginTrendPct!==null?`<span style="color:${p.marginTrendPct>=0?'var(--green)':'var(--red)'}">${p.marginTrendPct>=0?'↑':'↓'}margin/sale</span>`:''}
@@ -3282,13 +3279,13 @@ function renderGrowthPage() {
     const actualPace = p.actualPace14 !== null ? p.actualPace14 : goalPace;
     const momLabel   = p.momentum > 1.3 ? '↑ accelerating' : p.momentum < 0.7 ? '↓ slowing' : '→ steady';
     const paceNote   = p.actualPace14 !== null
-      ? `${actualPace.toFixed(1)}/day actual (14d avg) · ${momLabel} · goal: ${goalPace.toFixed(1)}/day`
-      : `${goalPace.toFixed(1)}/day goal pace (no history yet)`;
+      ? `${actualPace.toFixed(2)}/day actual (14d avg) · ${momLabel} · goal: ${goalPace.toFixed(2)}/day`
+      : `${goalPace.toFixed(2)}/day goal pace (no history yet)`;
     const paceColor  = p.momentum > 1.3 ? 'var(--green)' : p.momentum < 0.7 ? 'var(--red)' : p.actualPace14 !== null && p.actualPace14 >= goalPace * 0.85 ? 'var(--cyan)' : 'var(--amber)';
     // Order quality intel
     const intelBits = [];
     if (p.avgSalePrice > 0)      intelBits.push(`avg sale ${fmt$(p.avgSalePrice)}`);
-    if (p.marginPct > 0)         intelBits.push(`${p.marginPct.toFixed(0)}% margin`);
+    if (p.marginPct > 0)         intelBits.push(`${p.marginPct.toFixed(2)}% margin`);
     if (p.avgProfitPerSale > 0)  intelBits.push(`${fmt$(p.avgProfitPerSale)}/sale`);
     if (p.daysSinceLastSale !== null) {
       const dsl = p.daysSinceLastSale;
@@ -3306,7 +3303,7 @@ function renderGrowthPage() {
       intelBits.push(`<span style="color:var(--green)">↑ pace picking up</span>`);
     }
     if (p.marginTrendPct !== null && Math.abs(p.marginTrendPct) >= 10) {
-      intelBits.push(`<span style="color:${p.marginTrendPct>=0?'var(--green)':'var(--red)'}">${p.marginTrendPct>=0?'↑':'↓'}${Math.abs(p.marginTrendPct).toFixed(0)}% margin/sale (30d)</span>`);
+      intelBits.push(`<span style="color:${p.marginTrendPct>=0?'var(--green)':'var(--red)'}">${p.marginTrendPct>=0?'↑':'↓'}${Math.abs(p.marginTrendPct).toFixed(2)}% margin/sale (30d)</span>`);
     }
     return `<div class="card" style="padding:16px">
       <div style="font-weight:700;font-size:13px;margin-bottom:2px">${p.store}</div>
@@ -3365,7 +3362,7 @@ function renderGrowthPage() {
         ${has?`<div style="font-size:10px;color:${clr};margin-top:2px">${up?'+':''}${fmt$(delta)}</div>`:''}
         ${noData ? `<div style="font-size:9px;color:var(--amber);margin-top:2px">⚠ 0 transactions loaded — try refreshing</div>` : `<div style="font-size:9px;color:var(--muted);margin-top:1px">${p.recs.length} sales transactions loaded (all-time)</div>`}
       </div>
-      <div style="font-size:24px;font-weight:900;color:${clr}">${has?icon+Math.abs(p.roll30MomPct).toFixed(0)+'%':icon}</div>
+      <div style="font-size:24px;font-weight:900;color:${clr}">${has?icon+Math.abs(p.roll30MomPct).toFixed(2)+'%':icon}</div>
     </div>`;
   }).join('');
 
@@ -3565,7 +3562,7 @@ function renderGrowthPage() {
           </div>
         </div>` : ''}
         <div style="padding:6px;background:var(--glass);border-radius:6px;grid-column:1/-1">
-          <div style="color:var(--muted);font-size:9px;margin-bottom:2px">ETA at current pace (${p.effDaily.toFixed(0)}/day)</div>
+          <div style="color:var(--muted);font-size:9px;margin-bottom:2px">ETA at current pace (${p.effDaily.toFixed(2)}/day)</div>
           <div style="font-weight:700;color:var(--cyan)">${daysLeft !== null ? (daysLeft === 0 ? '✅ At target' : '~'+daysLeft+' days') : '—'}</div>
         </div>
       </div>
@@ -3653,9 +3650,9 @@ function renderGrowthPage() {
   if (!$('growth-account-grid')) { /* section removed */ } else $('growth-account-grid').innerHTML = all.map(p => {
     const pct  = Math.min(100,Math.round(p.current/p.target*100));
     const todC = p.todayN===null?'var(--muted)':p.todayN>=40?'var(--green)':'var(--amber)';
-    const velAvg = dailyHistory.length > 0 ? (p.histForStore/dailyHistory.length).toFixed(1) : '—';
+    const velAvg = dailyHistory.length > 0 ? (p.histForStore/dailyHistory.length).toFixed(2) : '—';
     const effRank = byEff.findIndex(b=>b.store===p.store)+1;
-    const momBadge = p.roll30MomPct!==null ? `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:${p.roll30MomPct>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.1)'};color:${p.roll30MomPct>=0?'var(--green)':'var(--red)'};">${p.roll30MomPct>=0?'↑':'↓'}${Math.abs(p.roll30MomPct).toFixed(0)}% profit (30d)</span>` : '';
+    const momBadge = p.roll30MomPct!==null ? `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:${p.roll30MomPct>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.1)'};color:${p.roll30MomPct>=0?'var(--green)':'var(--red)'};">${p.roll30MomPct>=0?'↑':'↓'}${Math.abs(p.roll30MomPct).toFixed(2)}% profit (30d)</span>` : '';
     return `<div class="growth-account-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
         <div>
@@ -3718,7 +3715,7 @@ function renderGrowthPage() {
     // Trend: is implied $/listing improving or falling?
     const trend = (imp7!==null && imp30!==null) ? r2((imp7-imp30)/imp30*100) : null;
     const trendColor = trend===null?'var(--muted)':trend>=10?'var(--green)':trend>=-10?'var(--amber)':'var(--red)';
-    const trendLabel = trend===null?'—':trend>=0?`↑${trend.toFixed(0)}% efficiency`:`↓${Math.abs(trend).toFixed(0)}% efficiency`;
+    const trendLabel = trend===null?'—':trend>=0?`↑${trend.toFixed(2)}% efficiency`:`↓${Math.abs(trend).toFixed(2)}% efficiency`;
 
     // Color the best implied rate
     const maxImp = Math.max(imp7||0, imp14||0, imp30||0);
@@ -4843,7 +4840,7 @@ function openAudit() {
         <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Total Rows Loaded</div>
              <div style="font-size:24px;font-weight:800;color:var(--cyan)">${grandRows.toLocaleString()}</div></div>
         <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Total Profit Loaded</div>
-             <div style="font-size:24px;font-weight:800;color:var(--green)">$${grandProfit.toFixed(2)}</div></div>
+             <div style="font-size:24px;font-weight:800;color:var(--green)">${fmt$(grandProfit)}</div></div>
         <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Truly Failed</div>
              <div style="font-size:24px;font-weight:800;color:${errors.length?'var(--rose)':'var(--green)'}">${errors.length}</div></div>
         <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Served from Cache</div>
@@ -4890,7 +4887,7 @@ function openAudit() {
     html += `<tr style="background:rgba(255,255,255,.04)">
       <td style="padding:8px;font-weight:700;color:var(--text)" colspan="2">${person}</td>
       <td style="padding:8px;text-align:right;color:var(--cyan)">${pRows}</td>
-      <td style="padding:8px;text-align:right;color:var(--green)">$${pProfit.toFixed(2)}</td>
+      <td style="padding:8px;text-align:right;color:var(--green)">${fmt$(pProfit)}</td>
       <td></td></tr>`;
     tabs.forEach(t => {
       const ok = t.status === 'ok';
@@ -4898,7 +4895,7 @@ function openAudit() {
         <td style="padding:5px 8px;color:var(--muted)"></td>
         <td style="padding:5px 8px;color:var(--text2)">${t.tab}</td>
         <td style="padding:5px 8px;text-align:right;color:var(--muted)">${t.rows}</td>
-        <td style="padding:5px 8px;text-align:right;color:var(--muted)">$${t.profit.toFixed(2)}</td>
+        <td style="padding:5px 8px;text-align:right;color:var(--muted)">${fmt$(t.profit)}</td>
         <td style="padding:5px 8px;text-align:center">${t.status==='ok'?'✅':t.status==='cached'?'⚡':t.status==='skipped'?'⏭️':'❌'}</td></tr>`;
     });
   });
@@ -5104,7 +5101,7 @@ function renderClientView(personName, opts = {}) {
     : momPct >= 0 ? 'var(--green)' : 'var(--cyan)';
   const focusItems = [
     momPct !== null && momPct >= 25
-      ? `Momentum is strong: ${latestLabel || 'this month'} earnings are up ${Math.abs(momPct).toFixed(0)}% from ${prevMo}.`
+      ? `Momentum is strong: ${latestLabel || 'this month'} earnings are up ${Math.abs(momPct).toFixed(2)}% from ${prevMo}.`
       : momPct !== null && momPct >= 0
         ? `${latestLabel || 'This month'} is trending higher than ${prevMo}, with your share continuing to grow.`
         : `This store is still early in the month, with ${myAllTime > 0 ? fmt$(myAllTime) : 'earnings'} already built all-time.`,
@@ -5112,13 +5109,13 @@ function renderClientView(personName, opts = {}) {
       ? `The store is at ${current.toLocaleString()} active listings, with a clear path toward the ${target.toLocaleString()} listing goal.`
       : `The listing goal is in great shape, which gives the store more room to compound earnings.`,
     latestMargin > 0
-      ? `${latestLabel || 'The latest month'} has produced ${fmt$(latestRev)} in store revenue at a ${latestMargin.toFixed(1)}% margin.`
+      ? `${latestLabel || 'The latest month'} has produced ${fmt$(latestRev)} in store revenue at a ${latestMargin.toFixed(2)}% margin.`
       : `Revenue and margin highlights will fill in as the newest month develops.`,
     bestMonth
       ? `Best month so far: ${bestMonth.month} at ${fmt$(bestMonth.share)} for your share.`
       : `The store is building its first performance baseline.`
   ];
-  const kpiDelta = val => val === null ? '' : `<span style="font-size:11px;font-weight:800;color:${val>=0?'var(--green)':'var(--rose)'}">${val>=0?'↑':'↓'} ${Math.abs(val).toFixed(0)}%</span>`;
+  const kpiDelta = val => val === null ? '' : `<span style="font-size:11px;font-weight:800;color:${val>=0?'var(--green)':'var(--rose)'}">${val>=0?'↑':'↓'} ${Math.abs(val).toFixed(2)}%</span>`;
 
   // Scale calculator max
   const calcMax = Math.max(target * 2, current * 3, 10000);
@@ -5216,7 +5213,7 @@ function renderClientView(personName, opts = {}) {
               <div style="font-size:13px;color:var(--muted);font-weight:700;margin-bottom:4px">Your current month take-home</div>
               <div style="font-size:clamp(42px,7vw,76px);line-height:.95;font-weight:1000;color:var(--green);letter-spacing:0">${myLatest > 0 ? fmt$(myLatest) : '—'}</div>
               <div style="margin-top:12px;font-size:15px;color:var(--text2);max-width:620px">
-                ${latestLabel || 'This month'} is at <b style="color:var(--text)">${fmt$(latestProfit)}</b> store profit, which makes your share <b style="color:var(--green)">${myLatest > 0 ? fmt$(myLatest) : '—'}</b>${momPct !== null ? `, ${momPct >= 0 ? 'up' : 'down'} <b style="color:${momPct>=0?'var(--green)':'var(--rose)'}">${Math.abs(momPct).toFixed(0)}%</b> from ${prevMo}` : ''}.
+                ${latestLabel || 'This month'} is at <b style="color:var(--text)">${fmt$(latestProfit)}</b> store profit, which makes your share <b style="color:var(--green)">${myLatest > 0 ? fmt$(myLatest) : '—'}</b>${momPct !== null ? `, ${momPct >= 0 ? 'up' : 'down'} <b style="color:${momPct>=0?'var(--green)':'var(--rose)'}">${Math.abs(momPct).toFixed(2)}%</b> from ${prevMo}` : ''}.
               </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:10px">
@@ -5241,7 +5238,7 @@ function renderClientView(personName, opts = {}) {
             <div style="font-size:36px;font-weight:900;color:var(--green)">${myLatest > 0 ? fmt$(myLatest) : '—'}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">your ${ownerPctLabel} of ${latestMo} store profit</div>
             ${momPct !== null ? `<div style="margin-top:8px;display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${momPct>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.1)'};color:${momPct>=0?'var(--green)':'var(--rose)'}">
-              ${momPct>=0?'↑':'↓'} ${Math.abs(momPct).toFixed(0)}% vs ${prevMo}
+              ${momPct>=0?'↑':'↓'} ${Math.abs(momPct).toFixed(2)}% vs ${prevMo}
             </div>` : ''}
           </div>
           <div class="card" style="padding:20px">
@@ -5257,7 +5254,7 @@ function renderClientView(personName, opts = {}) {
           <div class="card" style="padding:20px">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Store Revenue</div>
             <div style="font-size:36px;font-weight:900;color:var(--indigo)">${latestRev > 0 ? fmt$(latestRev) : '—'}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:4px;display:flex;justify-content:space-between;gap:8px"><span>${latestMargin.toFixed(1)}% margin</span>${kpiDelta(revPct)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;display:flex;justify-content:space-between;gap:8px"><span>${latestMargin.toFixed(2)}% margin</span>${kpiDelta(revPct)}</div>
           </div>
           ${myProjNow !== null ? `<div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(139,92,246,.1),rgba(99,102,241,.06));border:1px solid rgba(139,92,246,.2)">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Projected Monthly</div>
@@ -5960,7 +5957,7 @@ function openWeeklyWrap() {
     return `<div class="wrap-day-col">
       <div class="wrap-day-label">${label}</div>
       <div class="wrap-day-bar-wrap"><div class="wrap-day-bar" style="height:${h}px;background:${col}"></div></div>
-      <div class="wrap-day-val" style="color:${col}">${val>=0?'+':''}${(val/1000).toFixed(1)}k</div>
+      <div class="wrap-day-val" style="color:${col}">${val>=0?'+':''}${fmt$(val)}</div>
     </div>`;
   }).join('');
 
@@ -5972,7 +5969,7 @@ function openWeeklyWrap() {
 
   // Delta badge
   const deltaBadge = profitDelta === null ? '' :
-    `<div class="wrap-delta ${profitDelta>=0?'up':'down'}">${profitDelta>=0?'↑':'↓'} ${Math.abs(profitDelta).toFixed(1)}% vs prior week</div>`;
+    `<div class="wrap-delta ${profitDelta>=0?'up':'down'}">${profitDelta>=0?'↑':'↓'} ${Math.abs(profitDelta).toFixed(2)}% vs prior week</div>`;
 
   content.innerHTML = `
     <div class="wrap-header">

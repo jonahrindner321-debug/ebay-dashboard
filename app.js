@@ -2,6 +2,7 @@
 const SHEETS = {
   '1_81VM_63ZT_p5LEGkvEU2MBxbc4RBWzmd_RKgXL_icA': 'Russell',
   '1k-GFkk-jFhnrD2v-qIEdV0zyy0kOpvbIZZ7NbppZTgQ': 'Johna',
+  '1IVGp49ly5EAiyEv0_qFLqcE_giK8Lz1pt5znq-6xzzY': 'Johna',
   '1nuJojKqj9b_a2RSKn7huV6vTr_62E7707uw1wBh0XDA': 'Dolo LLC',
   '1xsMWqwL381VcGxH5_yhWx_SKixLd_ojievrfqamBB5M': 'John Slop',
   '1wH5s8qdr0-imdK623Tdtu-UgKvRMELD_3Gd7OS2tNmQ': 'Jacob',
@@ -2631,9 +2632,8 @@ function setChannelFilter(ch) {
 }
 
 function updateChannelSwitcherVisibility() {
-  const hasTiktok = RAW.some(r => r.channel === 'tiktok');
   const sw = $('channel-switcher');
-  if (sw) sw.style.display = hasTiktok ? 'flex' : 'none';
+  if (sw) sw.style.display = 'flex';
 }
 
 function renderGrowthPage() {

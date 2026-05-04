@@ -891,6 +891,41 @@ function parseAmazonFbmValues(values, person = 'Johna') {
 
 // ─── INTRO / TRANSITION ANIMATIONS ────────────────────────────────────────
 let _introDismissed = false;
+let _introBanterTimer = null;
+let _introBanterIdx = 0;
+const INTRO_BANTER = [
+  'Combobulating money moves…',
+  'Adding the secret sauce…',
+  'Counting tiny wins loudly…',
+  'Warming up the profit telescope…',
+  'Untangling store spaghetti…',
+  'Teaching charts to behave…',
+  'Finding the good stuff…',
+  'Polishing the money mirror…',
+  'Checking which stores woke up rich…',
+  'Making the numbers less mysterious…',
+];
+
+function _introSetBanter(text) {
+  const el = $('intro-banter');
+  if (!el) return;
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(3px)';
+  setTimeout(() => {
+    el.textContent = text;
+    el.style.opacity = '1';
+    el.style.transform = 'translateY(0)';
+  }, 180);
+}
+
+function _introStartBanter() {
+  if (_introBanterTimer) return;
+  _introSetBanter(INTRO_BANTER[0]);
+  _introBanterTimer = setInterval(() => {
+    _introBanterIdx = (_introBanterIdx + 1) % INTRO_BANTER.length;
+    _introSetBanter(INTRO_BANTER[_introBanterIdx]);
+  }, 2400);
+}
 
 // Stage helpers — 4 stages: connect, discover, load, render
 const _introStages = ['connect', 'discover', 'load', 'render'];
@@ -928,6 +963,10 @@ function _introSetSub(text) {
 function dismissIntro() {
   if (_introDismissed) return;
   _introDismissed = true;
+  if (_introBanterTimer) {
+    clearInterval(_introBanterTimer);
+    _introBanterTimer = null;
+  }
   const ov = $('intro-overlay');
   if (!ov) return;
   // Flash "Ready" stage then dismiss
@@ -991,6 +1030,7 @@ async function loadAll() {
   RAW = []; doneJobs = 0;
 
   // Stage 1: Connect
+  _introStartBanter();
   _introSetStage('connect');
   _introSetSub('Connecting to Google Sheets…');
   _introSetProgress(0, 1, '');

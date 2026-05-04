@@ -22,6 +22,14 @@ const AMAZON_FBM_SOURCES = [
     channel: 'amazon_fbm',
   },
 ];
+
+const TIKTOK_SOURCES = [
+  {
+    id: '1IVGp49ly5EAiyEv0_qFLqcE_giK8Lz1pt5znq-6xzzY',
+    person: 'Johna',
+    channel: 'tiktok',
+  },
+];
 const CHANNEL_KEYS = ['all', 'ebay', 'tiktok', 'amazon_fbm'];
 const CHANNEL_STYLE = {
   all:        { label: 'All',        title: 'All-Time',      color: 'var(--indigo)', muted: 'var(--muted)', icon: '📦' },
@@ -997,8 +1005,8 @@ async function loadAll() {
 
   // Stage 2: Discover tabs
   _introSetStage('discover');
-  _introSetSub(`Discovering ${ids.length} store${ids.length !== 1 ? 's' : ''}…`);
-  _introSetProgress(0, ids.length, '');
+  _introSetSub(`Discovering ${ids.length} eBay stores, TikTok, and Amazon FBM…`);
+  _introSetProgress(0, ids.length + TIKTOK_SOURCES.length, '');
 
   const delay = ms => new Promise(r => setTimeout(r, ms));
   const tabLists = [];
@@ -1006,9 +1014,18 @@ async function loadAll() {
     if (i > 0) await delay(400);
     const list = await getDataTabs(ids[i]).catch(e => { tabErrors.push({id: ids[i], e: e.message}); return []; });
     tabLists.push(list);
-    _introSetProgress(i + 1, ids.length, `${i + 1} / ${ids.length} stores`);
+    _introSetProgress(i + 1, ids.length + TIKTOK_SOURCES.length, `${i + 1} / ${ids.length} eBay stores`);
   }
   ids.forEach((id,i)=>tabLists[i].forEach(tab=>allSources.push({id,person:SHEETS[id],tab})));
+  for (let i = 0; i < TIKTOK_SOURCES.length; i++) {
+    const src = TIKTOK_SOURCES[i];
+    if (ids.length || i > 0) await delay(400);
+    const list = await getDataTabs(src.id).catch(e => { tabErrors.push({ id: src.id, e: e.message, sourceType: 'tiktok' }); return []; });
+    list
+      .filter(tab => /tik.?tok/i.test(tab))
+      .forEach(tab => allSources.push({ ...src, tab, sourceType: 'tiktok' }));
+    _introSetProgress(ids.length + i + 1, ids.length + TIKTOK_SOURCES.length, `${ids.length} eBay stores · ${i + 1} TikTok source${i ? 's' : ''}`);
+  }
   AMAZON_FBM_SOURCES.forEach(src => allSources.push({ ...src, sourceType: 'amazon_fbm' }));
 
   // Fetch sheet creation dates from Drive API (fire and forget — non-blocking)
@@ -1074,6 +1091,12 @@ async function loadAll() {
           RAW.push(...parsed);
           const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
           loadAudit.push({ person: src.person, tab: 'Amazon FBM / ' + src.tab, rows: parsed.length, profit: tabProfit, status: parsed.length > 0 ? 'ok' : 'skipped', channel: 'amazon_fbm' });
+        } else if (src.sourceType === 'tiktok') {
+          const parsed = parseValues(values, src.person, normSpecial(src.tab), 'tiktok');
+          _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
+          RAW.push(...parsed);
+          const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
+          loadAudit.push({ person: src.person, tab: 'TikTok / ' + src.tab, rows: parsed.length, profit: tabProfit, status: parsed.length > 0 ? 'ok' : 'skipped', channel: 'tiktok' });
         } else if (isExp) {
           const expRows = parseExpenseTab(values, src.person);
           _expDataCache[cacheKey] = { records: expRows, ts: Date.now() };
@@ -2888,7 +2911,7 @@ function setChannelFilter(ch) {
 }
 
 function updateChannelSwitcherVisibility() {
-  const hasAltChannel = RAW.some(r => r.channel && r.channel !== 'ebay');
+  const hasAltChannel = TIKTOK_SOURCES.length > 0 || AMAZON_FBM_SOURCES.length > 0 || RAW.some(r => r.channel && r.channel !== 'ebay');
   const sw = $('channel-switcher');
   if (sw) sw.style.display = hasAltChannel ? 'flex' : 'none';
 }
@@ -3166,7 +3189,7 @@ function renderGrowthPage() {
     </div>` : ''}`;
 
   // Show/hide channel toggle based on whether non-eBay data exists in RAW
-  const hasAltChannelData = RAW.some(r => r.channel && r.channel !== 'ebay');
+  const hasAltChannelData = TIKTOK_SOURCES.length > 0 || AMAZON_FBM_SOURCES.length > 0 || RAW.some(r => r.channel && r.channel !== 'ebay');
   const toggleRow = $('channel-toggle-row');
   if (toggleRow) {
     toggleRow.style.display = hasAltChannelData ? 'flex' : 'none';

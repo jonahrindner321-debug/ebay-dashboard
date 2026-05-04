@@ -567,12 +567,10 @@
       content: "";
       position: absolute; inset: -2px;
       background:
-        linear-gradient(115deg, transparent 0 34%, rgba(255,255,255,.08) 46%, transparent 58% 100%),
-        repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 92px),
-        repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 1px, transparent 1px 78px);
+        linear-gradient(115deg, transparent 0 38%, rgba(255,255,255,.06) 48%, transparent 58% 100%);
       mask-image: radial-gradient(circle at center, #000 0 58%, transparent 82%);
-      opacity: .75;
-      animation: introGridDrift 12s linear infinite;
+      opacity: .55;
+      animation: introGlassSweepBg 7s ease-in-out infinite;
     }
     #intro-overlay::after {
       content: "";
@@ -604,17 +602,9 @@
       top: 48%; left: 9%;
       animation: introSheetThree 16s ease-in-out infinite;
     }
-    .intro-scan {
-      position: absolute; inset: 0;
-      background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,.045) 49%, rgba(255,255,255,.09) 50%, transparent 52%);
-      opacity: .55;
-      transform: translateY(-100%);
-      animation: introScan 4.8s ease-in-out infinite;
-      pointer-events: none;
-    }
     .intro-card {
       width: min(520px, calc(100vw - 36px));
-      padding: 28px;
+      padding: 30px 28px 26px;
       border-radius: 28px;
       background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
       border: 1px solid rgba(255,255,255,.18);
@@ -638,6 +628,15 @@
       display: flex; align-items: center; justify-content: center; gap: 16px;
       position: relative; z-index: 1;
     }
+    .intro-core {
+      width: 96px;
+      height: 96px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
     #intro-logo-wrap {
       width: 76px; height: 76px; border-radius: 24px;
       background: linear-gradient(135deg, rgba(99,102,241,.96), rgba(34,211,238,.74));
@@ -647,6 +646,26 @@
       animation: introLogoPop .75s cubic-bezier(.34,1.56,.64,1) .15s both, introLogoFloat 3.5s ease-in-out infinite .9s;
       position: relative; z-index: 1;
     }
+    .intro-chip {
+      position: absolute;
+      width: 26px;
+      height: 26px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 950;
+      background: rgba(255,255,255,.13);
+      border: 1px solid rgba(255,255,255,.18);
+      box-shadow: 0 10px 22px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.18);
+      z-index: 2;
+      animation: introChipOrbit 4.5s ease-in-out infinite;
+    }
+    .intro-chip-1 { left: 0; top: 12px; color:#86efac; animation-delay: 0s; }
+    .intro-chip-2 { right: 2px; top: 2px; color:#fbbf24; animation-delay: .45s; }
+    .intro-chip-3 { right: 4px; bottom: 6px; color:#67e8f9; animation-delay: .9s; }
     #intro-logo-wrap::after {
       content: "";
       position: absolute; inset: -8px; border-radius: 30px;
@@ -683,20 +702,21 @@
       animation: introSlideUp .5s ease .46s both;
     }
     #intro-sub {
-      min-height: 20px;
-      font-size: 14px; color: rgba(226,232,240,.74);
+      display: none;
+      min-height: 0;
+      font-size: 0;
       animation: introSlideUp .5s ease .48s both;
       position: relative; z-index: 1;
       transition: opacity .15s ease;
       text-align: center;
     }
     #intro-banter {
-      min-height: 18px;
-      margin-top: -10px;
+      min-height: 24px;
+      margin-top: -4px;
       color: rgba(103,232,249,.78);
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: .02em;
+      font-size: 15px;
+      font-weight: 850;
+      letter-spacing: 0;
       position: relative; z-index: 1;
       text-align: center;
       transition: opacity .18s ease, transform .18s ease;
@@ -769,68 +789,6 @@
       transition: opacity .2s;
     }
 
-    .intro-source-grid {
-      width: 100%;
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
-      position: relative; z-index: 1;
-      animation: introSlideUp .5s ease .7s both;
-    }
-    .intro-source {
-      min-width: 0;
-      padding: 9px 10px;
-      border-radius: 999px;
-      background: rgba(255,255,255,.075);
-      border: 1px solid rgba(255,255,255,.11);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
-      animation: introSourcePulse 2.5s ease-in-out infinite;
-      display: flex; align-items: center; justify-content: center; gap: 7px;
-    }
-    .intro-source:nth-child(2) { animation-delay: .2s; }
-    .intro-source:nth-child(3) { animation-delay: .4s; }
-    .intro-source:nth-child(4) { animation-delay: .6s; }
-    .intro-source span {
-      display: block;
-      color: rgba(248,250,252,.86);
-      font-size: 11px;
-      font-weight: 850;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .intro-source::before {
-      content: "";
-      width: 6px; height: 6px; border-radius: 999px;
-      background: linear-gradient(135deg, #34d399, #67e8f9);
-      box-shadow: 0 0 10px rgba(103,232,249,.48);
-      flex: 0 0 auto;
-    }
-    .intro-stream {
-      width: 100%;
-      height: 34px;
-      position: relative;
-      z-index: 1;
-      overflow: hidden;
-      border-radius: 14px;
-      background: rgba(8,13,24,.34);
-      border: 1px solid rgba(255,255,255,.08);
-    }
-    .intro-stream span {
-      position: absolute;
-      left: -30%;
-      width: 42%;
-      height: 2px;
-      border-radius: 999px;
-      background: linear-gradient(90deg, transparent, rgba(103,232,249,.88), rgba(52,211,153,.7), transparent);
-      animation: introStreamMove 2.2s linear infinite;
-    }
-    .intro-stream span:nth-child(1) { top: 7px;  animation-delay: 0s; }
-    .intro-stream span:nth-child(2) { top: 13px; animation-delay: .35s; background: linear-gradient(90deg, transparent, rgba(167,139,250,.82), transparent); }
-    .intro-stream span:nth-child(3) { top: 19px; animation-delay: .7s; }
-    .intro-stream span:nth-child(4) { top: 25px; animation-delay: 1.05s; background: linear-gradient(90deg, transparent, rgba(251,191,36,.72), transparent); }
-    .intro-stream span:nth-child(5) { top: 30px; animation-delay: 1.4s; opacity: .7; }
-
     #intro-dots {
       display: flex; gap: 10px; margin-top: 2px;
       animation: introSlideUp .5s ease .75s both;
@@ -867,12 +825,11 @@
     @keyframes introRing { 0% { opacity:.8; transform:scale(.82); } 100% { opacity:0; transform:scale(1.32); } }
     @keyframes introSlideUp { from { opacity:0; transform:translateY(22px); } to { opacity:1; transform:translateY(0); } }
     @keyframes introDotPulse { 0%,100% { transform:scale(1); opacity:.3; } 50% { transform:scale(1.7); opacity:1; } }
-    @keyframes introGridDrift { from { transform:translate3d(0,0,0); } to { transform:translate3d(92px,78px,0); } }
+    @keyframes introGlassSweepBg { 0%,35% { transform:translateX(-45%); } 75%,100% { transform:translateX(45%); } }
     @keyframes introScan { 0%, 18% { transform:translateY(-100%); opacity:0; } 32% { opacity:.55; } 62% { opacity:.25; } 100% { transform:translateY(100%); opacity:0; } }
     @keyframes introGlassSweep { 0%, 35% { transform:translateX(-130%); } 70%, 100% { transform:translateX(130%); } }
     @keyframes introProgressShine { from { transform:translateX(-100%); } to { transform:translateX(100%); } }
-    @keyframes introSourcePulse { 0%,100% { border-color:rgba(255,255,255,.1); transform:translateY(0); } 50% { border-color:rgba(103,232,249,.26); transform:translateY(-2px); } }
-    @keyframes introStreamMove { from { transform:translateX(0); } to { transform:translateX(330%); } }
+    @keyframes introChipOrbit { 0%,100% { transform:translateY(0) scale(1); opacity:.72; } 50% { transform:translateY(-7px) scale(1.08); opacity:1; } }
     @keyframes introSheetOne { 0%,100%{transform:translate(0,0) rotate(0deg)} 50%{transform:translate(-35px,45px) rotate(8deg)} }
     @keyframes introSheetTwo { 0%,100%{transform:translate(0,0) rotate(0deg)} 50%{transform:translate(45px,-30px) rotate(-7deg)} }
     @keyframes introSheetThree { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(35px,18px) scale(1.08)} }

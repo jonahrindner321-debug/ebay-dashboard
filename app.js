@@ -984,10 +984,7 @@ function _introSetProgress(done, total, label) {
 }
 function _introSetSub(text) {
   const el = $('intro-sub');
-  if (el) {
-    el.style.opacity = '0';
-    setTimeout(() => { el.textContent = text; el.style.opacity = '1'; }, 150);
-  }
+  if (el) el.textContent = text || '';
 }
 
 function dismissIntro() {
@@ -1001,7 +998,8 @@ function dismissIntro() {
   if (!ov) return;
   // Flash "Ready" stage then dismiss
   _introSetStage('render');
-  _introSetSub('All set!');
+  _introSetBanter('All set. Let’s make money moves.');
+  _introSetSub('');
   _introSetProgress(1, 1, '');
   setTimeout(() => {
     ov.classList.add('out');
@@ -1062,7 +1060,7 @@ async function loadAll() {
   // Stage 1: Connect
   _introStartBanter();
   _introSetStage('connect');
-  _introSetSub('Connecting to Google Sheets…');
+  _introSetSub('');
   _introSetProgress(0, 1, '');
 
   // Clear accumulated state so refreshes don't double-count
@@ -1075,7 +1073,7 @@ async function loadAll() {
 
   // Stage 2: Discover tabs
   _introSetStage('discover');
-  _introSetSub(`Discovering ${ids.length} eBay stores, TikTok, and Amazon FBM…`);
+  _introSetSub('');
   _introSetProgress(0, ids.length + TIKTOK_SOURCES.length, '');
 
   const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -1137,7 +1135,7 @@ async function loadAll() {
   setProgress(0, totalJobs);
   setStatus('loading', `Fetching 0 / ${totalJobs}…`);
   _introSetStage('load');
-  _introSetSub('Loading sales data…');
+  _introSetSub('');
   _introSetProgress(0, totalJobs, `0 / ${totalJobs} tabs`);
 
   // Reset safety timer now that we know tab count — give 1s per tab + 15s buffer
@@ -1207,7 +1205,7 @@ async function loadAll() {
         setProgress(doneJobs, totalJobs);
         setStatus('loading', `Fetching ${doneJobs} / ${totalJobs}…`);
         _introSetProgress(doneJobs, totalJobs, `${doneJobs} / ${totalJobs} tabs`);
-        if (doneJobs === Math.floor(totalJobs / 2)) _introSetSub('Crunching numbers…');
+        if (doneJobs === Math.floor(totalJobs / 2)) _introSetSub('');
       }
     }));
     if (i + BATCH < allSources.length) await delay(500);
@@ -1221,7 +1219,7 @@ async function loadAll() {
   if (RAW.length) {
     // Stage 4: Render
     _introSetStage('render');
-    _introSetSub(`${RAW.length.toLocaleString()} records ready`);
+    _introSetSub('');
     _introSetProgress(1, 1, '');
 
     setStatus('live', '● LIVE');

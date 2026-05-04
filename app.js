@@ -904,6 +904,36 @@ const INTRO_BANTER = [
   'Polishing the money mirror…',
   'Checking which stores woke up rich…',
   'Making the numbers less mysterious…',
+  'Rounding up the sales receipts…',
+  'Asking every tab what it knows…',
+  'Negotiating with spreadsheet gravity…',
+  'Sorting the chaos into snacks…',
+  'Looking for sneaky profit pockets…',
+  'Dusting off the dashboard crystal ball…',
+  'Stacking the little wins into big ones…',
+  'Making eBay, TikTok, and FBM shake hands…',
+  'Checking the money weather…',
+  'Turning tab soup into strategy…',
+  'Finding stores with main character energy…',
+  'Giving the charts a quick pep talk…',
+  'Measuring the sauce viscosity…',
+  'Separating signal from spreadsheet confetti…',
+  'Loading the owner brain…',
+  'Calibrating the profit compass…',
+  'Making sure the math is not being weird…',
+  'Collecting receipts, respectfully…',
+  'Looking for “oh wait that’s good” moments…',
+  'Sharpening the growth goggles…',
+  'Checking who carried the month…',
+  'Preparing the tiny scoreboard parade…',
+  'Finding the stores that deserve more love…',
+  'Turning rows into decisions…',
+  'Letting the tabs finish yapping…',
+  'Running the “does this make money?” test…',
+  'Assembling the command center…',
+  'Making the data sit up straight…',
+  'Calculating vibes per sale…',
+  'Looking for Russell/Armando behavior…',
 ];
 
 function _introSetBanter(text) {
@@ -924,7 +954,7 @@ function _introStartBanter() {
   _introBanterTimer = setInterval(() => {
     _introBanterIdx = (_introBanterIdx + 1) % INTRO_BANTER.length;
     _introSetBanter(INTRO_BANTER[_introBanterIdx]);
-  }, 2400);
+  }, 1900);
 }
 
 // Stage helpers — 4 stages: connect, discover, load, render

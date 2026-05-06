@@ -653,7 +653,7 @@ async function _googleDirect(type, { id, tab }) {
   let url;
   if (type === 'tabs')   url = `https://sheets.googleapis.com/v4/spreadsheets/${id}?key=${API_KEY}&fields=sheets.properties(title,sheetType)`;
   if (type === 'values') url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(tab)}!A:Z?key=${API_KEY}`;
-  if (type === 'drive')  url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime`;
+  if (type === 'drive')  url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime,modifiedTime`;
   if (type === 'meta')   url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/_meta!A1?key=${API_KEY}`;
   return apiFetch(url);
 }
@@ -1112,6 +1112,18 @@ async function loadAll() {
       }
     } catch(e) { /* ignore */ }
   }));
+  Promise.all([
+    ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM' })),
+    ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}` })),
+  ].map(async src => {
+    try {
+      const data = await googleFetch('drive', { id: src.id });
+      if (data.modifiedTime) SHEET_MODIFIED[src.label] = data.modifiedTime;
+    } catch(e) { /* ignore */ }
+  })).then(() => {
+    renderSheetActivity();
+    if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
+  }).catch(() => {});
 
   // Fetch last-edit timestamps from _meta!A1 — staggered to avoid 429
   (async () => {
@@ -1123,7 +1135,20 @@ async function loadAll() {
         if (val) SHEET_MODIFIED[SHEETS[ids[i]]] = val;
       } catch(e) { /* _meta tab not yet created */ }
     }
+    const externalMeta = [
+      ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM' })),
+      ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}` })),
+    ];
+    for (let i = 0; i < externalMeta.length; i++) {
+      if (ids.length || i > 0) await delay(400);
+      try {
+        const data = await googleFetch('meta', { id: externalMeta[i].id });
+        const val = data.values && data.values[0] && data.values[0][0];
+        if (val) SHEET_MODIFIED[externalMeta[i].label] = val;
+      } catch(e) { /* _meta tab not yet created */ }
+    }
     renderSheetActivity();
+    if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
   })();
 
   loadListingTracker();
@@ -1291,6 +1316,8 @@ function clearDates() {
 }
 function applyFilters() {
   const d = filtered();
+  renderAmazonWorkflow(d);
+  renderSheetActivity();
   renderSplitSummary(d);
   renderGoalTracker(d);
   renderKPIs(d);
@@ -1935,8 +1962,216 @@ function renderLeaderboard(data) {
 }
 
 // ─── TABLE ─────────────────────────────────────────────────────────────────
+function escHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function amazonStage(row) {
+  const status = String(row.status || '').trim();
+  const tracking = String(row.tracking || '').trim();
+  if (tracking) return { label: 'Tracking added', color: 'var(--green)', cls: 'ok' };
+  if (/label\s*shared/i.test(status)) return { label: 'Label shared', color: 'var(--cyan)', cls: 'ok' };
+  if (status) return { label: status, color: 'var(--amber)', cls: 'warn' };
+  return { label: 'Needs tracking', color: 'var(--rose)', cls: 'risk' };
+}
+
+function accountSummaryTableMarkup() {
+  return `<table>
+    <thead>
+      <tr>
+        <th onclick="sortBy('rank')">#</th>
+        <th onclick="sortBy('person')">Account <span id="sh-person"></span></th>
+        <th onclick="sortBy('profit')">Profit <span id="sh-profit"></span></th>
+        <th onclick="sortBy('fee')">Fees <span id="sh-fee"></span></th>
+        <th onclick="sortBy('sales')">Sales <span id="sh-sales"></span></th>
+        <th onclick="sortBy('avg_sale')">Avg Sale <span id="sh-avg_sale"></span></th>
+        <th onclick="sortBy('avg_profit')">Avg Profit <span id="sh-avg_profit"></span></th>
+        <th onclick="sortBy('owner_take')" title="Store owner's cut">Owner Take <span id="sh-owner_take"></span></th>
+        <th onclick="sortBy('danian_take')" title="Operators take (Danian)">Danian Take <span id="sh-danian_take"></span></th>
+        <th onclick="sortBy('jr_take')" title="Jonah &amp; Russ take" style="color:var(--emerald)">J&amp;R Take <span id="sh-jr_take"></span></th>
+        <th title="Account notes">Notes</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>`;
+}
+
+function getAmazonWorkflowRows(data, search = '') {
+  const q = (search || '').toLowerCase();
+  return data
+    .filter(r => !q ||
+      [r.orderId, r.sku, r.product, r.status, r.tracking, r.address].some(v => String(v || '').toLowerCase().includes(q)))
+    .sort((a,b) => (b.date || '').localeCompare(a.date || '') || String(b.orderId || '').localeCompare(String(a.orderId || '')));
+}
+
+function getAmazonWorkflowStats(rows) {
+  const units = r2(rows.reduce((s,r)=>s+(r.sales || 1),0));
+  const revenue = r2(rows.reduce((s,r)=>s+r.price,0));
+  const fees = r2(rows.reduce((s,r)=>s+(r.amazonFee || r.fee || 0),0));
+  const payout = r2(rows.reduce((s,r)=>s+(r.amazonPayout || r.payout || 0),0));
+  const profit = r2(rows.reduce((s,r)=>s+(r.profit || 0),0));
+  const withTracking = rows.filter(r => String(r.tracking || '').trim()).length;
+  const labelShared = rows.filter(r => !String(r.tracking || '').trim() && /label\s*shared/i.test(String(r.status || ''))).length;
+  const inProgress = rows.filter(r => {
+    const status = String(r.status || '').trim();
+    return !String(r.tracking || '').trim() && status && !/label\s*shared|needs?\s*tracking/i.test(status);
+  }).length;
+  const needsTracking = rows.filter(r => {
+    const status = String(r.status || '').trim();
+    return !String(r.tracking || '').trim() && (!status || /needs?\s*tracking/i.test(status));
+  }).length;
+  const latestOrderDate = rows.map(r => r.date).filter(Boolean).sort().pop();
+  const lastEdit = SHEET_MODIFIED['Amazon FBM'];
+  const lastEditLabel = lastEdit ? (() => {
+    const hrs = (Date.now() - new Date(lastEdit).getTime()) / 3600000;
+    return hrs < 1 ? 'just now' : hrs < 24 ? `${Math.floor(hrs)}h ago` : `${Math.floor(hrs / 24)}d ago`;
+  })() : 'not available';
+  return { units, revenue, fees, payout, profit, withTracking, labelShared, inProgress, needsTracking, latestOrderDate, lastEditLabel };
+}
+
+function amazonWorkflowTableMarkup(rows) {
+  return `
+    <div style="overflow:auto">
+      <table class="amazon-order-table">
+        <thead>
+          <tr>
+            <th>Date</th><th>Order</th><th>Item</th><th>Status</th><th>Tracking</th><th>Units</th><th>Sale</th><th>Fee</th><th>Payout</th><th>Profit</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(r => {
+            const st = amazonStage(r);
+            return `<tr>
+              <td>${r.date ? fmtDayLabel(r.date) : escHtml(r._dateRaw || '')}</td>
+              <td><strong>${escHtml(r.orderId || '—')}</strong><div style="font-size:10px;color:var(--muted)">${escHtml(r.sku || '')}</div></td>
+              <td style="min-width:220px"><div style="font-weight:650">${escHtml(r.product || '—')}</div><div style="font-size:10px;color:var(--muted);max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(r.address || '')}</div></td>
+              <td><span class="amazon-status ${st.cls}" style="color:${st.color}">${escHtml(st.label)}</span></td>
+              <td>${r.tracking ? `<span style="color:var(--green);font-weight:700">${escHtml(r.tracking)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+              <td>${fmtN(r.sales || 1)}</td>
+              <td>${fmt$(r.price)}</td>
+              <td style="color:var(--rose)">${fmt$(r.amazonFee || r.fee || 0)}</td>
+              <td style="color:var(--amber);font-weight:800">${fmt$(r.amazonPayout || r.payout || 0)}</td>
+              <td style="color:${r.profit > 0 ? 'var(--green)' : 'var(--muted)'}">${r.profit ? fmt$(r.profit) : 'pending'}</td>
+            </tr>`;
+          }).join('') : `<tr><td colspan="10" style="text-align:center;padding:28px;color:var(--muted)">No Amazon orders match this search</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function amazonBestSellersMarkup(rows) {
+  const products = {};
+  rows.forEach(r => {
+    const key = `${r.sku || ''}::${r.product || 'Unknown product'}`;
+    if (!products[key]) products[key] = { product: r.product || 'Unknown product', sku: r.sku || '', orders: 0, units: 0, revenue: 0, payout: 0, profit: 0, tracked: 0 };
+    products[key].orders += 1;
+    products[key].units = r2(products[key].units + (r.sales || 1));
+    products[key].revenue = r2(products[key].revenue + (r.price || 0));
+    products[key].payout = r2(products[key].payout + (r.amazonPayout || r.payout || 0));
+    products[key].profit = r2(products[key].profit + (r.profit || 0));
+    if (String(r.tracking || '').trim()) products[key].tracked += 1;
+  });
+  const best = Object.values(products)
+    .sort((a,b) => b.units - a.units || b.revenue - a.revenue || b.orders - a.orders)
+    .slice(0, 6);
+  return `
+    <div class="amazon-best-grid">
+      ${best.length ? best.map((p, i) => `
+        <div class="card amazon-best-card">
+          <div class="amazon-best-rank">#${i + 1}</div>
+          <div class="amazon-best-name">${escHtml(p.product)}</div>
+          <div class="amazon-best-sku">${escHtml(p.sku || 'No SKU')}</div>
+          <div class="amazon-best-stats">
+            <span>${fmtN(p.units)} units</span>
+            <span>${fmt$(p.revenue)} sales</span>
+            <span>${fmt$(p.payout)} payout</span>
+          </div>
+          <div class="amazon-best-foot">${p.tracked}/${p.orders} orders tracking added</div>
+        </div>`).join('') : '<div class="card amazon-best-card"><div class="amazon-best-name">No best sellers yet</div><div class="amazon-best-foot">Once FBM rows load, product winners show here.</div></div>'}
+    </div>`;
+}
+
+function renderAmazonWorkflow(data) {
+  const section = $('amazon-workflow-section');
+  if (!section) return;
+  if (CHANNEL_FILTER !== 'amazon_fbm') {
+    section.style.display = 'none';
+    return;
+  }
+  const search = ($('tbl-search')?.value || '').toLowerCase();
+  const rows = getAmazonWorkflowRows(data, search);
+  const s = getAmazonWorkflowStats(rows);
+  section.innerHTML = `
+    <div class="section-hdr">
+      <span class="section-title">📦 Amazon FBM Sheet Mirror</span>
+      <span style="font-size:11px;color:var(--muted)">2 step DS · ${s.latestOrderDate ? `latest order ${fmtDayLabel(s.latestOrderDate)}` : 'waiting on rows'}</span>
+    </div>
+    <div class="card amazon-workflow-card">
+    <div class="amazon-mirror-head">
+      <div class="amazon-metric"><span>Orders in sheet</span><strong>${fmtN(rows.length)}</strong></div>
+      <div class="amazon-metric"><span>Units</span><strong>${fmtN(s.units)}</strong></div>
+      <div class="amazon-metric"><span>Revenue</span><strong>${fmt$(s.revenue)}</strong></div>
+      <div class="amazon-metric"><span>Est. payout</span><strong>${fmt$(s.payout)}</strong></div>
+      <div class="amazon-metric"><span>Amazon fees</span><strong>${fmt$(s.fees)}</strong></div>
+      <div class="amazon-metric"><span>Sheet edit</span><strong>${s.lastEditLabel}</strong></div>
+    </div>
+    <div class="amazon-status-strip">
+      <span class="amazon-status ok">${s.withTracking} tracking added</span>
+      <span class="amazon-status ok">${s.labelShared} label shared</span>
+      <span class="amazon-status warn">${s.inProgress} in progress</span>
+      <span class="amazon-status risk">${s.needsTracking} need tracking</span>
+    </div>
+      ${amazonWorkflowTableMarkup(rows)}
+    </div>
+    <div class="section-hdr amazon-best-hdr">
+      <span class="section-title">🏅 Best Sellers</span>
+      <span style="font-size:11px;color:var(--muted)">ranked by units, then revenue</span>
+    </div>
+    ${amazonBestSellersMarkup(rows)}`;
+  section.style.display = 'block';
+}
+
+function renderAmazonOrderMirror(data, search) {
+  const title = document.querySelector('.tbl-section .section-title');
+  const card = document.querySelector('.tbl-card');
+  if (title) title.textContent = '📦 Amazon Order Mirror';
+  if (!card) return;
+  card.dataset.mode = 'amazon';
+  const rows = getAmazonWorkflowRows(data, search);
+  const s = getAmazonWorkflowStats(rows);
+  card.innerHTML = `
+    <div class="amazon-mirror-head">
+      <div class="amazon-metric"><span>Orders</span><strong>${fmtN(rows.length)}</strong></div>
+      <div class="amazon-metric"><span>Units</span><strong>${fmtN(s.units)}</strong></div>
+      <div class="amazon-metric"><span>Revenue</span><strong>${fmt$(s.revenue)}</strong></div>
+      <div class="amazon-metric"><span>Est. payout</span><strong>${fmt$(s.payout)}</strong></div>
+      <div class="amazon-metric"><span>Amazon fees</span><strong>${fmt$(s.fees)}</strong></div>
+      <div class="amazon-metric"><span>Last sheet edit</span><strong>${s.lastEditLabel}</strong></div>
+    </div>
+    <div class="amazon-status-strip">
+      <span class="amazon-status ok">${s.withTracking} tracking added</span>
+      <span class="amazon-status ok">${s.labelShared} label shared</span>
+      <span class="amazon-status warn">${s.inProgress} in progress</span>
+      <span class="amazon-status risk">${s.needsTracking} need tracking</span>
+    </div>
+    ${amazonWorkflowTableMarkup(rows)}`;
+}
+
 function renderTable(data) {
   const search = ($('tbl-search').value || '').toLowerCase();
+  const title = document.querySelector('.tbl-section .section-title');
+  const card = document.querySelector('.tbl-card');
+  const section = document.querySelector('.tbl-section');
+  if (CHANNEL_FILTER === 'amazon_fbm') {
+    if (section) section.style.display = 'none';
+    return;
+  }
+  if (section) section.style.display = '';
+  if (title) title.textContent = '📋 Account Summary';
+  if (card && card.dataset.mode === 'amazon') {
+    card.dataset.mode = 'account';
+    card.innerHTML = accountSummaryTableMarkup();
+  }
   const persons = [...new Set(data.map(r=>r.person))].filter(p=>!search||p.toLowerCase().includes(search));
 
   let rows = persons.map(p => {
@@ -2666,6 +2901,10 @@ function renderExpenses() {}
 // ─── SHEET ACTIVITY ───────────────────────────────────────────────────────────
 function renderSheetActivity() {
   const section = $('sheet-activity-section'), grid = $('sheet-activity-grid');
+  if (CHANNEL_FILTER === 'amazon_fbm') {
+    section.style.display = 'none';
+    return;
+  }
   const entries = Object.keys(SHEET_MODIFIED);
   if (!entries.length) { section.style.display = 'none'; return; }
 

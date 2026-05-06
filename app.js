@@ -419,6 +419,8 @@ function parseDate(raw) {
   if (m) { const yr = m[3].length===2?'20'+m[3]:m[3]; return `${yr}-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`; }
   m = s.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,})[-\/\s](\d{2,4})$/);
   if (m) { const mo = MO[m[2].toLowerCase().substring(0,3)]; if (mo) { const yr=m[3].length===2?'20'+m[3]:m[3]; return `${yr}-${String(mo).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`; } }
+  m = s.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,})$/);
+  if (m) { const mo = MO[m[2].toLowerCase().substring(0,3)]; if (mo) { const yr = new Date().getFullYear(); return `${yr}-${String(mo).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`; } }
   m = s.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{2,4})$/);
   if (m) { const mo = MO[m[1].toLowerCase().substring(0,3)]; if (mo) { const yr=m[3].length===2?'20'+m[3]:m[3]; return `${yr}-${String(mo).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`; } }
   m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
@@ -473,13 +475,14 @@ function channelTitle(ch = CHANNEL_FILTER) {
 function getDailyData(data) {
   const byDate = {};
   data.filter(r => r.date).forEach(r => {
-    if (!byDate[r.date]) byDate[r.date] = { date: r.date, revenue: 0, profit: 0, cost: 0, fee: 0, sales: 0, jr: 0, danian: 0, owner: 0 };
+    if (!byDate[r.date]) byDate[r.date] = { date: r.date, revenue: 0, profit: 0, payout: 0, cost: 0, fee: 0, sales: 0, jr: 0, danian: 0, owner: 0 };
     const d = byDate[r.date];
     d.revenue = r2(d.revenue + r.price);
     d.profit  = r2(d.profit  + r.profit);
+    d.payout  = r2(d.payout  + (r.amazonPayout || r.payout || 0));
     d.cost    = r2(d.cost    + r.cost);
     d.fee     = r2(d.fee     + r.fee);
-    d.sales++;
+    d.sales   = r2(d.sales + (r.sales || 1));
     const sp = getSplit(r.person, r.profit);
     d.jr     = r2(d.jr     + sp.jr);
     d.danian = r2(d.danian + sp.danian);
@@ -800,6 +803,7 @@ function parseAmazonFbmValues(values, person = 'Johna') {
         else if (h === 'QTY') colMap.qty = idx;
         else if (h === 'SALE PRICE') colMap.price = idx;
         else if (h === 'AMAZON FEE') colMap.amazonFee = idx;
+        else if (h === 'TOTAL RATE') colMap.payout = idx;
         else if (h.includes('LABEL')) colMap.label = idx;
         else if (h.includes('PREP')) colMap.prep = idx;
         else if (h === 'SHIP' || h === 'SHIPPING' || h.includes('SHIPPING COST')) colMap.ship = idx;
@@ -835,6 +839,7 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     const qty = Math.max(1, Math.round(parseMoney(row[colMap.qty])) || 1);
     const price = parseMoney(row[colMap.price]);
     const amazonFee = Math.abs(parseMoney(row[colMap.amazonFee]));
+    const payout = parseMoney(row[colMap.payout]);
     const label = Math.abs(parseMoney(row[colMap.label]));
     const prep = Math.abs(parseMoney(row[colMap.prep]));
     const ship = Math.abs(parseMoney(row[colMap.ship]));
@@ -877,6 +882,8 @@ function parseAmazonFbmValues(values, person = 'Johna') {
       fee: r2(amazonFee),
       amazonFee: r2(amazonFee),
       tax: r2(tax),
+      payout: r2(payout),
+      amazonPayout: r2(payout || Math.max(0, price - amazonFee)),
       label: r2(label),
       prep: r2(prep),
       ship: r2(ship),
@@ -1436,6 +1443,7 @@ function renderKPIs(data) {
   const margin = rev  > 0 ? profit / rev  * 100 : 0;
   const isAmazonMode = CHANNEL_FILTER === 'amazon_fbm';
   const amazonFee = r2(data.reduce((s,r)=>s+(r.amazonFee || (r.channel === 'amazon_fbm' ? r.fee : 0)), 0));
+  const amazonPayout = r2(data.reduce((s,r)=>s+(r.amazonPayout || r.payout || 0), 0));
   const amazonLabel = r2(data.reduce((s,r)=>s+(r.label || 0), 0));
   const amazonPrep = r2(data.reduce((s,r)=>s+(r.prep || 0), 0));
   const amazonShip = r2(data.reduce((s,r)=>s+(r.ship || 0), 0));
@@ -1445,10 +1453,17 @@ function renderKPIs(data) {
   const feeCardLabel = isAmazonMode ? '📦 Amazon Costs' : CHANNEL_FILTER === 'tiktok' ? '🏷️ TikTok Fees' : CHANNEL_FILTER === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
   const feeCardValue = isAmazonMode ? r2(amazonFee + amazonOpsCost + amazonTax) : fee;
   const feeCardPct = rev > 0 ? feeCardValue / rev * 100 : 0;
+  const showAmazonPayout = isAmazonMode && profit === 0 && amazonPayout > 0;
+  const primaryValue = showAmazonPayout ? amazonPayout : profit;
+  const primaryLabel = showAmazonPayout ? '💸 Estimated Payout' : '💰 Total Profit';
+  const primarySub = showAmazonPayout
+    ? `${fmtP(rev > 0 ? amazonPayout / rev * 100 : 0)} after Amazon fees · ${fmtN(data.length)} orders`
+    : `${fmtP(margin)} margin · ${fmtN(data.length)} sales`;
 
   const dd = getDailyData(data);
   const dCount = dd.length || 1;
-  const avgDailyProfit = r2(profit / dCount);
+  const profitSeries = showAmazonPayout ? dd.map(d => d.payout) : dd.map(d => d.profit);
+  const avgDailyProfit = r2(primaryValue / dCount);
   const avgDailyRev    = r2(rev    / dCount);
 
   const todayIso = new Date().toISOString().split('T')[0];
@@ -1459,6 +1474,8 @@ function renderKPIs(data) {
   const isInProgress = !completedDates.length && hasTodayData;
   const latestRows  = latestDate ? data.filter(r=>r.date===latestDate) : [];
   const todayProfit = r2(latestRows.reduce((s,r)=>s+r.profit,0));
+  const todayPayout = r2(latestRows.reduce((s,r)=>s+(r.amazonPayout || r.payout || 0),0));
+  const latestPrimary = showAmazonPayout ? todayPayout : todayProfit;
   const todayRev    = r2(latestRows.reduce((s,r)=>s+r.price,0));
   const latestLabel = latestDate ? fmtDayLabel(latestDate) : null;
 
@@ -1472,7 +1489,7 @@ function renderKPIs(data) {
   }
 
   const last30 = dd.slice(-30);
-  const profitSpark = last30.map(d=>d.profit);
+  const profitSpark = profitSeries.slice(-30);
   const revSpark    = last30.map(d=>d.revenue);
   const salesSpark  = last30.map(d=>d.sales);
   const feeCardSpark = isAmazonMode
@@ -1487,8 +1504,9 @@ function renderKPIs(data) {
   window._kpiSparks = { profit: profitSpark, adp: profitSpark, today: salesSpark, fee: feeSpark };
   const _sparkStats = arr => { const v=arr.filter(isFinite); return v.length?{min:Math.min(...v),max:Math.max(...v),avg:v.reduce((a,b)=>a+b,0)/v.length}:{min:0,max:0,avg:0}; };
 
+  const latestSalesCount = r2(latestRows.reduce((s,r)=>s+(r.sales || 1),0));
   const kpiSub = latestRows.length > 0
-    ? (isInProgress ? `${latestLabel} · in progress · ${fmt$(todayRev)}` : `${latestLabel} · ${latestRows.length} sales · ${fmt$(todayRev)}`)
+    ? (isInProgress ? `${latestLabel} · in progress · ${fmt$(todayRev)}` : `${latestLabel} · ${fmtN(latestSalesCount)} ${isAmazonMode?'units':'sales'} · ${fmt$(todayRev)}`)
     : 'No data yet';
 
   const deltaHtml = momDelta !== null
@@ -1510,12 +1528,12 @@ function renderKPIs(data) {
   $('kpi-grid').innerHTML = `
     <div class="card kpi-card" onclick="expandKpi(this,'profit','#10b981')">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#10b981,#34d399)"></div>
-      <div class="kpi-label">💰 Total Profit</div>
+      <div class="kpi-label">${primaryLabel}</div>
       <div class="kpi-body">
         <div class="kpi-left">
-          <div class="kpi-val shimmer-val" id="kv-profit">${fmt$(profit)}</div>
-          <div class="kpi-sub">${fmtP(margin)} margin · ${fmtN(data.length)} sales</div>
-          ${deltaHtml}
+          <div class="kpi-val shimmer-val" id="kv-profit">${fmt$(primaryValue)}</div>
+          <div class="kpi-sub">${primarySub}</div>
+          ${showAmazonPayout ? `<div class="kpi-sub" style="font-size:10px;line-height:1.45;margin-top:2px">True profit appears once unit cost / total cost / profit fields are filled.</div>` : deltaHtml}
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-profit" width="80" height="32"></canvas>
       </div>
@@ -1523,7 +1541,7 @@ function renderKPIs(data) {
     </div>
     <div class="card kpi-card" onclick="expandKpi(this,'adp','#06b6d4')">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#10b981,#06b6d4)"></div>
-      <div class="kpi-label">📊 Avg Daily Profit</div>
+      <div class="kpi-label">${showAmazonPayout ? '📊 Avg Daily Payout' : '📊 Avg Daily Profit'}</div>
       <div class="kpi-body">
         <div class="kpi-left">
           <div class="kpi-val profit" id="kv-adp">${fmt$(avgDailyProfit)}</div>
@@ -1538,7 +1556,7 @@ function renderKPIs(data) {
       <div class="kpi-label">⚡ Latest Day${isInProgress?' ✦':''}</div>
       <div class="kpi-body">
         <div class="kpi-left">
-          <div class="kpi-val ${todayProfit>0?'profit':todayProfit<0?'loss':''}" id="kv-today">${latestRows.length>0?fmt$(todayProfit):'—'}</div>
+          <div class="kpi-val ${latestPrimary>0?'profit':latestPrimary<0?'loss':''}" id="kv-today">${latestRows.length>0?fmt$(latestPrimary):'—'}</div>
           <div class="kpi-sub">${kpiSub}</div>
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-today" width="80" height="32"></canvas>
@@ -1569,9 +1587,9 @@ function renderKPIs(data) {
     drawSparkline($('sp-today-lg'),  salesSpark,  '#06b6d4');
     drawSparkline($('sp-fee-lg'),    feeSpark,    '#ef4444');
     // Animated count-up on KPI values
-    countUp($('kv-profit'), profit, 1000);
+    countUp($('kv-profit'), primaryValue, 1000);
     countUp($('kv-adp'),    avgDailyProfit, 900);
-    if (latestRows.length > 0) countUp($('kv-today'), todayProfit, 800);
+    if (latestRows.length > 0) countUp($('kv-today'), latestPrimary, 800);
     countUp($('kv-fee'), feeCardValue, 900);
   }, 60);
 

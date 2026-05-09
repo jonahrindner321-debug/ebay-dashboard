@@ -16,6 +16,30 @@ const SHEETS = {
 
 const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i;
 
+const AMAZON_FBM_SOURCES = [
+  {
+    id: '1IKET6AiIc5sWHEQG8yAuDOxVGxldC9uqzNm0hX_3LhQ',
+    tab: '2 step DS',
+    person: 'Johna',
+    channel: 'amazon_fbm',
+  },
+];
+
+const TIKTOK_SOURCES = [
+  {
+    id: '1IVGp49ly5EAiyEv0_qFLqcE_giK8Lz1pt5znq-6xzzY',
+    person: 'Johna',
+    channel: 'tiktok',
+  },
+];
+const CHANNEL_KEYS = ['all', 'ebay', 'tiktok', 'amazon_fbm'];
+const CHANNEL_STYLE = {
+  all:        { label: 'All',        title: 'All-Time',      color: 'var(--indigo)', muted: 'var(--muted)', icon: '📦' },
+  ebay:       { label: 'eBay',       title: 'eBay',          color: 'var(--indigo)', muted: 'var(--muted)', icon: '📦' },
+  tiktok:     { label: 'TikTok',     title: 'TikTok',        color: '#ff2d55',       muted: '#ff6b9d',     icon: '⟡' },
+  amazon_fbm: { label: 'Amazon FBM', title: 'Amazon FBM',    color: '#f59e0b',       muted: '#fbbf24',     icon: 'A' },
+};
+
 // Stores that have been offboarded/banned — excluded from all data and displays
 const BANNED_STORES = new Set(['Paul']);
 
@@ -23,6 +47,10 @@ const BANNED_STORES = new Set(['Paul']);
 const LISTING_TRACKER_ID   = '1P1k92F_RsQxSE_2qZloA99OiOBEDazch';
 const LISTING_TRACKER_SUMMARY_GID = 1098129568;
 const LISTING_TRACKER_DAILY_GID   = 2077321990;
+const LISTING_TRACKER_DAILY_GIDS = [
+  LISTING_TRACKER_DAILY_GID, // Daily Tracking April
+  799679394,  // Daily Tracking May
+];
 // Map listing tracker store names → dashboard person names
 const LISTING_NAME_MAP = {
   'Russ':         'Russell',
@@ -37,7 +65,7 @@ const LISTING_NAME_MAP = {
   'Jack':         'Jack R',
 };
 let LISTING_DATA = { summary: [], todayRow: null, dailyColNames: [] };
-let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok'
+let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok' | 'amazon_fbm'
 
 // Store creation dates fetched from Drive API — populated on load
 const STORE_CREATED = {}; // { person: 'YYYY-MM-DD' }
@@ -89,6 +117,20 @@ const MONTH_ORDER = [
   'Feb 2026','Mar 2026','Apr 2026','May 2026','Jun 2026',
   'Jul 2026','Aug 2026','Sep 2026','Oct 2026','Nov 2026','Dec 2026',
 ];
+const MONTH_NAME_MAP = {
+  jan: 1, january: 1,
+  feb: 2, february: 2,
+  mar: 3, march: 3,
+  apr: 4, april: 4,
+  may: 5,
+  jun: 6, june: 6,
+  jul: 7, july: 7,
+  aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12,
+};
 
 const COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#14b8a6','#3b82f6'];
 
@@ -138,7 +180,25 @@ function fmtFull$(v) { if (!isFinite(v)) return '—'; const s = v<0?'-':''; ret
 function fmtP(v) { return isFinite(v) ? v.toFixed(2) + '%' : '—'; }
 function fmtN(v) { return isFinite(v) ? v.toLocaleString() : '—'; }
 function r2(v)   { return Math.round((v + Number.EPSILON) * 100) / 100; }
-function monthIndex(m) { const i = MONTH_ORDER.indexOf(m); return i >= 0 ? i : 999; }
+function monthIndex(m) {
+  const label = String(m || '').trim();
+  if (!label) return 999999;
+  const specialIdx = MONTH_ORDER.indexOf(label);
+  if (specialIdx >= 0) {
+    const special = {
+      'Nov 2025': 2025 * 12 + 11,
+      'Dec 2025': 2025 * 12 + 12,
+      'Dec/Jan 2026': 2026 * 12 + 0.5,
+    };
+    return special[label] || specialIdx;
+  }
+  const match = label.replace(/[_-]/g, ' ').match(/^([A-Za-z]+)\s+(\d{2,4})$/);
+  if (!match) return 999999;
+  const mo = MONTH_NAME_MAP[match[1].toLowerCase()];
+  if (!mo) return 999999;
+  const yr = match[2].length === 2 ? 2000 + parseInt(match[2], 10) : parseInt(match[2], 10);
+  return yr * 12 + mo;
+}
 
 function setStatus(type, text) {
   const dot = $('s-dot'), tx = $('s-text');
@@ -361,6 +421,8 @@ function parseDate(raw) {
   if (m) { const yr = m[3].length===2?'20'+m[3]:m[3]; return `${yr}-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`; }
   m = s.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,})[-\/\s](\d{2,4})$/);
   if (m) { const mo = MO[m[2].toLowerCase().substring(0,3)]; if (mo) { const yr=m[3].length===2?'20'+m[3]:m[3]; return `${yr}-${String(mo).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`; } }
+  m = s.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,})$/);
+  if (m) { const mo = MO[m[2].toLowerCase().substring(0,3)]; if (mo) { const yr = new Date().getFullYear(); return `${yr}-${String(mo).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`; } }
   m = s.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{2,4})$/);
   if (m) { const mo = MO[m[1].toLowerCase().substring(0,3)]; if (mo) { const yr=m[3].length===2?'20'+m[3]:m[3]; return `${yr}-${String(mo).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`; } }
   m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
@@ -381,17 +443,48 @@ function fmtDayLabel(dateStr) {
   return mos[dt.getMonth()] + ' ' + dt.getDate();
 }
 
+function monthLabelFromDate(dateStr, fallback = 'Amazon FBM') {
+  if (!dateStr) return fallback;
+  const dt = new Date(dateStr + 'T00:00:00');
+  if (isNaN(dt.getTime())) return fallback;
+  const mos = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${mos[dt.getMonth()]} ${dt.getFullYear()}`;
+}
+
+function currentMonthLabel() {
+  const dt = new Date();
+  const mos = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${mos[dt.getMonth()]} ${dt.getFullYear()}`;
+}
+
+function channelMeta(ch = CHANNEL_FILTER) {
+  return CHANNEL_STYLE[ch] || CHANNEL_STYLE.all;
+}
+
+function channelMatches(r, ch = CHANNEL_FILTER) {
+  return ch === 'all' || r.channel === ch;
+}
+
+function channelFilterRows(rows, ch = CHANNEL_FILTER) {
+  return ch === 'all' ? rows : rows.filter(r => r.channel === ch);
+}
+
+function channelTitle(ch = CHANNEL_FILTER) {
+  return channelMeta(ch).title;
+}
+
 // ─── DAILY AGGREGATION ─────────────────────────────────────────────────────
 function getDailyData(data) {
   const byDate = {};
   data.filter(r => r.date).forEach(r => {
-    if (!byDate[r.date]) byDate[r.date] = { date: r.date, revenue: 0, profit: 0, cost: 0, fee: 0, sales: 0, jr: 0, danian: 0, owner: 0 };
+    if (!byDate[r.date]) byDate[r.date] = { date: r.date, revenue: 0, profit: 0, payout: 0, cost: 0, fee: 0, sales: 0, jr: 0, danian: 0, owner: 0 };
     const d = byDate[r.date];
     d.revenue = r2(d.revenue + r.price);
     d.profit  = r2(d.profit  + r.profit);
+    d.payout  = r2(d.payout  + (r.amazonPayout || r.payout || 0));
     d.cost    = r2(d.cost    + r.cost);
     d.fee     = r2(d.fee     + r.fee);
-    d.sales++;
+    d.sales   = r2(d.sales + (r.sales || 1));
     const sp = getSplit(r.person, r.profit);
     d.jr     = r2(d.jr     + sp.jr);
     d.danian = r2(d.danian + sp.danian);
@@ -484,7 +577,7 @@ function calcProjection(data) {
 function normMonth(title) {
   const t = title.replace(/\(.*\)/g,'').trim();
   const m = {JAN:'Jan',FEB:'Feb',MAR:'Mar',MARC:'Mar',MARCH:'Mar',APR:'Apr',APRIL:'Apr',MAY:'May',JUN:'Jun',JUNE:'Jun',JUL:'Jul',JULY:'Jul',AUG:'Aug',SEPT:'Sep',SEP:'Sep',OCT:'Oct',NOV:'Nov',DEC:'Dec'};
-  const match = t.match(/^([A-Za-z]+)[\-_](\d{2,4})$/);
+  const match = t.match(/^([A-Za-z]+)[\s\-_](\d{2,4})$/);
   if (!match) return title;
   const mon = m[match[1].toUpperCase().substring(0,4)] || m[match[1].toUpperCase().substring(0,3)] || match[1];
   let yr = match[2]; if (yr.length===2) yr='20'+yr;
@@ -562,7 +655,7 @@ async function _googleDirect(type, { id, tab }) {
   let url;
   if (type === 'tabs')   url = `https://sheets.googleapis.com/v4/spreadsheets/${id}?key=${API_KEY}&fields=sheets.properties(title,sheetType)`;
   if (type === 'values') url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(tab)}!A:Z?key=${API_KEY}`;
-  if (type === 'drive')  url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime`;
+  if (type === 'drive')  url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime,modifiedTime`;
   if (type === 'meta')   url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/_meta!A1?key=${API_KEY}`;
   return apiFetch(url);
 }
@@ -676,8 +769,202 @@ function parseValues(values, person, monthLabel, channel = 'ebay') {
   return rows;
 }
 
+function parseMoney(v) {
+  if (v === null || v === undefined) return 0;
+  const s = String(v).trim();
+  if (!s || s === '-' || s === '—') return 0;
+  const negative = /^\(.*\)$/.test(s) || /^-/.test(s);
+  const f = parseFloat(s.replace(/[,$%\s()]/g, '').replace(/^[-+]/, ''));
+  if (!isFinite(f)) return 0;
+  return negative ? -f : f;
+}
+
+function parseAmazonFbmValues(values, person = 'Johna') {
+  const rows = [];
+  if (!values || values.length < 2) return rows;
+  let headerIdx = -1;
+  let colMap = {};
+  const norm = h => String(h || '').toUpperCase().replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < Math.min(12, values.length); i++) {
+    const header = (values[i] || []).map(norm);
+    if (header.includes('DATE') && (header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('PROFIT'))) {
+      headerIdx = i;
+      header.forEach((h, idx) => {
+        if (h === 'DATE') colMap.date = idx;
+        else if (h === 'SELLER ORDER ID') colMap.orderId = idx;
+        else if (h === 'URL') colMap.url = idx;
+        else if (h === 'SKU') colMap.sku = idx;
+        else if (h === 'PRODUCT NAME') colMap.product = idx;
+        else if (h === 'BUYER ORDER MAIL') colMap.buyerMail = idx;
+        else if (h === 'BUYER ORDER NUMBER') colMap.buyerOrderNumber = idx;
+        else if (h === 'TRACKING') colMap.tracking = idx;
+        else if (h === 'CARD ENDING') colMap.cardEnding = idx;
+        else if (h === 'SHORT CODE') colMap.shortCode = idx;
+        else if (h === 'STATUS') colMap.status = idx;
+        else if (h === 'ADDRESS') colMap.address = idx;
+        else if (h === 'QTY') colMap.qty = idx;
+        else if (h === 'SALE PRICE') colMap.price = idx;
+        else if (h === 'AMAZON FEE') colMap.amazonFee = idx;
+        else if (h === 'TOTAL RATE') colMap.payout = idx;
+        else if (h.includes('LABEL')) colMap.label = idx;
+        else if (h.includes('PREP')) colMap.prep = idx;
+        else if (h === 'SHIP' || h === 'SHIPPING' || h.includes('SHIPPING COST')) colMap.ship = idx;
+        else if (h === 'UNIT COST' && colMap.unitCost === undefined) colMap.unitCost = idx;
+        else if (h === 'TOTAL COST' && colMap.totalCost === undefined) colMap.totalCost = idx;
+        else if (h === 'REFUND FROM AMZ') colMap.refund = idx;
+        else if (h === 'PARTIAL REFUND') colMap.partialRefund = idx;
+        else if (h === 'PROFIT') colMap.profit = idx;
+        else if (h === 'ROI') colMap.roi = idx;
+        else if (h === 'TAX') colMap.tax = idx;
+      });
+      break;
+    }
+  }
+  if (headerIdx < 0 || (colMap.price === undefined && colMap.profit === undefined)) return rows;
+
+  for (let i = headerIdx + 1; i < values.length; i++) {
+    const row = values[i] || [];
+    const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
+    const dateStr = parseDate(dateRaw);
+    const orderId = String(row[colMap.orderId] || '').trim();
+    const url = String(row[colMap.url] || '').trim();
+    const buyerMail = String(row[colMap.buyerMail] || '').trim();
+    const buyerOrderNumber = String(row[colMap.buyerOrderNumber] || '').trim();
+    const trackingRaw = String(row[colMap.tracking] || '').trim();
+    const tracking = /^tracking\s*#?$/i.test(trackingRaw) ? '' : trackingRaw;
+    const cardEnding = String(row[colMap.cardEnding] || '').trim();
+    const shortCode = String(row[colMap.shortCode] || '').trim();
+    const address = String(row[colMap.address] || '').trim();
+    const sku = String(row[colMap.sku] || '').trim();
+    const product = String(row[colMap.product] || '').trim();
+    const status = String(row[colMap.status] || '').trim();
+    const qty = Math.max(1, Math.round(parseMoney(row[colMap.qty])) || 1);
+    const price = parseMoney(row[colMap.price]);
+    const amazonFee = Math.abs(parseMoney(row[colMap.amazonFee]));
+    const payout = parseMoney(row[colMap.payout]);
+    const label = Math.abs(parseMoney(row[colMap.label]));
+    const prep = Math.abs(parseMoney(row[colMap.prep]));
+    const ship = Math.abs(parseMoney(row[colMap.ship]));
+    const unitCost = Math.abs(parseMoney(row[colMap.unitCost]));
+    const unitCostTotal = r2(unitCost * qty);
+    const totalCost = Math.abs(parseMoney(row[colMap.totalCost])) || r2(unitCostTotal + label + prep + ship);
+    const tax = Math.abs(parseMoney(row[colMap.tax]));
+    const profit = parseMoney(row[colMap.profit]);
+    let roi = parseMoney(row[colMap.roi]);
+    if (roi !== 0 && Math.abs(roi) <= 2) roi = roi * 100;
+    const hasData = Boolean(dateStr || orderId || status || price || amazonFee || totalCost || profit);
+    if (!hasData) continue;
+    if (!dateStr && !orderId && !status && !price && !profit) continue;
+    const hasRealUrl = Boolean(url && !/sellercentral\.amazon\.com\/orders-v3\/order\/?$/i.test(url));
+    const hasRowIdentity = Boolean(dateStr || orderId || buyerMail || buyerOrderNumber || hasRealUrl || tracking || cardEnding || shortCode || address || status);
+    if (!hasRowIdentity) continue;
+
+    rows.push({
+      person,
+      month: monthLabelFromDate(dateStr, currentMonthLabel()),
+      channel: 'amazon_fbm',
+      platform: 'amazon',
+      source: 'JER Seller Order Sheet',
+      date: dateStr,
+      _dateRaw: dateRaw,
+      orderId,
+      sku,
+      product,
+      url,
+      buyerMail,
+      buyerOrderNumber,
+      tracking,
+      cardEnding,
+      shortCode,
+      address,
+      status,
+      sales: qty,
+      price: r2(price),
+      cost: r2(totalCost),
+      fee: r2(amazonFee),
+      amazonFee: r2(amazonFee),
+      tax: r2(tax),
+      payout: r2(payout),
+      amazonPayout: r2(payout || Math.max(0, price - amazonFee)),
+      label: r2(label),
+      prep: r2(prep),
+      ship: r2(ship),
+      unitCost: r2(unitCost),
+      unitCostTotal,
+      profit: r2(profit),
+      roi: r2(roi),
+    });
+  }
+  return rows;
+}
+
 // ─── INTRO / TRANSITION ANIMATIONS ────────────────────────────────────────
 let _introDismissed = false;
+let _introBanterTimer = null;
+let _introBanterIdx = 0;
+const INTRO_BANTER = [
+  'Combobulating money moves…',
+  'Adding the secret sauce…',
+  'Counting tiny wins loudly…',
+  'Warming up the profit telescope…',
+  'Untangling store spaghetti…',
+  'Teaching charts to behave…',
+  'Finding the good stuff…',
+  'Polishing the money mirror…',
+  'Checking which stores woke up rich…',
+  'Making the numbers less mysterious…',
+  'Rounding up the sales receipts…',
+  'Asking every tab what it knows…',
+  'Negotiating with spreadsheet gravity…',
+  'Sorting the chaos into snacks…',
+  'Looking for sneaky profit pockets…',
+  'Dusting off the dashboard crystal ball…',
+  'Stacking the little wins into big ones…',
+  'Making eBay, TikTok, and FBM shake hands…',
+  'Checking the money weather…',
+  'Turning tab soup into strategy…',
+  'Finding stores with main character energy…',
+  'Giving the charts a quick pep talk…',
+  'Measuring the sauce viscosity…',
+  'Separating signal from spreadsheet confetti…',
+  'Loading the owner brain…',
+  'Calibrating the profit compass…',
+  'Making sure the math is not being weird…',
+  'Collecting receipts, respectfully…',
+  'Looking for “oh wait that’s good” moments…',
+  'Sharpening the growth goggles…',
+  'Checking who carried the month…',
+  'Preparing the tiny scoreboard parade…',
+  'Finding the stores that deserve more love…',
+  'Turning rows into decisions…',
+  'Letting the tabs finish yapping…',
+  'Running the “does this make money?” test…',
+  'Assembling the command center…',
+  'Making the data sit up straight…',
+  'Calculating vibes per sale…',
+  'Looking for Russell/Armando behavior…',
+];
+
+function _introSetBanter(text) {
+  const el = $('intro-banter');
+  if (!el) return;
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(3px)';
+  setTimeout(() => {
+    el.textContent = text;
+    el.style.opacity = '1';
+    el.style.transform = 'translateY(0)';
+  }, 180);
+}
+
+function _introStartBanter() {
+  if (_introBanterTimer) return;
+  _introSetBanter(INTRO_BANTER[0]);
+  _introBanterTimer = setInterval(() => {
+    _introBanterIdx = (_introBanterIdx + 1) % INTRO_BANTER.length;
+    _introSetBanter(INTRO_BANTER[_introBanterIdx]);
+  }, 1900);
+}
 
 // Stage helpers — 4 stages: connect, discover, load, render
 const _introStages = ['connect', 'discover', 'load', 'render'];
@@ -706,20 +993,22 @@ function _introSetProgress(done, total, label) {
 }
 function _introSetSub(text) {
   const el = $('intro-sub');
-  if (el) {
-    el.style.opacity = '0';
-    setTimeout(() => { el.textContent = text; el.style.opacity = '1'; }, 150);
-  }
+  if (el) el.textContent = text || '';
 }
 
 function dismissIntro() {
   if (_introDismissed) return;
   _introDismissed = true;
+  if (_introBanterTimer) {
+    clearInterval(_introBanterTimer);
+    _introBanterTimer = null;
+  }
   const ov = $('intro-overlay');
   if (!ov) return;
   // Flash "Ready" stage then dismiss
   _introSetStage('render');
-  _introSetSub('All set!');
+  _introSetBanter('All set. Let’s make money moves.');
+  _introSetSub('');
   _introSetProgress(1, 1, '');
   setTimeout(() => {
     ov.classList.add('out');
@@ -728,7 +1017,7 @@ function dismissIntro() {
 }
 
 function animateChannelSwitch(ch) {
-  const colors = { tiktok: 'rgba(255,45,85,.13)', ebay: 'rgba(99,102,241,.13)', all: 'rgba(139,92,246,.11)' };
+  const colors = { tiktok: 'rgba(255,45,85,.13)', ebay: 'rgba(99,102,241,.13)', amazon_fbm: 'rgba(245,158,11,.14)', all: 'rgba(139,92,246,.11)' };
   const el = document.createElement('div');
   el.style.cssText = `position:fixed;inset:0;z-index:9990;pointer-events:none;background:${colors[ch]||colors.all};animation:channelFlash .55s ease forwards`;
   document.body.appendChild(el);
@@ -778,8 +1067,9 @@ async function loadAll() {
   RAW = []; doneJobs = 0;
 
   // Stage 1: Connect
+  _introStartBanter();
   _introSetStage('connect');
-  _introSetSub('Connecting to Google Sheets…');
+  _introSetSub('');
   _introSetProgress(0, 1, '');
 
   // Clear accumulated state so refreshes don't double-count
@@ -792,8 +1082,8 @@ async function loadAll() {
 
   // Stage 2: Discover tabs
   _introSetStage('discover');
-  _introSetSub(`Discovering ${ids.length} store${ids.length !== 1 ? 's' : ''}…`);
-  _introSetProgress(0, ids.length, '');
+  _introSetSub('');
+  _introSetProgress(0, ids.length + TIKTOK_SOURCES.length, '');
 
   const delay = ms => new Promise(r => setTimeout(r, ms));
   const tabLists = [];
@@ -801,9 +1091,19 @@ async function loadAll() {
     if (i > 0) await delay(400);
     const list = await getDataTabs(ids[i]).catch(e => { tabErrors.push({id: ids[i], e: e.message}); return []; });
     tabLists.push(list);
-    _introSetProgress(i + 1, ids.length, `${i + 1} / ${ids.length} stores`);
+    _introSetProgress(i + 1, ids.length + TIKTOK_SOURCES.length, `${i + 1} / ${ids.length} eBay stores`);
   }
   ids.forEach((id,i)=>tabLists[i].forEach(tab=>allSources.push({id,person:SHEETS[id],tab})));
+  for (let i = 0; i < TIKTOK_SOURCES.length; i++) {
+    const src = TIKTOK_SOURCES[i];
+    if (ids.length || i > 0) await delay(400);
+    const list = await getDataTabs(src.id).catch(e => { tabErrors.push({ id: src.id, e: e.message, sourceType: 'tiktok' }); return []; });
+    list
+      .filter(tab => /tik.?tok/i.test(tab))
+      .forEach(tab => allSources.push({ ...src, tab, sourceType: 'tiktok' }));
+    _introSetProgress(ids.length + i + 1, ids.length + TIKTOK_SOURCES.length, `${ids.length} eBay stores · ${i + 1} TikTok source${i ? 's' : ''}`);
+  }
+  AMAZON_FBM_SOURCES.forEach(src => allSources.push({ ...src, sourceType: 'amazon_fbm' }));
 
   // Fetch sheet creation dates from Drive API (fire and forget — non-blocking)
   Promise.all(ids.map(async id => {
@@ -814,6 +1114,18 @@ async function loadAll() {
       }
     } catch(e) { /* ignore */ }
   }));
+  Promise.all([
+    ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM' })),
+    ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}` })),
+  ].map(async src => {
+    try {
+      const data = await googleFetch('drive', { id: src.id });
+      if (data.modifiedTime) SHEET_MODIFIED[src.label] = data.modifiedTime;
+    } catch(e) { /* ignore */ }
+  })).then(() => {
+    renderSheetActivity();
+    if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
+  }).catch(() => {});
 
   // Fetch last-edit timestamps from _meta!A1 — staggered to avoid 429
   (async () => {
@@ -825,7 +1137,20 @@ async function loadAll() {
         if (val) SHEET_MODIFIED[SHEETS[ids[i]]] = val;
       } catch(e) { /* _meta tab not yet created */ }
     }
+    const externalMeta = [
+      ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM' })),
+      ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}` })),
+    ];
+    for (let i = 0; i < externalMeta.length; i++) {
+      if (ids.length || i > 0) await delay(400);
+      try {
+        const data = await googleFetch('meta', { id: externalMeta[i].id });
+        const val = data.values && data.values[0] && data.values[0][0];
+        if (val) SHEET_MODIFIED[externalMeta[i].label] = val;
+      } catch(e) { /* _meta tab not yet created */ }
+    }
     renderSheetActivity();
+    if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
   })();
 
   loadListingTracker();
@@ -844,7 +1169,7 @@ async function loadAll() {
   setProgress(0, totalJobs);
   setStatus('loading', `Fetching 0 / ${totalJobs}…`);
   _introSetStage('load');
-  _introSetSub('Loading sales data…');
+  _introSetSub('');
   _introSetProgress(0, totalJobs, `0 / ${totalJobs} tabs`);
 
   // Reset safety timer now that we know tab count — give 1s per tab + 15s buffer
@@ -857,12 +1182,24 @@ async function loadAll() {
   for (let i = 0; i < allSources.length; i += BATCH) {
     const batch = allSources.slice(i, i + BATCH);
     await Promise.all(batch.map(async src => {
-      const cacheKey = `${src.person}::${src.tab}`;
+      const cacheKey = `${src.id}::${src.person}::${src.tab}`;
       const isExp = /^expenses?$/i.test(src.tab.trim());
       try {
         const values = await getTabValues(src.id, src.tab);
 
-        if (isExp) {
+        if (src.sourceType === 'amazon_fbm') {
+          const parsed = parseAmazonFbmValues(values, src.person);
+          _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
+          RAW.push(...parsed);
+          const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
+          loadAudit.push({ person: src.person, tab: 'Amazon FBM / ' + src.tab, rows: parsed.length, profit: tabProfit, status: parsed.length > 0 ? 'ok' : 'skipped', channel: 'amazon_fbm' });
+        } else if (src.sourceType === 'tiktok') {
+          const parsed = parseValues(values, src.person, normSpecial(src.tab), 'tiktok');
+          _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
+          RAW.push(...parsed);
+          const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
+          loadAudit.push({ person: src.person, tab: 'TikTok / ' + src.tab, rows: parsed.length, profit: tabProfit, status: parsed.length > 0 ? 'ok' : 'skipped', channel: 'tiktok' });
+        } else if (isExp) {
           const expRows = parseExpenseTab(values, src.person);
           _expDataCache[cacheKey] = { records: expRows, ts: Date.now() };
           expRows.forEach(e => {
@@ -902,7 +1239,7 @@ async function loadAll() {
         setProgress(doneJobs, totalJobs);
         setStatus('loading', `Fetching ${doneJobs} / ${totalJobs}…`);
         _introSetProgress(doneJobs, totalJobs, `${doneJobs} / ${totalJobs} tabs`);
-        if (doneJobs === Math.floor(totalJobs / 2)) _introSetSub('Crunching numbers…');
+        if (doneJobs === Math.floor(totalJobs / 2)) _introSetSub('');
       }
     }));
     if (i + BATCH < allSources.length) await delay(500);
@@ -916,7 +1253,7 @@ async function loadAll() {
   if (RAW.length) {
     // Stage 4: Render
     _introSetStage('render');
-    _introSetSub(`${RAW.length.toLocaleString()} records ready`);
+    _introSetSub('');
     _introSetProgress(1, 1, '');
 
     setStatus('live', '● LIVE');
@@ -971,7 +1308,7 @@ function filtered() {
     (m==='all' || r.month===m)  &&
     (!df || !r.date || r.date >= df) &&
     (!dt || !r.date || r.date <= dt) &&
-    (CHANNEL_FILTER === 'all' || (CHANNEL_FILTER === 'tiktok' ? r.channel === 'tiktok' : r.channel !== 'tiktok'))
+    channelMatches(r)
   );
 }
 function clearDates() {
@@ -981,6 +1318,8 @@ function clearDates() {
 }
 function applyFilters() {
   const d = filtered();
+  renderAmazonWorkflow(d);
+  renderSheetActivity();
   renderSplitSummary(d);
   renderGoalTracker(d);
   renderKPIs(d);
@@ -1000,6 +1339,7 @@ function applyFilters() {
   checkMilestones(r2(d.reduce((s,r)=>s+r.profit,0)));
   // Re-render Growth tab so month filter affects efficiency/profit views there too
   if (LISTING_DATA.summary && LISTING_DATA.summary.length) { try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); } }
+  if ($('war-room-page')?.style.display === 'block') { try { renderWarRoom(); } catch(e) { console.error('renderWarRoom error:', e); } }
 }
 
 // ─── PROFIT SPLIT SUMMARY ─────────────────────────────────────────────────
@@ -1130,10 +1470,29 @@ function renderKPIs(data) {
   const cost   = data.reduce((s,r)=>s+r.cost,   0);
   const roi    = cost > 0 ? profit / cost * 100 : 0;
   const margin = rev  > 0 ? profit / rev  * 100 : 0;
+  const isAmazonMode = CHANNEL_FILTER === 'amazon_fbm';
+  const amazonFee = r2(data.reduce((s,r)=>s+(r.amazonFee || (r.channel === 'amazon_fbm' ? r.fee : 0)), 0));
+  const amazonPayout = r2(data.reduce((s,r)=>s+(r.amazonPayout || r.payout || 0), 0));
+  const amazonLabel = r2(data.reduce((s,r)=>s+(r.label || 0), 0));
+  const amazonPrep = r2(data.reduce((s,r)=>s+(r.prep || 0), 0));
+  const amazonShip = r2(data.reduce((s,r)=>s+(r.ship || 0), 0));
+  const amazonUnit = r2(data.reduce((s,r)=>s+(r.unitCostTotal || 0), 0));
+  const amazonTax = r2(data.reduce((s,r)=>s+(r.tax || 0), 0));
+  const amazonOpsCost = r2(amazonUnit + amazonLabel + amazonPrep + amazonShip);
+  const feeCardLabel = isAmazonMode ? '📦 Amazon Costs' : CHANNEL_FILTER === 'tiktok' ? '🏷️ TikTok Fees' : CHANNEL_FILTER === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
+  const feeCardValue = isAmazonMode ? r2(amazonFee + amazonOpsCost + amazonTax) : fee;
+  const feeCardPct = rev > 0 ? feeCardValue / rev * 100 : 0;
+  const showAmazonPayout = isAmazonMode && profit === 0 && amazonPayout > 0;
+  const primaryValue = showAmazonPayout ? amazonPayout : profit;
+  const primaryLabel = showAmazonPayout ? '💸 Estimated Payout' : '💰 Total Profit';
+  const primarySub = showAmazonPayout
+    ? `${fmtP(rev > 0 ? amazonPayout / rev * 100 : 0)} after Amazon fees · ${fmtN(data.length)} orders`
+    : `${fmtP(margin)} margin · ${fmtN(data.length)} sales`;
 
   const dd = getDailyData(data);
   const dCount = dd.length || 1;
-  const avgDailyProfit = r2(profit / dCount);
+  const profitSeries = showAmazonPayout ? dd.map(d => d.payout) : dd.map(d => d.profit);
+  const avgDailyProfit = r2(primaryValue / dCount);
   const avgDailyRev    = r2(rev    / dCount);
 
   const todayIso = new Date().toISOString().split('T')[0];
@@ -1144,6 +1503,8 @@ function renderKPIs(data) {
   const isInProgress = !completedDates.length && hasTodayData;
   const latestRows  = latestDate ? data.filter(r=>r.date===latestDate) : [];
   const todayProfit = r2(latestRows.reduce((s,r)=>s+r.profit,0));
+  const todayPayout = r2(latestRows.reduce((s,r)=>s+(r.amazonPayout || r.payout || 0),0));
+  const latestPrimary = showAmazonPayout ? todayPayout : todayProfit;
   const todayRev    = r2(latestRows.reduce((s,r)=>s+r.price,0));
   const latestLabel = latestDate ? fmtDayLabel(latestDate) : null;
 
@@ -1157,17 +1518,24 @@ function renderKPIs(data) {
   }
 
   const last30 = dd.slice(-30);
-  const profitSpark = last30.map(d=>d.profit);
+  const profitSpark = profitSeries.slice(-30);
   const revSpark    = last30.map(d=>d.revenue);
   const salesSpark  = last30.map(d=>d.sales);
-  const feeSpark    = last30.map(d=>d.fee);
+  const feeCardSpark = isAmazonMode
+    ? last30.map(d => {
+        const dayRows = data.filter(r => r.date === d.date);
+        return r2(dayRows.reduce((s,r)=>s+(r.amazonFee||r.fee||0)+(r.cost||0)+(r.tax||0),0));
+      })
+    : null;
+  const feeSpark    = feeCardSpark || last30.map(d=>d.fee);
   const roiSpark    = last30.map(d=>d.revenue>0?(d.profit/d.revenue*100):0);
   // Store for expandable KPI panels
   window._kpiSparks = { profit: profitSpark, adp: profitSpark, today: salesSpark, fee: feeSpark };
   const _sparkStats = arr => { const v=arr.filter(isFinite); return v.length?{min:Math.min(...v),max:Math.max(...v),avg:v.reduce((a,b)=>a+b,0)/v.length}:{min:0,max:0,avg:0}; };
 
+  const latestSalesCount = r2(latestRows.reduce((s,r)=>s+(r.sales || 1),0));
   const kpiSub = latestRows.length > 0
-    ? (isInProgress ? `${latestLabel} · in progress · ${fmt$(todayRev)}` : `${latestLabel} · ${latestRows.length} sales · ${fmt$(todayRev)}`)
+    ? (isInProgress ? `${latestLabel} · in progress · ${fmt$(todayRev)}` : `${latestLabel} · ${fmtN(latestSalesCount)} ${isAmazonMode?'units':'sales'} · ${fmt$(todayRev)}`)
     : 'No data yet';
 
   const deltaHtml = momDelta !== null
@@ -1189,12 +1557,12 @@ function renderKPIs(data) {
   $('kpi-grid').innerHTML = `
     <div class="card kpi-card" onclick="expandKpi(this,'profit','#10b981')">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#10b981,#34d399)"></div>
-      <div class="kpi-label">💰 Total Profit</div>
+      <div class="kpi-label">${primaryLabel}</div>
       <div class="kpi-body">
         <div class="kpi-left">
-          <div class="kpi-val shimmer-val" id="kv-profit">${fmt$(profit)}</div>
-          <div class="kpi-sub">${fmtP(margin)} margin · ${fmtN(data.length)} sales</div>
-          ${deltaHtml}
+          <div class="kpi-val shimmer-val" id="kv-profit">${fmt$(primaryValue)}</div>
+          <div class="kpi-sub">${primarySub}</div>
+          ${showAmazonPayout ? `<div class="kpi-sub" style="font-size:10px;line-height:1.45;margin-top:2px">True profit appears once unit cost / total cost / profit fields are filled.</div>` : deltaHtml}
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-profit" width="80" height="32"></canvas>
       </div>
@@ -1202,7 +1570,7 @@ function renderKPIs(data) {
     </div>
     <div class="card kpi-card" onclick="expandKpi(this,'adp','#06b6d4')">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#10b981,#06b6d4)"></div>
-      <div class="kpi-label">📊 Avg Daily Profit</div>
+      <div class="kpi-label">${showAmazonPayout ? '📊 Avg Daily Payout' : '📊 Avg Daily Profit'}</div>
       <div class="kpi-body">
         <div class="kpi-left">
           <div class="kpi-val profit" id="kv-adp">${fmt$(avgDailyProfit)}</div>
@@ -1217,7 +1585,7 @@ function renderKPIs(data) {
       <div class="kpi-label">⚡ Latest Day${isInProgress?' ✦':''}</div>
       <div class="kpi-body">
         <div class="kpi-left">
-          <div class="kpi-val ${todayProfit>0?'profit':todayProfit<0?'loss':''}" id="kv-today">${latestRows.length>0?fmt$(todayProfit):'—'}</div>
+          <div class="kpi-val ${latestPrimary>0?'profit':latestPrimary<0?'loss':''}" id="kv-today">${latestRows.length>0?fmt$(latestPrimary):'—'}</div>
           <div class="kpi-sub">${kpiSub}</div>
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-today" width="80" height="32"></canvas>
@@ -1226,11 +1594,12 @@ function renderKPIs(data) {
     </div>
     <div class="card kpi-card" onclick="expandKpi(this,'fee','#ef4444')">
       <div class="kpi-top-bar" style="background:linear-gradient(90deg,#ef4444,#f87171)"></div>
-      <div class="kpi-label" id="fee-label">🏷️ eBay Fees</div>
+      <div class="kpi-label" id="fee-label">${feeCardLabel}</div>
       <div class="kpi-body">
         <div class="kpi-left">
-          <div class="kpi-val" id="kv-fee">${fmt$(fee)}</div>
-          <div class="kpi-sub">${fmtP(rev>0?fee/rev*100:0)} of revenue</div>
+          <div class="kpi-val" id="kv-fee">${fmt$(feeCardValue)}</div>
+          <div class="kpi-sub">${fmtP(feeCardPct)} of revenue</div>
+          ${isAmazonMode ? `<div class="kpi-sub" style="font-size:10px;line-height:1.45;margin-top:2px">Amazon fees ${fmt$(amazonFee)} · unit/prep ${fmt$(r2(amazonUnit+amazonPrep))} · label/ship ${fmt$(r2(amazonLabel+amazonShip))}${amazonTax?` · tax ${fmt$(amazonTax)}`:''}</div>` : ''}
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-fee" width="80" height="32"></canvas>
       </div>
@@ -1247,10 +1616,10 @@ function renderKPIs(data) {
     drawSparkline($('sp-today-lg'),  salesSpark,  '#06b6d4');
     drawSparkline($('sp-fee-lg'),    feeSpark,    '#ef4444');
     // Animated count-up on KPI values
-    countUp($('kv-profit'), profit, 1000);
+    countUp($('kv-profit'), primaryValue, 1000);
     countUp($('kv-adp'),    avgDailyProfit, 900);
-    if (latestRows.length > 0) countUp($('kv-today'), todayProfit, 800);
-    countUp($('kv-fee'), fee, 900);
+    if (latestRows.length > 0) countUp($('kv-today'), latestPrimary, 800);
+    countUp($('kv-fee'), feeCardValue, 900);
   }, 60);
 
   // ── Latest-day take-home strip ──
@@ -1595,8 +1964,216 @@ function renderLeaderboard(data) {
 }
 
 // ─── TABLE ─────────────────────────────────────────────────────────────────
+function escHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function amazonStage(row) {
+  const status = String(row.status || '').trim();
+  const tracking = String(row.tracking || '').trim();
+  if (tracking) return { label: 'Tracking added', color: 'var(--green)', cls: 'ok' };
+  if (/label\s*shared/i.test(status)) return { label: 'Label shared', color: 'var(--cyan)', cls: 'ok' };
+  if (status) return { label: status, color: 'var(--amber)', cls: 'warn' };
+  return { label: 'Needs tracking', color: 'var(--rose)', cls: 'risk' };
+}
+
+function accountSummaryTableMarkup() {
+  return `<table>
+    <thead>
+      <tr>
+        <th onclick="sortBy('rank')">#</th>
+        <th onclick="sortBy('person')">Account <span id="sh-person"></span></th>
+        <th onclick="sortBy('profit')">Profit <span id="sh-profit"></span></th>
+        <th onclick="sortBy('fee')">Fees <span id="sh-fee"></span></th>
+        <th onclick="sortBy('sales')">Sales <span id="sh-sales"></span></th>
+        <th onclick="sortBy('avg_sale')">Avg Sale <span id="sh-avg_sale"></span></th>
+        <th onclick="sortBy('avg_profit')">Avg Profit <span id="sh-avg_profit"></span></th>
+        <th onclick="sortBy('owner_take')" title="Store owner's cut">Owner Take <span id="sh-owner_take"></span></th>
+        <th onclick="sortBy('danian_take')" title="Operators take (Danian)">Danian Take <span id="sh-danian_take"></span></th>
+        <th onclick="sortBy('jr_take')" title="Jonah &amp; Russ take" style="color:var(--emerald)">J&amp;R Take <span id="sh-jr_take"></span></th>
+        <th title="Account notes">Notes</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>`;
+}
+
+function getAmazonWorkflowRows(data, search = '') {
+  const q = (search || '').toLowerCase();
+  return data
+    .filter(r => !q ||
+      [r.orderId, r.sku, r.product, r.status, r.tracking, r.address].some(v => String(v || '').toLowerCase().includes(q)))
+    .sort((a,b) => (b.date || '').localeCompare(a.date || '') || String(b.orderId || '').localeCompare(String(a.orderId || '')));
+}
+
+function getAmazonWorkflowStats(rows) {
+  const units = r2(rows.reduce((s,r)=>s+(r.sales || 1),0));
+  const revenue = r2(rows.reduce((s,r)=>s+r.price,0));
+  const fees = r2(rows.reduce((s,r)=>s+(r.amazonFee || r.fee || 0),0));
+  const payout = r2(rows.reduce((s,r)=>s+(r.amazonPayout || r.payout || 0),0));
+  const profit = r2(rows.reduce((s,r)=>s+(r.profit || 0),0));
+  const withTracking = rows.filter(r => String(r.tracking || '').trim()).length;
+  const labelShared = rows.filter(r => !String(r.tracking || '').trim() && /label\s*shared/i.test(String(r.status || ''))).length;
+  const inProgress = rows.filter(r => {
+    const status = String(r.status || '').trim();
+    return !String(r.tracking || '').trim() && status && !/label\s*shared|needs?\s*tracking/i.test(status);
+  }).length;
+  const needsTracking = rows.filter(r => {
+    const status = String(r.status || '').trim();
+    return !String(r.tracking || '').trim() && (!status || /needs?\s*tracking/i.test(status));
+  }).length;
+  const latestOrderDate = rows.map(r => r.date).filter(Boolean).sort().pop();
+  const lastEdit = SHEET_MODIFIED['Amazon FBM'];
+  const lastEditLabel = lastEdit ? (() => {
+    const hrs = (Date.now() - new Date(lastEdit).getTime()) / 3600000;
+    return hrs < 1 ? 'just now' : hrs < 24 ? `${Math.floor(hrs)}h ago` : `${Math.floor(hrs / 24)}d ago`;
+  })() : 'not available';
+  return { units, revenue, fees, payout, profit, withTracking, labelShared, inProgress, needsTracking, latestOrderDate, lastEditLabel };
+}
+
+function amazonWorkflowTableMarkup(rows) {
+  return `
+    <div style="overflow:auto">
+      <table class="amazon-order-table">
+        <thead>
+          <tr>
+            <th>Date</th><th>Order</th><th>Item</th><th>Status</th><th>Tracking</th><th>Units</th><th>Sale</th><th>Fee</th><th>Payout</th><th>Profit</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(r => {
+            const st = amazonStage(r);
+            return `<tr>
+              <td>${r.date ? fmtDayLabel(r.date) : escHtml(r._dateRaw || '')}</td>
+              <td><strong>${escHtml(r.orderId || '—')}</strong><div style="font-size:10px;color:var(--muted)">${escHtml(r.sku || '')}</div></td>
+              <td style="min-width:220px"><div style="font-weight:650">${escHtml(r.product || '—')}</div><div style="font-size:10px;color:var(--muted);max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(r.address || '')}</div></td>
+              <td><span class="amazon-status ${st.cls}" style="color:${st.color}">${escHtml(st.label)}</span></td>
+              <td>${r.tracking ? `<span style="color:var(--green);font-weight:700">${escHtml(r.tracking)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+              <td>${fmtN(r.sales || 1)}</td>
+              <td>${fmt$(r.price)}</td>
+              <td style="color:var(--rose)">${fmt$(r.amazonFee || r.fee || 0)}</td>
+              <td style="color:var(--amber);font-weight:800">${fmt$(r.amazonPayout || r.payout || 0)}</td>
+              <td style="color:${r.profit > 0 ? 'var(--green)' : 'var(--muted)'}">${r.profit ? fmt$(r.profit) : 'pending'}</td>
+            </tr>`;
+          }).join('') : `<tr><td colspan="10" style="text-align:center;padding:28px;color:var(--muted)">No Amazon orders match this search</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function amazonBestSellersMarkup(rows) {
+  const products = {};
+  rows.forEach(r => {
+    const key = `${r.sku || ''}::${r.product || 'Unknown product'}`;
+    if (!products[key]) products[key] = { product: r.product || 'Unknown product', sku: r.sku || '', orders: 0, units: 0, revenue: 0, payout: 0, profit: 0, tracked: 0 };
+    products[key].orders += 1;
+    products[key].units = r2(products[key].units + (r.sales || 1));
+    products[key].revenue = r2(products[key].revenue + (r.price || 0));
+    products[key].payout = r2(products[key].payout + (r.amazonPayout || r.payout || 0));
+    products[key].profit = r2(products[key].profit + (r.profit || 0));
+    if (String(r.tracking || '').trim()) products[key].tracked += 1;
+  });
+  const best = Object.values(products)
+    .sort((a,b) => b.units - a.units || b.revenue - a.revenue || b.orders - a.orders)
+    .slice(0, 6);
+  return `
+    <div class="amazon-best-grid">
+      ${best.length ? best.map((p, i) => `
+        <div class="card amazon-best-card">
+          <div class="amazon-best-rank">#${i + 1}</div>
+          <div class="amazon-best-name">${escHtml(p.product)}</div>
+          <div class="amazon-best-sku">${escHtml(p.sku || 'No SKU')}</div>
+          <div class="amazon-best-stats">
+            <span>${fmtN(p.units)} units</span>
+            <span>${fmt$(p.revenue)} sales</span>
+            <span>${fmt$(p.payout)} payout</span>
+          </div>
+          <div class="amazon-best-foot">${p.tracked}/${p.orders} orders tracking added</div>
+        </div>`).join('') : '<div class="card amazon-best-card"><div class="amazon-best-name">No best sellers yet</div><div class="amazon-best-foot">Once FBM rows load, product winners show here.</div></div>'}
+    </div>`;
+}
+
+function renderAmazonWorkflow(data) {
+  const section = $('amazon-workflow-section');
+  if (!section) return;
+  if (CHANNEL_FILTER !== 'amazon_fbm') {
+    section.style.display = 'none';
+    return;
+  }
+  const search = ($('tbl-search')?.value || '').toLowerCase();
+  const rows = getAmazonWorkflowRows(data, search);
+  const s = getAmazonWorkflowStats(rows);
+  section.innerHTML = `
+    <div class="section-hdr">
+      <span class="section-title">📦 Amazon FBM Sheet Mirror</span>
+      <span style="font-size:11px;color:var(--muted)">2 step DS · ${s.latestOrderDate ? `latest order ${fmtDayLabel(s.latestOrderDate)}` : 'waiting on rows'}</span>
+    </div>
+    <div class="card amazon-workflow-card">
+    <div class="amazon-mirror-head">
+      <div class="amazon-metric"><span>Orders in sheet</span><strong>${fmtN(rows.length)}</strong></div>
+      <div class="amazon-metric"><span>Units</span><strong>${fmtN(s.units)}</strong></div>
+      <div class="amazon-metric"><span>Revenue</span><strong>${fmt$(s.revenue)}</strong></div>
+      <div class="amazon-metric"><span>Est. payout</span><strong>${fmt$(s.payout)}</strong></div>
+      <div class="amazon-metric"><span>Amazon fees</span><strong>${fmt$(s.fees)}</strong></div>
+      <div class="amazon-metric"><span>Sheet edit</span><strong>${s.lastEditLabel}</strong></div>
+    </div>
+    <div class="amazon-status-strip">
+      <span class="amazon-status ok">${s.withTracking} tracking added</span>
+      <span class="amazon-status ok">${s.labelShared} label shared</span>
+      <span class="amazon-status warn">${s.inProgress} in progress</span>
+      <span class="amazon-status risk">${s.needsTracking} need tracking</span>
+    </div>
+      ${amazonWorkflowTableMarkup(rows)}
+    </div>
+    <div class="section-hdr amazon-best-hdr">
+      <span class="section-title">🏅 Best Sellers</span>
+      <span style="font-size:11px;color:var(--muted)">ranked by units, then revenue</span>
+    </div>
+    ${amazonBestSellersMarkup(rows)}`;
+  section.style.display = 'block';
+}
+
+function renderAmazonOrderMirror(data, search) {
+  const title = document.querySelector('.tbl-section .section-title');
+  const card = document.querySelector('.tbl-card');
+  if (title) title.textContent = '📦 Amazon Order Mirror';
+  if (!card) return;
+  card.dataset.mode = 'amazon';
+  const rows = getAmazonWorkflowRows(data, search);
+  const s = getAmazonWorkflowStats(rows);
+  card.innerHTML = `
+    <div class="amazon-mirror-head">
+      <div class="amazon-metric"><span>Orders</span><strong>${fmtN(rows.length)}</strong></div>
+      <div class="amazon-metric"><span>Units</span><strong>${fmtN(s.units)}</strong></div>
+      <div class="amazon-metric"><span>Revenue</span><strong>${fmt$(s.revenue)}</strong></div>
+      <div class="amazon-metric"><span>Est. payout</span><strong>${fmt$(s.payout)}</strong></div>
+      <div class="amazon-metric"><span>Amazon fees</span><strong>${fmt$(s.fees)}</strong></div>
+      <div class="amazon-metric"><span>Last sheet edit</span><strong>${s.lastEditLabel}</strong></div>
+    </div>
+    <div class="amazon-status-strip">
+      <span class="amazon-status ok">${s.withTracking} tracking added</span>
+      <span class="amazon-status ok">${s.labelShared} label shared</span>
+      <span class="amazon-status warn">${s.inProgress} in progress</span>
+      <span class="amazon-status risk">${s.needsTracking} need tracking</span>
+    </div>
+    ${amazonWorkflowTableMarkup(rows)}`;
+}
+
 function renderTable(data) {
   const search = ($('tbl-search').value || '').toLowerCase();
+  const title = document.querySelector('.tbl-section .section-title');
+  const card = document.querySelector('.tbl-card');
+  const section = document.querySelector('.tbl-section');
+  if (CHANNEL_FILTER === 'amazon_fbm') {
+    if (section) section.style.display = 'none';
+    return;
+  }
+  if (section) section.style.display = '';
+  if (title) title.textContent = '📋 Account Summary';
+  if (card && card.dataset.mode === 'amazon') {
+    card.dataset.mode = 'account';
+    card.innerHTML = accountSummaryTableMarkup();
+  }
   const persons = [...new Set(data.map(r=>r.person))].filter(p=>!search||p.toLowerCase().includes(search));
 
   let rows = persons.map(p => {
@@ -1965,9 +2542,7 @@ function renderMomentum(data) {
 function renderRecords(data) {
   const section=$('records-section'), grid=$('records-grid');
   const titleEl = $('records-title');
-  if (titleEl) titleEl.textContent = CHANNEL_FILTER === 'tiktok' ? '🏅 TikTok Records'
-                                   : CHANNEL_FILTER === 'ebay'   ? '🏅 eBay Records'
-                                   : '🏅 All-Time Records';
+  if (titleEl) titleEl.textContent = `🏅 ${channelTitle()} Records`;
   const dd=getDailyData(data);
   if(!dd.length){section.style.display='none';return;}
   const bestDay=dd.reduce((a,b)=>b.profit>a.profit?b:a,dd[0]);
@@ -2137,9 +2712,7 @@ function renderAllTimeBanner() {
   const banner=$('alltime-banner');
   if(!RAW.length){banner.style.display='none';return;}
   // Filter by active channel
-  const data = CHANNEL_FILTER === 'tiktok' ? RAW.filter(r=>r.channel==='tiktok')
-             : CHANNEL_FILTER === 'ebay'   ? RAW.filter(r=>r.channel!=='tiktok')
-             : RAW;
+  const data = channelFilterRows(RAW);
   if(!data.length){banner.style.display='none';return;}
   const allProfit=r2(data.reduce((s,r)=>s+r.profit,0));
   const allDates=[...new Set(data.filter(r=>r.date).map(r=>r.date))];
@@ -2152,9 +2725,7 @@ function renderAllTimeBanner() {
   });
   // Update label based on channel
   const bannerLabel = banner.querySelector('.alltime-label');
-  if (bannerLabel) bannerLabel.textContent = CHANNEL_FILTER === 'tiktok' ? '🏆 TikTok Total Profit'
-                                           : CHANNEL_FILTER === 'ebay'   ? '🏆 eBay Total Profit'
-                                           : '🏆 All-Time Total Profit';
+  if (bannerLabel) bannerLabel.textContent = `🏆 ${channelTitle()} Total Profit`;
   banner.style.display='flex';
   $('alltime-val').className  = 'alltime-val shimmer-val';
   $('alltime-val').textContent   = fmt$(allProfit);
@@ -2332,6 +2903,10 @@ function renderExpenses() {}
 // ─── SHEET ACTIVITY ───────────────────────────────────────────────────────────
 function renderSheetActivity() {
   const section = $('sheet-activity-section'), grid = $('sheet-activity-grid');
+  if (CHANNEL_FILTER === 'amazon_fbm') {
+    section.style.display = 'none';
+    return;
+  }
   const entries = Object.keys(SHEET_MODIFIED);
   if (!entries.length) { section.style.display = 'none'; return; }
 
@@ -2376,6 +2951,18 @@ function renderSheetActivity() {
 const LISTING_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 let _listingCacheTime = 0;
 
+async function getListingTrackerDailyGids() {
+  try {
+    const res = await fetch(`/api/listing-tabs?id=${encodeURIComponent(LISTING_TRACKER_ID)}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const gids = (data.dailyGids || []).filter(Boolean);
+    return gids.length ? gids : LISTING_TRACKER_DAILY_GIDS;
+  } catch (e) {
+    return LISTING_TRACKER_DAILY_GIDS;
+  }
+}
+
 async function loadListingTracker(force = false) {
   // Serve from cache if fresh enough
   const now = Date.now();
@@ -2399,12 +2986,13 @@ async function loadListingTracker(force = false) {
       });
     }
     const base = `https://docs.google.com/spreadsheets/d/${LISTING_TRACKER_ID}/export?format=csv`;
-    const [sumRes, dayRes] = await Promise.all([
+    const dailyGids = await getListingTrackerDailyGids();
+    const [sumRes, ...dayResponses] = await Promise.all([
       fetch(`${base}&gid=${LISTING_TRACKER_SUMMARY_GID}`),
-      fetch(`${base}&gid=${LISTING_TRACKER_DAILY_GID}`)
+      ...dailyGids.map(gid => fetch(`${base}&gid=${gid}`))
     ]);
-    if (!sumRes.ok || !dayRes.ok) throw new Error('CSV fetch failed');
-    const [sumText, dayText] = await Promise.all([sumRes.text(), dayRes.text()]);
+    if (!sumRes.ok || dayResponses.some(res => !res.ok)) throw new Error('CSV fetch failed');
+    const [sumText, ...dayTexts] = await Promise.all([sumRes.text(), ...dayResponses.map(res => res.text())]);
 
     // Parse summary (row 0 = header)
     const sumRows = parseCSV(sumText);
@@ -2417,43 +3005,50 @@ async function loadListingTracker(force = false) {
       summary.push({ store: r[0].trim(), operator: r[1]||'', current: parseInt(r[2])||0, target: parseInt(r[3])||5000, remaining: parseInt(r[4])||0, dailyGoal: parseInt(r[5])||40 });
     }
 
-    // Parse daily — find today's row
-    const dayRows = parseCSV(dayText);
-    // Sheet has title/empty rows before real headers — find the row starting with "Date"
-    let _hdrIdx = 0;
-    for (let i = 0; i < Math.min(dayRows.length, 6); i++) {
-      if (dayRows[i][0]?.trim() === 'Date') { _hdrIdx = i; break; }
-    }
-    const dailyColNames = dayRows[_hdrIdx].map(c => c.trim()); // trim \r and whitespace
-    const _dataStart = _hdrIdx + 1;
     const today = new Date();
     const todayStrPad   = `${String(today.getMonth()+1).padStart(2,'0')}/${String(today.getDate()).padStart(2,'0')}`;
     const todayStrShort = `${today.getMonth()+1}/${today.getDate()}`;
-    const todayRow = dayRows.slice(_dataStart).find(r => r[0]?.trim() === todayStrPad || r[0]?.trim() === todayStrShort) || null;
 
-    // Parse ALL daily rows for history (skip DAILY TARGET row and empty rows)
-    const dailyHistory = []; // [{ dateStr, date, counts:{storeName:n} }]
-    for (let i = _dataStart; i < dayRows.length; i++) {
-      const r = dayRows[i];
-      const r0 = r[0]?.trim() || '';
-      if (!r0 || r0.toUpperCase().includes('TARGET') || r0 === 'Date') continue;
-      const parts = r0.split('/');
-      if (parts.length < 2) continue;
-      const mm = parseInt(parts[0]), dd = parseInt(parts[1]);
-      if (isNaN(mm) || isNaN(dd)) continue;
-      const yr = (mm >= 1 && mm <= 12) ? (mm < 9 ? 2026 : 2025) : 2026;
-      const dateObj = new Date(yr, mm-1, dd);
-      const counts = {};
-      for (let c = 2; c < dailyColNames.length; c++) {
-        const name = dailyColNames[c];
-        if (!name || name === 'Daily Total' || name === 'Notes') continue;
-        if (BANNED_STORES.has(name)) continue; // skip offboarded stores
-        const v = r[c];
-        if (v !== undefined && v !== '') counts[name] = parseInt(v) || 0;
+    function parseDailyTrackerCsv(dayText) {
+      const dayRows = parseCSV(dayText);
+      // Sheet has title/empty rows before real headers — find the row starting with "Date"
+      let hdrIdx = 0;
+      for (let i = 0; i < Math.min(dayRows.length, 8); i++) {
+        if (dayRows[i][0]?.trim() === 'Date') { hdrIdx = i; break; }
       }
-      if (Object.keys(counts).length > 0)
-        dailyHistory.push({ dateStr: r0, date: dateObj, counts });
+      const cols = (dayRows[hdrIdx] || []).map(c => c.trim()); // trim \r and whitespace
+      const dataStart = hdrIdx + 1;
+      const foundToday = dayRows.slice(dataStart).find(r => r[0]?.trim() === todayStrPad || r[0]?.trim() === todayStrShort) || null;
+      const history = []; // [{ dateStr, date, counts:{storeName:n} }]
+      for (let i = dataStart; i < dayRows.length; i++) {
+        const r = dayRows[i];
+        const r0 = r[0]?.trim() || '';
+        if (!r0 || r0.toUpperCase().includes('TARGET') || r0 === 'Date') continue;
+        const parts = r0.split('/');
+        if (parts.length < 2) continue;
+        const mm = parseInt(parts[0]), dd = parseInt(parts[1]);
+        if (isNaN(mm) || isNaN(dd)) continue;
+        const yr = (mm >= 1 && mm <= 12) ? (mm < 9 ? 2026 : 2025) : 2026;
+        const dateObj = new Date(yr, mm-1, dd);
+        const counts = {};
+        for (let c = 2; c < cols.length; c++) {
+          const name = cols[c];
+          if (!name || name === 'Daily Total' || name === 'Notes') continue;
+          if (BANNED_STORES.has(name)) continue; // skip offboarded stores
+          const v = r[c];
+          if (v !== undefined && v !== '') counts[name] = parseInt(v) || 0;
+        }
+        if (Object.keys(counts).length > 0)
+          history.push({ dateStr: r0, date: dateObj, counts });
+      }
+      return { dailyColNames: cols, todayRow: foundToday, dailyHistory: history };
     }
+
+    const dailyParts = dayTexts.map(parseDailyTrackerCsv);
+    const dailyHistory = dailyParts.flatMap(part => part.dailyHistory).sort((a,b) => a.date - b.date);
+    const todayPart = dailyParts.find(part => part.todayRow);
+    const dailyColNames = (todayPart || dailyParts[dailyParts.length - 1] || dailyParts[0])?.dailyColNames || [];
+    const todayRow = todayPart?.todayRow || null;
 
     LISTING_DATA = { summary, todayRow, dailyColNames, dailyHistory };
     _listingCacheTime = Date.now();
@@ -2539,17 +3134,24 @@ let _growthCharts = {};
 function switchPage(page) {
   const ops = document.querySelector('main.container');
   const growth = $('growth-page');
-  const btnOps = $('page-btn-ops'), btnGrowth = $('page-btn-growth');
+  const war = $('war-room-page');
+  const btnOps = $('page-btn-ops'), btnGrowth = $('page-btn-growth'), btnWar = $('page-btn-war');
   const animateIn = el => { el.classList.remove('page-enter'); void el.offsetWidth; el.classList.add('page-enter'); };
   if (page === 'growth') {
-    ops.style.display = 'none'; growth.style.display = 'block';
+    ops.style.display = 'none'; growth.style.display = 'block'; if (war) war.style.display = 'none';
     animateIn(growth);
-    btnOps.classList.remove('active'); btnGrowth.classList.add('active');
+    btnOps.classList.remove('active'); btnGrowth.classList.add('active'); btnWar?.classList.remove('active');
     renderGrowthPage();
+  } else if (page === 'war') {
+    ops.style.display = 'none'; growth.style.display = 'none'; if (war) war.style.display = 'block';
+    if (war) animateIn(war);
+    btnOps.classList.remove('active'); btnGrowth.classList.remove('active'); btnWar?.classList.add('active');
+    renderGrowthPage();
+    renderWarRoom();
   } else {
-    growth.style.display = 'none'; ops.style.display = 'block';
+    growth.style.display = 'none'; if (war) war.style.display = 'none'; ops.style.display = 'block';
     animateIn(ops);
-    btnGrowth.classList.remove('active'); btnOps.classList.add('active');
+    btnGrowth.classList.remove('active'); btnWar?.classList.remove('active'); btnOps.classList.add('active');
   }
 }
 
@@ -2593,40 +3195,43 @@ function getMonthlyListingSnapshots() {
 }
 
 function setChannelFilter(ch) {
+  if (!CHANNEL_KEYS.includes(ch)) ch = 'all';
   animateChannelSwitch(ch);
   CHANNEL_FILTER = ch;
   document.body.classList.toggle('tiktok-mode', ch === 'tiktok');
+  document.body.classList.toggle('amazon-mode', ch === 'amazon_fbm');
   const logoIcon = document.querySelector('.logo-icon');
   const logoSub  = document.querySelector('.logo-sub');
-  if (logoIcon) logoIcon.textContent = ch === 'tiktok' ? '⟡' : '📦';
-  if (logoSub)  logoSub.textContent  = ch === 'tiktok' ? 'TikTok Sales' : ch === 'ebay' ? 'eBay Only' : 'Operations Dashboard';
+  const meta = channelMeta(ch);
+  if (logoIcon) logoIcon.textContent = meta.icon || '📦';
+  if (logoSub)  logoSub.textContent  = ch === 'all' ? 'Operations Dashboard' : `${meta.label} Sales`;
   // Update header channel switcher buttons
-  ['all','ebay','tiktok'].forEach(c => {
+  CHANNEL_KEYS.forEach(c => {
     const btn = $('ch-'+c);
     if (!btn) return;
     const active = c === ch;
-    btn.style.background = active ? (c === 'tiktok' ? '#ff2d55' : 'var(--indigo)') : 'transparent';
-    btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--muted)');
+    btn.style.background = active ? channelMeta(c).color : 'transparent';
+    btn.style.color = active ? '#fff' : channelMeta(c).muted;
   });
   // Update growth tab channel toggle buttons
-  ['all','ebay','tiktok'].forEach(c => {
+  CHANNEL_KEYS.forEach(c => {
     const btn = $('ch-btn-'+c);
     if (!btn) return;
     const active = c === ch;
-    btn.style.background = active ? (c === 'tiktok' ? '#ff6b9d' : 'var(--indigo)') : 'var(--glass)';
-    btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--text2)');
+    btn.style.background = active ? channelMeta(c).color : 'var(--glass)';
+    btn.style.color = active ? '#fff' : channelMeta(c).muted;
   });
   // Swap "eBay Fees" label based on channel
   const feeLabel  = $('fee-label');
   const feeLabelP = $('fee-label-placeholder');
-  const feeTxt = ch === 'tiktok' ? '🏷️ TikTok Fees' : ch === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
+  const feeTxt = ch === 'tiktok' ? '🏷️ TikTok Fees' : ch === 'amazon_fbm' ? '🏷️ Amazon Fees' : ch === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
   if (feeLabel)  feeLabel.textContent  = feeTxt;
   if (feeLabelP) feeLabelP.textContent = feeTxt.replace('🏷️ ','');
-  // Hide Growth tab in TikTok mode — listing metrics don't apply to TikTok
+  // Hide listing-growth tab for channels that don't use the eBay listing tracker.
   const growthBtn = $('page-btn-growth');
-  if (growthBtn) growthBtn.style.display = ch === 'tiktok' ? 'none' : '';
-  // If on Growth page and switching to TikTok, snap back to Ops
-  if (ch === 'tiktok') { try { switchPage('ops'); } catch(e) {} }
+  const hideListingGrowth = ch === 'tiktok' || ch === 'amazon_fbm';
+  if (growthBtn) growthBtn.style.display = hideListingGrowth ? 'none' : '';
+  if (hideListingGrowth) { try { switchPage('ops'); } catch(e) {} }
   try { applyFilters(); } catch(e) {}
   try { renderAllTimeBanner(); } catch(e) { console.error('renderAllTimeBanner error:', e); }
   try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
@@ -2638,8 +3243,21 @@ function updateChannelSwitcherVisibility() {
 }
 
 function renderGrowthPage() {
-  const { summary, todayRow, dailyColNames, dailyHistory = [] } = LISTING_DATA;
+  const { summary: listingSummary, todayRow, dailyColNames, dailyHistory = [] } = LISTING_DATA;
   saveMonthlyListingSnapshot();
+
+  const _growthPersonFilter = ($('filter-person') && $('filter-person').value !== 'all') ? $('filter-person').value : null;
+  const _growthMonthFilter = ($('filter-month') && $('filter-month').value !== 'all') ? $('filter-month').value : null;
+  const _growthDateFrom = ($('filter-date-from')?.value) || '';
+  const _growthDateTo = ($('filter-date-to')?.value) || '';
+  const _recInGrowthScope = r =>
+    (!_growthMonthFilter || r.month === _growthMonthFilter) &&
+    (!_growthDateFrom || !r.date || r.date >= _growthDateFrom) &&
+    (!_growthDateTo || !r.date || r.date <= _growthDateTo);
+  const summary = listingSummary.filter(s => {
+    const dashName = LISTING_NAME_MAP[s.store] || s.store;
+    return !_growthPersonFilter || dashName === _growthPersonFilter;
+  });
 
   // Pre-compute today's hist entry so all stores use the same source
   const _todayD = new Date();
@@ -2669,20 +3287,18 @@ function renderGrowthPage() {
   // ════════════════════════════════════════════════════════
   const sortedHistDesc = [...dailyHistory].sort((a,b) => b.date - a.date);
 
-  // Respect the global month filter — when a specific month is selected, show that month's efficiency
-  const _growthMonthFilter = ($('filter-month') && $('filter-month').value !== 'all') ? $('filter-month').value : null;
-
   const pd = {}; // personData keyed by tracker store name
   summary.forEach(s => {
     const dashName = LISTING_NAME_MAP[s.store] || s.store;
-    const allRecs    = RAW.filter(r => r.person === dashName);
+    const allRecs    = RAW.filter(r => r.person === dashName && _recInGrowthScope(r));
     const tiktokRecs = allRecs.filter(r => r.channel === 'tiktok');
-    const ebayRecs   = allRecs.filter(r => r.channel !== 'tiktok');
-    const recs       = CHANNEL_FILTER === 'tiktok' ? tiktokRecs : CHANNEL_FILTER === 'ebay' ? ebayRecs : allRecs;
+    const ebayRecs   = allRecs.filter(r => r.channel === 'ebay');
+    const amazonFbmRecs = allRecs.filter(r => r.channel === 'amazon_fbm');
+    const recs       = channelFilterRows(allRecs);
 
     // Profit / revenue / sales totals (always all-time for reference)
     const totalProfit  = r2(recs.reduce((sum,r) => sum + r.profit, 0));
-    const totalRevenue = r2(recs.reduce((sum,r) => sum + r.revenue, 0));
+    const totalRevenue = r2(recs.reduce((sum,r) => sum + (r.price || 0), 0));
     const totalSales   = recs.reduce((sum,r) => sum + (r.sales || 1), 0);
     const avgSale      = totalSales > 0 ? r2(totalProfit / totalSales) : 0;
 
@@ -2726,6 +3342,7 @@ function renderGrowthPage() {
     const rolling30PrevP    = r2(recs.filter(r => { const d=new Date(r.date+'T00:00:00'); return r.date && d>=_cut60 && d<_cut30; }).reduce((s,r) => s+r.profit, 0));
     const rolling30Tiktok   = r2(tiktokRecs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).reduce((s,r) => s+r.profit, 0));
     const rolling30Ebay     = r2(ebayRecs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).reduce((s,r) => s+r.profit, 0));
+    const rolling30AmazonFbm = r2(amazonFbmRecs.filter(r => r.date && new Date(r.date+'T00:00:00') >= _cut30).reduce((s,r) => s+r.profit, 0));
 
     // Order analytics — from actual transaction data
     const totalGross      = r2(recs.reduce((s,r) => s+(r.price||0), 0));
@@ -2784,7 +3401,7 @@ function renderGrowthPage() {
       byMonth, mKeys, lastMo, prevMo, lastMoP, prevMoP, momPct, momDelta,
       streak, avgDailyList, histForStore, todayN,
       profitPer1k, profitPerList, proj30, proj60, proj90, effDaily, daysToTgt,
-      rolling30P, rolling30PrevP, rolling30Tiktok, rolling30Ebay,
+      rolling30P, rolling30PrevP, rolling30Tiktok, rolling30Ebay, rolling30AmazonFbm,
       totalGross, avgSalePrice, avgProfitPerSale, marginPct, sellThrough,
       daysSinceLastSale, consistencyPct, actualPace14,
       last7Avg, momentum, weekActual,
@@ -2845,6 +3462,7 @@ function renderGrowthPage() {
 
   const totalTiktok30d = r2(all.reduce((s,p) => s + (p.rolling30Tiktok || 0), 0));
   const totalEbay30d   = r2(all.reduce((s,p) => s + (p.rolling30Ebay   || 0), 0));
+  const totalAmazonFbm30d = r2(all.reduce((s,p) => s + (p.rolling30AmazonFbm || 0), 0));
 
   const byEff      = [...all].filter(p => p.current > 0).sort((a,b) => b.profitPer1k - a.profitPer1k);
   const growingCnt  = all.filter(p => p.roll30MomPct !== null && p.roll30MomPct > 0).length;
@@ -2890,24 +3508,24 @@ function renderGrowthPage() {
       <div class="growth-kpi-val" style="color:${all.filter(p=>p.momentum>1.1).length >= all.length*0.5?'var(--green)':all.filter(p=>p.momentum<0.7).length > all.length*0.4?'var(--red)':'var(--amber)'}">${all.filter(p=>p.momentum>1.1).length} accelerating</div>
       <div class="growth-kpi-sub">${all.filter(p=>p.momentum<0.7).length} slowing · ${all.filter(p=>p.momentum>=0.7&&p.momentum<=1.1).length} steady · based on 7d vs 14d pace</div>
     </div>
-    ${totalTiktok30d > 0 ? `<div class="growth-kpi-card" style="border-color:#ff6b9d44">
-      <div class="growth-kpi-label" style="color:#ff6b9d">⟡ TikTok Revenue (30d)</div>
-      <div class="growth-kpi-val" style="color:#ff6b9d">${fmt$(totalTiktok30d)}</div>
-      <div class="growth-kpi-sub">eBay: ${fmt$(totalEbay30d)} · TikTok: ${fmt$(totalTiktok30d)} · combined: ${fmt$(r2(totalTiktok30d+totalEbay30d))}</div>
+    ${(totalTiktok30d > 0 || totalAmazonFbm30d > 0) ? `<div class="growth-kpi-card" style="border-color:rgba(245,158,11,.32)">
+      <div class="growth-kpi-label" style="color:var(--amber)">Platform Profit (30d)</div>
+      <div class="growth-kpi-val" style="color:var(--amber)">${fmt$(r2(totalTiktok30d + totalAmazonFbm30d))}</div>
+      <div class="growth-kpi-sub">eBay: ${fmt$(totalEbay30d)} · TikTok: ${fmt$(totalTiktok30d)} · Amazon FBM: ${fmt$(totalAmazonFbm30d)} · combined: ${fmt$(r2(totalTiktok30d+totalEbay30d+totalAmazonFbm30d))}</div>
     </div>` : ''}`;
 
-  // Show/hide channel toggle based on whether TikTok data exists in RAW
-  const hasTiktokData = RAW.some(r => r.channel === 'tiktok');
+  // Show/hide channel toggle based on whether non-eBay data exists in RAW
+  const hasAltChannelData = TIKTOK_SOURCES.length > 0 || AMAZON_FBM_SOURCES.length > 0 || RAW.some(r => r.channel && r.channel !== 'ebay');
   const toggleRow = $('channel-toggle-row');
   if (toggleRow) {
-    toggleRow.style.display = hasTiktokData ? 'flex' : 'none';
+    toggleRow.style.display = hasAltChannelData ? 'flex' : 'none';
     // Sync button active states to current filter
-    ['all','ebay','tiktok'].forEach(c => {
+    CHANNEL_KEYS.forEach(c => {
       const btn = $('ch-btn-'+c);
       if (!btn) return;
       const active = c === CHANNEL_FILTER;
-      btn.style.background = active ? (c === 'tiktok' ? '#ff6b9d' : 'var(--indigo)') : 'var(--glass)';
-      btn.style.color = active ? '#fff' : (c === 'tiktok' ? '#ff6b9d' : 'var(--text2)');
+      btn.style.background = active ? channelMeta(c).color : 'var(--glass)';
+      btn.style.color = active ? '#fff' : channelMeta(c).muted;
     });
   }
 
@@ -3041,7 +3659,7 @@ function renderGrowthPage() {
       <div style="font-size:10px;margin-bottom:4px"><span style="color:${paceColor}">${paceNote}</span></div>
       ${hasMonthly ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px;line-height:1.7">
         <strong style="color:var(--text2)">${p.recentMoLabel} profit:</strong> ${fmt$(p.recentMoProfit)} ÷ ${p.current.toLocaleString()} listings = <strong style="color:var(--indigo)">${fmt$(p.profitPerListMo)}/listing/mo</strong>
-        ${CHANNEL_FILTER === 'all' && p.rolling30Tiktok > 0 ? `<br><span style="color:#ff6b9d">⟡ TikTok</span> <strong style="color:#ff6b9d">${fmt$(p.rolling30Tiktok)}</strong> · <span style="color:var(--cyan)">eBay</span> <strong style="color:var(--cyan)">${fmt$(p.rolling30Ebay)}</strong> <span style="opacity:.5">(last 30d)</span>` : ''}
+        ${CHANNEL_FILTER === 'all' && (p.rolling30Tiktok > 0 || p.rolling30AmazonFbm > 0) ? `<br><span style="color:var(--cyan)">eBay</span> <strong style="color:var(--cyan)">${fmt$(p.rolling30Ebay)}</strong> · <span style="color:#ff6b9d">⟡ TikTok</span> <strong style="color:#ff6b9d">${fmt$(p.rolling30Tiktok)}</strong> · <span style="color:var(--amber)">Amazon FBM</span> <strong style="color:var(--amber)">${fmt$(p.rolling30AmazonFbm)}</strong> <span style="opacity:.5">(last 30d)</span>` : ''}
       </div>` : (!hasAllTime ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px">No profit data yet — projections unavailable</div>` : '')}
       ${intelBits.length ? `<div style="font-size:9px;color:var(--muted);margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px">${intelBits.join('<span style="opacity:.4">·</span>')}</div>` : ''}
       <div style="font-size:9px;color:var(--muted);margin-bottom:2px;opacity:.6">if you keep listing at current pace →</div>
@@ -3621,6 +4239,895 @@ function updateProfitCalc() {
     </div>`;
 }
 
+// ─── WAR ROOM / STRATEGY SANDBOX ─────────────────────────────────────────────
+function escapeHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+let _warSelectedLever = 'all';
+let _warMoveMode = 'add';
+let _warBuilderDraft = {
+  add: { count: 0, profit: 1000, split: 'partner', account: '' },
+  improve: { target: '', benchmark: '', capture: 0 },
+  lift: { pct: 0 },
+  log: { note: '', impact: 0, split: 'partner' }
+};
+let _warScenarioMoves = [];
+let _warLastRenderedMoveMode = '';
+const WAR_LEVER_KEYS = ['clone', 'upgrade', 'floor', 'clients', 'lift'];
+const WAR_LEVER_CONTROL_IDS = {
+  clone: 'war-control-clone',
+  upgrade: 'war-control-upgrade',
+  floor: 'war-control-floor',
+  clients: 'war-control-clients',
+  lift: 'war-control-lift'
+};
+const WAR_MOVE_TO_LEVER = {
+  add: 'clients',
+  improve: 'upgrade',
+  lift: 'lift',
+  log: 'clients'
+};
+
+function warSplitForType(type, profit) {
+  const key = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : '__partner__';
+  return getSplit(key, profit);
+}
+
+function warGetAccounts() {
+  const baseAccounts = Object.values(_growthPersonData || {}).filter(p => p && p.store && p.current > 0);
+  const windowDays = Math.max(1, Math.floor(warReadNumber('war-recent-window', 14)));
+  const latestTs = baseAccounts.reduce((max, p) => {
+    (p.recs || []).forEach(r => {
+      if (!r.date) return;
+      const ts = new Date(r.date + 'T00:00:00').getTime();
+      if (Number.isFinite(ts) && ts > max) max = ts;
+    });
+    return max;
+  }, 0);
+  const cutoffTs = latestTs ? latestTs - ((windowDays - 1) * 86400000) : 0;
+  return baseAccounts
+    .filter(p => p && p.store && p.current > 0)
+    .map(p => {
+      const recentRows = latestTs
+        ? (p.recs || []).filter(r => r.date && new Date(r.date + 'T00:00:00').getTime() >= cutoffTs)
+        : [];
+      const recentProfit = r2(recentRows.reduce((s, r) => s + (r.profit || 0), 0));
+      const recentRevenue = r2(recentRows.reduce((s, r) => s + (r.price || 0), 0));
+      const monthlyProfit = r2(recentProfit / windowDays * 30);
+  const split = getSplit(p.dashName || p.store, monthlyProfit);
+  return {
+    ...p,
+    monthlyProfit,
+    monthlyRate: 0,
+        split,
+        recentRows: recentRows.length,
+        recentProfit,
+        recentRevenue,
+        recentWindowDays: windowDays,
+        recentBasisLabel: `Last ${windowDays}d`
+      };
+    })
+    .sort((a, b) => b.monthlyProfit - a.monthlyProfit);
+}
+
+function warReadNumber(id, fallback = 0) {
+  const el = $(id);
+  const val = el ? parseFloat(el.value) : NaN;
+  return Number.isFinite(val) ? val : fallback;
+}
+
+function warSetSelectOptions(id, accounts, valueKey = 'store', defaultValue = null) {
+  const el = $(id);
+  if (!el || !accounts.length) return;
+  const current = el.value;
+  el.innerHTML = accounts.map(p => `<option value="${escapeHtml(p[valueKey])}">${escapeHtml(p.store)} · ${fmt$(p.monthlyProfit)}/mo</option>`).join('');
+  if (current && accounts.some(p => p[valueKey] === current)) el.value = current;
+  else if (defaultValue && accounts.some(p => p[valueKey] === defaultValue)) el.value = defaultValue;
+}
+
+function warSetControlValue(id, value) {
+  const el = $(id);
+  if (el) el.value = value;
+}
+
+function warResetScenarioControls() {
+  const defaults = {
+    'war-clone-count': 0,
+    'war-clone-confidence': 1,
+    'war-upgrade-capture': 0,
+    'war-benchmark-adoption': 0,
+    'war-client-count': 0,
+    'war-client-profit': 1000,
+    'war-client-split': 'partner',
+    'war-growth-lift': 0
+  };
+  Object.entries(defaults).forEach(([id, val]) => warSetControlValue(id, val));
+}
+
+function warAccountOptions(accounts, selected = '') {
+  return accounts.map(p => `<option value="${escapeHtml(p.store)}" ${p.store === selected ? 'selected' : ''}>${escapeHtml(p.store)} · ${fmt$(p.monthlyProfit)}/mo</option>`).join('');
+}
+
+function warReadBuilderFields() {
+  if (_warMoveMode === 'add') {
+    _warBuilderDraft.add.count = Math.max(0, Math.floor(warReadNumber('war-builder-count', 0)));
+    _warBuilderDraft.add.profit = Math.max(0, warReadNumber('war-builder-profit', 0));
+    _warBuilderDraft.add.split = $('war-builder-split')?.value || 'partner';
+    _warBuilderDraft.add.account = $('war-builder-account')?.value || _warBuilderDraft.add.account || '';
+  }
+  if (_warMoveMode === 'improve') {
+    _warBuilderDraft.improve.target = $('war-builder-target')?.value || _warBuilderDraft.improve.target || '';
+    _warBuilderDraft.improve.benchmark = $('war-builder-benchmark')?.value || _warBuilderDraft.improve.benchmark || '';
+    _warBuilderDraft.improve.capture = Math.max(0, Math.min(100, warReadNumber('war-builder-capture', 0)));
+  }
+  if (_warMoveMode === 'lift') {
+    _warBuilderDraft.lift.pct = Math.max(-25, Math.min(100, warReadNumber('war-builder-lift', 0)));
+  }
+  if (_warMoveMode === 'log') {
+    _warBuilderDraft.log.note = $('war-builder-note-input')?.value || '';
+    _warBuilderDraft.log.impact = Math.max(0, warReadNumber('war-builder-impact', 0));
+    _warBuilderDraft.log.split = $('war-builder-log-split')?.value || 'partner';
+  }
+}
+
+function warDraftToMove() {
+  warReadBuilderFields();
+  const id = `move_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  if (_warMoveMode === 'add') return { id, type: 'add', ..._warBuilderDraft.add };
+  if (_warMoveMode === 'improve') return { id, type: 'improve', ..._warBuilderDraft.improve };
+  if (_warMoveMode === 'lift') return { id, type: 'lift', ..._warBuilderDraft.lift };
+  return { id, type: 'log', ..._warBuilderDraft.log };
+}
+
+function warMoveLabel(move) {
+  if (!move) return 'Move';
+  if (move.type === 'add') return `Add ${move.count || 0} ${move.split || 'partner'} store${Number(move.count) === 1 ? '' : 's'}`;
+  if (move.type === 'improve') return `${move.target || 'Store'} toward ${move.benchmark || 'benchmark'}`;
+  if (move.type === 'lift') return `${move.pct || 0}% portfolio lift`;
+  return move.note || 'Logged growth move';
+}
+
+function addWarScenarioMove() {
+  const move = warDraftToMove();
+  const hasImpact = move.type === 'add' ? move.count > 0 && move.profit > 0
+    : move.type === 'improve' ? move.capture > 0 && move.target && move.benchmark
+    : move.type === 'lift' ? move.pct !== 0
+    : Boolean(move.note || move.impact > 0);
+  if (!hasImpact) return;
+  _warScenarioMoves.push(move);
+  if (move.type === 'log') {
+    _warBuilderDraft.log.note = '';
+    _warBuilderDraft.log.impact = 0;
+  }
+  renderWarRoom();
+}
+
+function removeWarScenarioMove(id) {
+  _warScenarioMoves = _warScenarioMoves.filter(move => move.id !== id);
+  renderWarRoom();
+}
+
+function clearWarScenarioMoves() {
+  _warScenarioMoves = [];
+  renderWarRoom();
+}
+
+function warMoveToLever(move, accounts, baseline) {
+  if (!move) return null;
+  if (move.type === 'add') {
+    const count = Math.max(0, Math.floor(Number(move.count) || 0));
+    const profitEach = Math.max(0, Number(move.profit) || 0);
+    const profit = r2(count * profitEach);
+    const split = warSplitForType(move.split || 'partner', profit);
+    return { id: move.id, key: 'clients', name: `${count} new ${move.split || 'partner'} store${count === 1 ? '' : 's'} at ${fmt$(profitEach)}/mo`, profit, split, move };
+  }
+  if (move.type === 'improve') {
+    const target = accounts.find(p => p.store === move.target) || accounts[accounts.length - 1];
+    const benchmark = accounts.find(p => p.store === move.benchmark) || accounts[0];
+    const capture = Math.max(0, Math.min(100, Number(move.capture) || 0)) / 100;
+    const profit = r2(Math.max(0, (benchmark?.monthlyProfit || 0) - (target?.monthlyProfit || 0)) * capture);
+    const split = getSplit(target?.dashName || target?.store || '', profit);
+    return { id: move.id, key: 'upgrade', name: `${target?.store || 'Store'} captures ${Math.round(capture * 100)}% of ${benchmark?.store || 'benchmark'} gap`, profit, split, move };
+  }
+  if (move.type === 'lift') {
+    const pct = Math.max(-25, Math.min(100, Number(move.pct) || 0));
+    const rows = accounts.map(p => {
+      const profit = r2(p.monthlyProfit * (pct / 100));
+      return { profit, split: getSplit(p.dashName || p.store, profit) };
+    });
+    const split = rows.reduce((acc, row) => warAddSplit(acc, row.split, row.profit), { profit: 0, owner: 0, danian: 0, jr: 0 });
+    return { id: move.id, key: 'lift', name: `${pct}% lift across current stores`, profit: split.profit, split, move };
+  }
+  const impact = Math.max(0, Number(move.impact) || 0);
+  return { id: move.id, key: 'clients', name: move.note || `Logged move worth ${fmt$(impact)}/mo`, profit: impact, split: warSplitForType(move.split || 'partner', impact), move };
+}
+
+function setWarMoveMode(mode) {
+  _warMoveMode = ['add', 'improve', 'lift', 'log'].includes(mode) ? mode : 'add';
+  _warSelectedLever = WAR_MOVE_TO_LEVER[_warMoveMode] || 'all';
+  warMoveChanged(false);
+}
+
+function warMoveChanged(readFields = true) {
+  if (readFields) warReadBuilderFields();
+  _warSelectedLever = WAR_MOVE_TO_LEVER[_warMoveMode] || 'all';
+  renderWarRoom();
+}
+
+function warUseSelectedRate() {
+  const accounts = warGetAccounts();
+  const selected = $('war-builder-account')?.value || _warBuilderDraft.add.account;
+  const account = accounts.find(p => p.store === selected) || accounts[0];
+  if (account) _warBuilderDraft.add.profit = Math.max(0, Math.round(account.monthlyProfit));
+  if ($('war-builder-profit')) $('war-builder-profit').value = _warBuilderDraft.add.profit;
+  warMoveChanged(false);
+}
+
+function getWarMoveLogs() {
+  try {
+    return JSON.parse(localStorage.getItem('seller_os_growth_logs') || '[]').filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveWarMoveLog() {
+  const note = $('war-builder-note-input')?.value?.trim() || _warBuilderDraft.log.note.trim();
+  const impact = Math.max(0, warReadNumber('war-builder-impact', _warBuilderDraft.log.impact));
+  if (!note && !impact) return;
+  const logs = getWarMoveLogs();
+  logs.unshift({
+    note: note || 'Growth move logged',
+    impact,
+    split: $('war-builder-log-split')?.value || _warBuilderDraft.log.split || 'partner',
+    date: new Date().toISOString()
+  });
+  localStorage.setItem('seller_os_growth_logs', JSON.stringify(logs.slice(0, 12)));
+  _warBuilderDraft.log.note = '';
+  _warBuilderDraft.log.impact = 0;
+  warMoveChanged(false);
+}
+
+function renderWarMoveBuilder(data) {
+  const fields = $('war-move-fields');
+  const note = $('war-move-note');
+  if (!fields || !note) return;
+  const accounts = data.accounts || [];
+  const top = accounts[0];
+  const weakest = [...accounts].sort((a, b) => a.monthlyProfit - b.monthlyProfit)[0];
+  if (!_warBuilderDraft.add.account && top) _warBuilderDraft.add.account = top.store;
+  if (!_warBuilderDraft.improve.target && weakest) _warBuilderDraft.improve.target = weakest.store;
+  if (!_warBuilderDraft.improve.benchmark && top) _warBuilderDraft.improve.benchmark = top.store;
+
+  document.querySelectorAll('[data-war-move]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-war-move') === _warMoveMode);
+  });
+  const activeInsideBuilder = fields.contains(document.activeElement);
+  if (activeInsideBuilder && _warLastRenderedMoveMode === _warMoveMode) {
+    renderWarMoveNote(data);
+    return;
+  }
+  _warLastRenderedMoveMode = _warMoveMode;
+
+  if (_warMoveMode === 'add') {
+    const draft = _warBuilderDraft.add;
+    fields.innerHTML = `
+      <label class="war-builder-field">What kind?
+        <select id="war-builder-split" onchange="warMoveChanged()">
+          <option value="partner" ${draft.split === 'partner' ? 'selected' : ''}>Partner/client store</option>
+          <option value="owned" ${draft.split === 'owned' ? 'selected' : ''}>Owned store</option>
+          <option value="jacob" ${draft.split === 'jacob' ? 'selected' : ''}>Name-fee store</option>
+        </select>
+      </label>
+      <label class="war-builder-field">How many?
+        <input id="war-builder-count" type="number" min="0" step="1" value="${draft.count}" oninput="warMoveChanged()" />
+      </label>
+      <label class="war-builder-field">Perform like
+        <select id="war-builder-account" onchange="warMoveChanged()">${warAccountOptions(accounts, draft.account)}</select>
+      </label>
+      <label class="war-builder-field">Profit per store / month
+        <input id="war-builder-profit" type="number" min="0" step="100" value="${Math.round(draft.profit)}" oninput="warMoveChanged()" />
+      </label>
+      <button type="button" class="war-builder-pill" onclick="warUseSelectedRate()">Use chosen store's current rate</button>
+      <button type="button" class="war-builder-pill primary" onclick="addWarScenarioMove()">Add to scenario stack</button>`;
+    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${draft.split} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
+    return;
+  }
+
+  if (_warMoveMode === 'improve') {
+    const draft = _warBuilderDraft.improve;
+    const target = accounts.find(p => p.store === draft.target) || weakest;
+    const benchmark = accounts.find(p => p.store === draft.benchmark) || top;
+    fields.innerHTML = `
+      <label class="war-builder-field">Which store lifts?
+        <select id="war-builder-target" onchange="warMoveChanged()">${warAccountOptions(accounts, target?.store || '')}</select>
+      </label>
+      <label class="war-builder-field">Perform more like
+        <select id="war-builder-benchmark" onchange="warMoveChanged()">${warAccountOptions(accounts, benchmark?.store || '')}</select>
+      </label>
+      <label class="war-builder-field wide">How much of the gap closes?
+        <input id="war-builder-capture" type="range" min="0" max="100" value="${draft.capture}" oninput="warMoveChanged()" />
+        <span>${Math.round(draft.capture)}%</span>
+      </label>
+      <button type="button" class="war-builder-pill primary" onclick="addWarScenarioMove()">Add to scenario stack</button>`;
+    const gap = target && benchmark ? Math.max(0, benchmark.monthlyProfit - target.monthlyProfit) : 0;
+    note.innerHTML = gap
+      ? `${target.store} is ${fmt$(gap)}/mo behind ${benchmark.store}. This models closing ${Math.round(draft.capture)}% of that gap.`
+      : `Pick a lower store and a stronger benchmark to model an operator lift.`;
+    return;
+  }
+
+  if (_warMoveMode === 'lift') {
+    const draft = _warBuilderDraft.lift;
+    fields.innerHTML = `
+      <label class="war-builder-field wide">Portfolio lift
+        <input id="war-builder-lift" type="range" min="-25" max="100" value="${draft.pct}" oninput="warMoveChanged()" />
+        <span>${Math.round(draft.pct)}%</span>
+      </label>
+      <div class="war-builder-card">
+        <strong>Applies to current stores</strong>
+        <span>This is the simple "operations got better across the board" model.</span>
+      </div>
+      <button type="button" class="war-builder-pill primary" onclick="addWarScenarioMove()">Add to scenario stack</button>`;
+    note.innerHTML = `${draft.pct === 0 ? 'No ops lift modeled yet.' : `${draft.pct > 0 ? '+' : ''}${Math.round(draft.pct)}% across today's account run-rate.`}`;
+    return;
+  }
+
+  const draft = _warBuilderDraft.log;
+  const logs = getWarMoveLogs();
+  fields.innerHTML = `
+    <label class="war-builder-field wide">What did we do?
+      <input id="war-builder-note-input" type="text" value="${escapeHtml(draft.note)}" placeholder="Example: Mando pricing pass, new VA, supplier test..." oninput="warMoveChanged()" />
+    </label>
+    <label class="war-builder-field">Estimated monthly impact
+      <input id="war-builder-impact" type="number" min="0" step="50" value="${Math.round(draft.impact)}" oninput="warMoveChanged()" />
+    </label>
+    <label class="war-builder-field">Who gets paid like?
+      <select id="war-builder-log-split" onchange="warMoveChanged()">
+        <option value="partner" ${draft.split === 'partner' ? 'selected' : ''}>Partner/client split</option>
+        <option value="owned" ${draft.split === 'owned' ? 'selected' : ''}>Owned split</option>
+        <option value="jacob" ${draft.split === 'jacob' ? 'selected' : ''}>Name-fee split</option>
+      </select>
+    </label>
+    <button type="button" class="war-builder-pill primary" onclick="addWarScenarioMove()">Add to scenario stack</button>
+    <button type="button" class="war-builder-pill" onclick="saveWarMoveLog()">Save move note</button>`;
+  note.innerHTML = `
+    <div class="war-log-list">
+      ${logs.length ? logs.slice(0, 4).map(log => `<div><strong>${escapeHtml(log.note)}</strong><span>${fmt$(log.impact || 0)}/mo estimate · ${new Date(log.date).toLocaleDateString()}</span></div>`).join('') : '<div><strong>No moves logged yet</strong><span>Use this for quick notes on what changed.</span></div>'}
+    </div>`;
+}
+
+function renderWarMoveNote(data) {
+  const note = $('war-move-note');
+  if (!note) return;
+  const accounts = data.accounts || [];
+  const top = accounts[0];
+  const weakest = [...accounts].sort((a, b) => a.monthlyProfit - b.monthlyProfit)[0];
+  if (_warMoveMode === 'add') {
+    const draft = _warBuilderDraft.add;
+    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${draft.split} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
+    return;
+  }
+  if (_warMoveMode === 'improve') {
+    const draft = _warBuilderDraft.improve;
+    const target = accounts.find(p => p.store === draft.target) || weakest;
+    const benchmark = accounts.find(p => p.store === draft.benchmark) || top;
+    const gap = target && benchmark ? Math.max(0, benchmark.monthlyProfit - target.monthlyProfit) : 0;
+    const label = $('war-builder-capture')?.parentElement?.querySelector('span');
+    if (label) label.textContent = `${Math.round(draft.capture)}%`;
+    note.innerHTML = gap
+      ? `${target.store} is ${fmt$(gap)}/mo behind ${benchmark.store}. This models closing ${Math.round(draft.capture)}% of that gap.`
+      : `Pick a lower store and a stronger benchmark to model an operator lift.`;
+    return;
+  }
+  if (_warMoveMode === 'lift') {
+    const draft = _warBuilderDraft.lift;
+    const label = $('war-builder-lift')?.parentElement?.querySelector('span');
+    if (label) label.textContent = `${Math.round(draft.pct)}%`;
+    note.innerHTML = `${draft.pct === 0 ? 'No ops lift modeled yet.' : `${draft.pct > 0 ? '+' : ''}${Math.round(draft.pct)}% across today's account run-rate.`}`;
+    return;
+  }
+  const logs = getWarMoveLogs();
+  note.innerHTML = `
+    <div class="war-log-list">
+      ${logs.length ? logs.slice(0, 4).map(log => `<div><strong>${escapeHtml(log.note)}</strong><span>${fmt$(log.impact || 0)}/mo estimate · ${new Date(log.date).toLocaleDateString()}</span></div>`).join('') : '<div><strong>No moves logged yet</strong><span>Use this for quick notes on what changed.</span></div>'}
+    </div>`;
+}
+
+function warBaseline(accounts) {
+  return accounts.reduce((acc, p) => {
+    acc.profit = r2(acc.profit + p.monthlyProfit);
+    acc.owner = r2(acc.owner + warOwnerTake(p.split));
+    acc.danian = r2(acc.danian + (p.split.danian || 0));
+    acc.jr = r2(acc.jr + (p.split.jr || 0));
+    return acc;
+  }, { profit: 0, owner: 0, danian: 0, jr: 0 });
+}
+
+function warOwnerTake(split) {
+  return split?.storeOwner || split?.owner || 0;
+}
+
+function warAddSplit(totals, split, profit) {
+  totals.profit = r2(totals.profit + profit);
+  totals.owner = r2(totals.owner + warOwnerTake(split));
+  totals.danian = r2(totals.danian + (split.danian || 0));
+  totals.jr = r2(totals.jr + (split.jr || 0));
+  return totals;
+}
+
+function warScenarioData() {
+  const accounts = warGetAccounts();
+  if (!accounts.length) return null;
+
+  warSetSelectOptions('war-clone-account', accounts, 'store', accounts[0].store);
+  warSetSelectOptions('war-benchmark-account', accounts, 'store', accounts[0].store);
+  warSetSelectOptions('war-upgrade-target', accounts, 'store', accounts[accounts.length - 1].store);
+  warSetSelectOptions('war-upgrade-benchmark', accounts, 'store', accounts[0].store);
+
+  const baseline = warBaseline(accounts);
+  const levers = _warScenarioMoves
+    .map(move => warMoveToLever(move, accounts, baseline))
+    .filter(Boolean);
+  const delta = levers.reduce((acc, lever) => warAddSplit(acc, lever.split, lever.profit), { profit: 0, owner: 0, danian: 0, jr: 0 });
+  const projected = {
+    profit: r2(baseline.profit + delta.profit),
+    owner: r2(baseline.owner + delta.owner),
+    danian: r2(baseline.danian + delta.danian),
+    jr: r2(baseline.jr + delta.jr)
+  };
+
+  return {
+    accounts,
+    baseline,
+    projected,
+    delta,
+    levers,
+    moves: _warScenarioMoves,
+    clone: accounts[0],
+    benchmark: accounts[0],
+    adoption: 0,
+    liftPct: _warBuilderDraft.lift.pct || 0,
+    upgradeTarget: accounts[accounts.length - 1],
+    upgradeBenchmark: accounts[0],
+    upgradeCapture: (_warBuilderDraft.improve.capture || 0) / 100
+  };
+}
+
+function renderWarRoom() {
+  const empty = $('war-empty');
+  const content = $('war-room-content');
+  const data = warScenarioData();
+  if (!data) {
+    if (empty) empty.style.display = 'block';
+    if (content) content.style.display = 'none';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'block';
+
+  const adoptionLabel = $('war-benchmark-adoption-label');
+  const upgradeLabel = $('war-upgrade-capture-label');
+  const liftLabel = $('war-growth-lift-label');
+  if (adoptionLabel) adoptionLabel.textContent = `${Math.round(data.adoption * 100)}%`;
+  if (upgradeLabel) upgradeLabel.textContent = `${Math.round(data.upgradeCapture * 100)}%`;
+  if (liftLabel) liftLabel.textContent = `${data.liftPct}%`;
+  if ($('war-data-chip')) $('war-data-chip').textContent = `${data.accounts.length} accounts loaded`;
+  renderWarAccountBank(data.accounts);
+  updateWarDropLabels(data);
+
+  const deltaPct = data.baseline.profit > 0 ? r2(data.delta.profit / data.baseline.profit * 100) : 0;
+  updateWarInstrumentUi(data, deltaPct);
+  renderWarMoveBuilder(data);
+  renderWarScenarioStack(data);
+  renderWarInstantAnswer(data, deltaPct);
+  renderWarActionBoard(data);
+  $('war-scenario-title').textContent = `${fmt$(data.projected.profit)}/mo projected`;
+  $('war-summary-cards').innerHTML = [
+    ['Where we are now', fmt$(data.baseline.profit), 'Current rolling monthly run-rate'],
+    ['Scenario upside', `+${fmt$(data.delta.profit)}`, `${deltaPct > 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs current`],
+    ['If levers are pulled', fmt$(data.projected.profit), 'Baseline plus active scenarios']
+  ].map(([label, val, sub]) => `<div class="war-stat"><span>${label}</span><strong>${val}</strong><em>${sub}</em></div>`).join('');
+
+  $('war-take-grid').innerHTML = [
+    ['Store owners', data.baseline.owner, data.delta.owner, data.projected.owner],
+    ['Danian', data.baseline.danian, data.delta.danian, data.projected.danian],
+    ['J&R', data.baseline.jr, data.delta.jr, data.projected.jr]
+  ].map(([label, base, delta, total]) => `
+    <div class="war-take-card">
+      <span>${label}</span>
+      <strong>${fmt$(total)}/mo</strong>
+      <em>${fmt$(base)} now · +${fmt$(delta)} scenario</em>
+    </div>`).join('');
+
+  const leverTable = $('war-lever-table');
+  if (leverTable) leverTable.innerHTML = data.levers.map(lever => `
+    <tr>
+      <td>${escapeHtml(lever.name)}</td>
+      <td>${lever.profit >= 0 ? '+' : ''}${fmt$(lever.profit)}</td>
+      <td>${warOwnerTake(lever.split) ? '+' + fmt$(warOwnerTake(lever.split)) : '—'}</td>
+      <td>${lever.split.danian ? '+' + fmt$(lever.split.danian) : '—'}</td>
+      <td>${lever.split.jr ? '+' + fmt$(lever.split.jr) : '—'}</td>
+    </tr>`).join('');
+
+  $('war-ai-brief').textContent = generateWarRoomBrief(data);
+}
+
+function renderWarScenarioStack(data) {
+  const stack = $('war-scenario-stack');
+  if (!stack) return;
+  if (!data.levers.length) {
+    stack.innerHTML = `
+      <div class="war-stack-empty">
+        <strong>No moves stacked yet</strong>
+        <span>Add a move above, then add another. The model will combine them into one future plan.</span>
+      </div>`;
+    return;
+  }
+  stack.innerHTML = data.levers.map((lever, index) => `
+    <article class="war-stack-card">
+      <div>
+        <span>Move ${index + 1}</span>
+        <strong>${escapeHtml(warMoveLabel(lever.move))}</strong>
+        <em>${escapeHtml(lever.name)}</em>
+      </div>
+      <div class="war-stack-money">
+        <strong>${lever.profit >= 0 ? '+' : ''}${fmt$(lever.profit)}/mo</strong>
+        <small>J&R ${lever.split.jr >= 0 ? '+' : ''}${fmt$(lever.split.jr || 0)} · Danian ${lever.split.danian >= 0 ? '+' : ''}${fmt$(lever.split.danian || 0)} · Owners ${warOwnerTake(lever.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(lever.split))}</small>
+      </div>
+      <button type="button" onclick="removeWarScenarioMove('${escapeHtml(lever.id)}')">Remove</button>
+    </article>
+  `).join('');
+}
+
+function updateWarInstrumentUi(data, deltaPct) {
+  document.querySelectorAll('.war-form-grid input[type="range"]').forEach(input => {
+    const min = parseFloat(input.min || '0');
+    const max = parseFloat(input.max || '100');
+    const val = parseFloat(input.value || '0');
+    const pct = max > min ? Math.max(0, Math.min(100, (val - min) / (max - min) * 100)) : 0;
+    input.style.setProperty('--range-pct', `${pct}%`);
+    const label = input.closest('label');
+    if (label) {
+      label.style.setProperty('--range-pct', `${pct}%`);
+      label.classList.toggle('is-hot', pct >= 70);
+      label.classList.toggle('is-cool', pct <= 25);
+    }
+  });
+  document.querySelectorAll('.war-control-block').forEach(block => block.classList.remove('war-just-updated'));
+  const key = _warSelectedLever !== 'all' ? _warSelectedLever : 'clone';
+  const activeBlock = $(WAR_LEVER_CONTROL_IDS[key]);
+  if (activeBlock) {
+    activeBlock.classList.add('war-just-updated');
+    window.setTimeout(() => activeBlock.classList.remove('war-just-updated'), 420);
+  }
+  const pool = document.querySelector('.war-pool');
+  if (pool) {
+    const rise = Math.max(-18, Math.min(18, 18 - Math.max(0, Math.min(deltaPct, 90)) * .4));
+    pool.style.setProperty('--pool-rise', `${rise}px`);
+    pool.style.setProperty('--pool-glow', `${Math.max(.08, Math.min(.32, .08 + Math.max(0, deltaPct) / 280))}`);
+  }
+  if ($('war-room-content')) {
+    $('war-room-content').classList.remove('war-pulse');
+    void $('war-room-content').offsetWidth;
+    $('war-room-content').classList.add('war-pulse');
+  }
+}
+
+function warSetValue(id, value) {
+  const el = $(id);
+  if (!el) return;
+  el.value = value;
+  updateWarRoom();
+}
+
+function renderWarActionBoard(data) {
+  const grid = $('war-action-grid');
+  if (!grid) return;
+  const accounts = data.accounts || [];
+  const top = accounts[0];
+  const weakest = [...accounts].sort((a, b) => a.monthlyProfit - b.monthlyProfit)[0];
+  const bestLever = [...data.levers].sort((a, b) => b.profit - a.profit)[0];
+  const topShare = data.baseline.profit > 0 && top ? top.monthlyProfit / data.baseline.profit * 100 : 0;
+  const noRecent = accounts.filter(p => p.recentRows === 0).slice(0, 3);
+  const underHalf = top ? accounts.filter(p => p.store !== top.store && p.monthlyProfit < top.monthlyProfit * .5) : [];
+  const focusText = weakest && top
+    ? `${weakest.store} is the lowest current output. Model it toward ${top.store} first, then decide if it needs operator attention or a different playbook.`
+    : 'Load account data to identify the weakest current output.';
+  const cards = [
+    {
+      type: 'move',
+      title: 'Best money lever',
+      metric: bestLever && bestLever.profit > 0 ? `+${fmt$(bestLever.profit)}/mo` : 'No upside yet',
+      body: bestLever && bestLever.profit > 0
+        ? `${bestLever.name} is the strongest modeled path right now. Use this as the first strategic conversation, not the fifth.`
+        : 'Change a lever or drag accounts into the pool to create a positive scenario.',
+      action: "selectWarLever('clone')",
+      cta: 'Spotlight lever'
+    },
+    {
+      type: 'focus',
+      title: 'Operator focus',
+      metric: weakest ? `${weakest.store}: ${fmt$(weakest.monthlyProfit)}/mo` : 'Waiting',
+      body: focusText,
+      action: "applyWarPreset('bestGap');selectWarLever('upgrade')",
+      cta: 'Load fix scenario'
+    },
+    {
+      type: topShare > 35 ? 'risk' : 'health',
+      title: topShare > 35 ? 'Concentration risk' : 'Portfolio balance',
+      metric: top ? `${top.store}: ${topShare.toFixed(0)}%` : 'Waiting',
+      body: topShare > 35
+        ? `${top.store} is carrying a big chunk of current profit. Clone what works, but also raise the floor so one account does not become the whole story.`
+        : `Current profit is not overly dependent on one account. Keep scaling winners while pulling the bottom group upward.`,
+      action: "selectWarLever('floor')",
+      cta: 'Raise floor'
+    },
+    {
+      type: noRecent.length ? 'risk' : 'move',
+      title: 'Data pulse',
+      metric: noRecent.length ? `${noRecent.length} quiet` : `${accounts.length} active`,
+      body: noRecent.length
+        ? `${noRecent.map(p => p.store).join(', ')} have no sales inside this Growth Lab window. Check whether that is a real slowdown or just a data timing issue.`
+        : `${accounts.length} accounts have recent activity in this window. This model is using live momentum, not old averages.`,
+      action: "document.getElementById('war-recent-window')?.focus()",
+      cta: 'Change window'
+    }
+  ];
+  grid.innerHTML = cards.map(card => `
+    <article class="war-action-card ${card.type}">
+      <span>${escapeHtml(card.title)}</span>
+      <strong>${escapeHtml(card.metric)}</strong>
+      <p>${escapeHtml(card.body)}</p>
+      <button type="button" onclick="${card.action}">${escapeHtml(card.cta)}</button>
+    </article>
+  `).join('');
+  if ($('war-data-chip') && underHalf.length && top) {
+    $('war-data-chip').textContent = `${accounts.length} accounts · ${underHalf.length} below half of ${top.store}`;
+  }
+}
+
+function renderWarInstantAnswer(data, deltaPct) {
+  const sortedLevers = [...data.levers].sort((a, b) => b.profit - a.profit);
+  const best = sortedLevers[0];
+  const selectedLever = best || null;
+  if ($('war-answer-headline')) {
+    $('war-answer-headline').textContent = data.delta.profit === 0
+        ? `Current baseline is ${fmt$(data.baseline.profit)}/mo.`
+        : `${data.levers.length} stacked move${data.levers.length === 1 ? '' : 's'} add ${fmt$(data.delta.profit)}/mo and land at ${fmt$(data.projected.profit)}/mo.`;
+  }
+  if ($('war-answer-subline')) {
+    $('war-answer-subline').textContent = data.delta.profit === 0
+        ? `Based on ${data.accounts[0]?.recentBasisLabel || 'recent'} run-rate. No growth levers are active yet, so this is just the business as it sits right now: J&R ${fmt$(data.baseline.jr)}/mo, Danian ${fmt$(data.baseline.danian)}/mo, owners ${fmt$(data.baseline.owner)}/mo.`
+        : `Based on ${data.accounts[0]?.recentBasisLabel || 'recent'} run-rate, that is ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs today. J&R moves from ${fmt$(data.baseline.jr)} to ${fmt$(data.projected.jr)}/mo, Danian to ${fmt$(data.projected.danian)}/mo, and client/owner take to ${fmt$(data.projected.owner)}/mo. Biggest move: ${best ? best.name : 'none yet'}.`;
+  }
+  if ($('war-best-move')) {
+    $('war-best-move').textContent = data.levers.length
+      ? `${data.levers.length} move${data.levers.length === 1 ? '' : 's'} stacked · +${fmt$(data.delta.profit)}/mo`
+      : 'No moves stacked yet';
+  }
+  if ($('war-lever-cards')) {
+    const active = best || { name: 'No future moves stacked', profit: 0, split: { jr: 0, danian: 0, storeOwner: 0 } };
+    const totalLift = Math.max(Math.abs(data.delta.profit), 1);
+    const width = Math.min(100, Math.round(Math.abs(active.profit) / totalLift * 100));
+    $('war-lever-cards').innerHTML = `
+      <div class="war-lever-card selected">
+        <span>Today</span>
+        <strong>${fmt$(data.baseline.profit)}/mo</strong>
+        <em>Current baseline from ${data.accounts[0]?.recentBasisLabel || 'recent'} performance.</em>
+        <small>J&R ${fmt$(data.baseline.jr)} · Danian ${fmt$(data.baseline.danian)} · Owners ${fmt$(data.baseline.owner)}</small>
+        <div class="war-mini-meter"><i style="width:100%"></i></div>
+      </div>
+      <div class="war-lever-card ${active.profit ? 'best selected' : ''}">
+        <span>Biggest move</span>
+        <strong>${active.profit >= 0 ? '+' : ''}${fmt$(active.profit)}/mo</strong>
+        <em>${escapeHtml(active.name)}</em>
+        <small>J&R ${active.split.jr >= 0 ? '+' : ''}${fmt$(active.split.jr || 0)} · Danian ${active.split.danian >= 0 ? '+' : ''}${fmt$(active.split.danian || 0)} · Owners ${warOwnerTake(active.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(active.split))}</small>
+        <div class="war-mini-meter"><i style="width:${width}%"></i></div>
+      </div>
+      <div class="war-lever-card">
+        <span>After</span>
+        <strong>${fmt$(data.projected.profit)}/mo</strong>
+        <em>${data.delta.profit === 0 ? 'Same as current baseline until you add a move.' : `${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs current.`}</em>
+        <small>J&R ${fmt$(data.projected.jr)} · Danian ${fmt$(data.projected.danian)} · Owners ${fmt$(data.projected.owner)}</small>
+        <div class="war-mini-meter"><i style="width:${Math.max(6, Math.min(100, 60 + deltaPct))}%"></i></div>
+      </div>`;
+  }
+  document.querySelectorAll('[data-war-control]').forEach(block => {
+    block.classList.toggle('active', block.getAttribute('data-war-control') === _warSelectedLever);
+  });
+  if ($('war-visual-flow')) {
+    const total = Math.max(data.projected.profit, 1);
+    const pct = v => Math.max(4, Math.min(100, Math.round(v / total * 100)));
+    $('war-visual-flow').innerHTML = `
+      <div class="war-flow-node base">
+        <span>Now</span>
+        <strong>${fmt$(data.baseline.profit)}</strong>
+        <em>${data.accounts[0]?.recentBasisLabel || 'recent'} run-rate</em>
+      </div>
+      <div class="war-flow-beam"><i style="width:${pct(data.delta.profit)}%"></i></div>
+      <div class="war-flow-node upside">
+        <span>Added</span>
+        <strong>+${fmt$(data.delta.profit)}</strong>
+        <em>scenario lift</em>
+      </div>
+      <div class="war-flow-beam"><i style="width:${pct(data.projected.profit)}%"></i></div>
+      <div class="war-flow-node projected">
+        <span>Projected</span>
+        <strong>${fmt$(data.projected.profit)}</strong>
+        <em>monthly profit</em>
+      </div>
+      <div class="war-flow-splits">
+        <div style="--split:${pct(data.projected.jr)}%"><span>J&R</span><strong>${fmt$(data.projected.jr)}</strong></div>
+        <div style="--split:${pct(data.projected.danian)}%"><span>Danian</span><strong>${fmt$(data.projected.danian)}</strong></div>
+        <div style="--split:${pct(data.projected.owner)}%"><span>Owners</span><strong>${fmt$(data.projected.owner)}</strong></div>
+      </div>`;
+  }
+  const impacts = [
+    ['war-impact-clone', data.levers[0]],
+    ['war-impact-upgrade', data.levers[1]],
+    ['war-impact-floor', data.levers[2]],
+    ['war-impact-clients', data.levers[3]],
+    ['war-impact-lift', data.levers[4]]
+  ];
+  impacts.forEach(([id, lever]) => {
+    if (!$(id) || !lever) return;
+    $(id).innerHTML = `<strong>${lever.profit >= 0 ? '+' : ''}${fmt$(lever.profit)}/mo</strong><span>J&R ${lever.split.jr >= 0 ? '+' : ''}${fmt$(lever.split.jr || 0)} · Danian ${lever.split.danian >= 0 ? '+' : ''}${fmt$(lever.split.danian || 0)} · Owners ${warOwnerTake(lever.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(lever.split))}</span>`;
+  });
+}
+
+function updateWarRoom() {
+  renderWarRoom();
+}
+
+function selectWarLever(key) {
+  _warSelectedLever = _warSelectedLever === key ? 'all' : key;
+  renderWarRoom();
+  const targetId = WAR_LEVER_CONTROL_IDS[_warSelectedLever];
+  const target = targetId ? $(targetId) : null;
+  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function resetWarRoom() {
+  _warSelectedLever = WAR_MOVE_TO_LEVER[_warMoveMode] || 'all';
+  _warLastRenderedMoveMode = '';
+  _warScenarioMoves = [];
+  _warBuilderDraft = {
+    add: { count: 0, profit: 1000, split: 'partner', account: _warBuilderDraft.add.account || '' },
+    improve: { target: _warBuilderDraft.improve.target || '', benchmark: _warBuilderDraft.improve.benchmark || '', capture: 0 },
+    lift: { pct: 0 },
+    log: { note: '', impact: 0, split: 'partner' }
+  };
+  warResetScenarioControls();
+  renderWarRoom();
+}
+
+function applyWarPreset(kind) {
+  const accounts = warGetAccounts();
+  const best = accounts[0];
+  const weakest = accounts[accounts.length - 1];
+  if (kind === 'bestGap') {
+    if ($('war-upgrade-target') && weakest) $('war-upgrade-target').value = weakest.store;
+    if ($('war-upgrade-benchmark') && best) $('war-upgrade-benchmark').value = best.store;
+    if ($('war-upgrade-capture')) $('war-upgrade-capture').value = 75;
+    if ($('war-benchmark-account') && best) $('war-benchmark-account').value = best.store;
+    if ($('war-benchmark-adoption')) $('war-benchmark-adoption').value = 65;
+  }
+  if (kind === 'clientPush') {
+    if ($('war-client-count')) $('war-client-count').value = 10;
+    if ($('war-client-profit')) $('war-client-profit').value = 1500;
+    if ($('war-client-split')) $('war-client-split').value = 'partner';
+  }
+  if (kind === 'conservative') {
+    if ($('war-clone-confidence')) $('war-clone-confidence').value = .75;
+    if ($('war-benchmark-adoption')) $('war-benchmark-adoption').value = 35;
+    if ($('war-upgrade-capture')) $('war-upgrade-capture').value = 40;
+    if ($('war-growth-lift')) $('war-growth-lift').value = 10;
+  }
+  renderWarRoom();
+}
+
+function renderWarAccountBank(accounts) {
+  const bank = $('war-account-bank');
+  if (!bank) return;
+  const topProfit = Math.max(...accounts.map(a => a.monthlyProfit), 0);
+  bank.innerHTML = accounts.map(p => {
+    const rankTone = p.monthlyProfit === topProfit ? 'best' : p.monthlyProfit <= accounts[accounts.length - 1].monthlyProfit ? 'quiet' : '';
+    return `<button class="war-account-card ${rankTone}" draggable="true" ondragstart="warDragAccount(event, ${JSON.stringify(p.store).replace(/"/g, '&quot;')})">
+      <span>${escapeHtml(p.store)}</span>
+      <strong>${fmt$(p.monthlyProfit)}/mo</strong>
+      <em>${p.split.type} split · ${p.recentBasisLabel} run-rate</em>
+      <small>${fmt$(p.recentProfit)} profit · ${p.recentRows} sales in ${p.recentBasisLabel}</small>
+    </button>`;
+  }).join('');
+}
+
+function updateWarDropLabels(data) {
+  if ($('war-drop-clone')) $('war-drop-clone').textContent = data.clone?.store || 'Drop a top account here';
+  if ($('war-drop-upgrade-target')) $('war-drop-upgrade-target').textContent = data.upgradeTarget?.store || 'Drop a weaker account here';
+  if ($('war-drop-upgrade-benchmark')) $('war-drop-upgrade-benchmark').textContent = data.upgradeBenchmark?.store || 'Drop a stronger account here';
+  document.querySelectorAll('.war-drop-zone').forEach(zone => {
+    zone.classList.add('filled');
+    zone.ondragover = warAllowDrop;
+    zone.ondragenter = () => zone.classList.add('hovering');
+    zone.ondragleave = () => zone.classList.remove('hovering');
+    zone.ondrop = warDropAccount;
+  });
+}
+
+function warDragAccount(ev, store) {
+  ev.dataTransfer.setData('text/plain', store);
+}
+
+function warAllowDrop(ev) {
+  ev.preventDefault();
+}
+
+function warDropAccount(ev) {
+  ev.preventDefault();
+  ev.currentTarget?.classList?.remove('hovering');
+  const store = ev.dataTransfer.getData('text/plain');
+  const target = ev.currentTarget?.dataset?.warDrop;
+  if (!store || !target) return;
+  if (target === 'clone' && $('war-clone-account')) $('war-clone-account').value = store;
+  if (target === 'upgrade-target' && $('war-upgrade-target')) $('war-upgrade-target').value = store;
+  if (target === 'upgrade-benchmark' && $('war-upgrade-benchmark')) $('war-upgrade-benchmark').value = store;
+  renderWarRoom();
+}
+
+function generateWarRoomBrief(data = warScenarioData()) {
+  if (!data) return 'Seller OS War Room: no account data loaded yet.';
+  const top = data.accounts.slice(0, 5);
+  const weakest = [...data.accounts].sort((a, b) => a.monthlyProfit - b.monthlyProfit).slice(0, 3);
+  const leverLines = data.levers.map(l => `- ${l.name}: ${l.profit >= 0 ? '+' : ''}${fmt$(l.profit)}/mo profit, J&R ${l.split.jr >= 0 ? '+' : ''}${fmt$(l.split.jr || 0)}, Danian ${l.split.danian >= 0 ? '+' : ''}${fmt$(l.split.danian || 0)}, owners ${warOwnerTake(l.split) >= 0 ? '+' : ''}${fmt$(warOwnerTake(l.split))}`);
+  const accountLines = data.accounts.map(p => `| ${p.store} | ${p.recentBasisLabel} | ${fmt$(p.monthlyProfit)} | ${fmt$(p.recentProfit)} | ${p.split.type} | ${fmt$(p.split.jr || 0)} | ${fmt$(p.split.danian || 0)} | ${fmt$(warOwnerTake(p.split))} |`);
+  return `# Seller OS War Room Brief
+
+Generated: ${new Date().toLocaleString()}
+
+## Current Baseline
+- Active accounts: ${data.accounts.length}
+- Performance basis: ${data.accounts[0]?.recentBasisLabel || 'recent'} run-rate, annualized to monthly
+- Current projected monthly profit: ${fmt$(data.baseline.profit)}
+- J&R monthly take: ${fmt$(data.baseline.jr)}
+- Danian monthly take: ${fmt$(data.baseline.danian)}
+- Store owner/client monthly take: ${fmt$(data.baseline.owner)}
+
+## Scenario Output
+- Projected monthly profit: ${fmt$(data.projected.profit)}
+- Scenario profit upside: +${fmt$(data.delta.profit)}
+- Projected J&R take: ${fmt$(data.projected.jr)} (+${fmt$(data.delta.jr)})
+- Projected Danian take: ${fmt$(data.projected.danian)} (+${fmt$(data.delta.danian)})
+- Projected owner/client take: ${fmt$(data.projected.owner)} (+${fmt$(data.delta.owner)})
+
+## Active Levers
+${leverLines.join('\n')}
+
+## Top Accounts By Monthly Profit
+${top.map((p, i) => `${i + 1}. ${p.store}: ${fmt$(p.monthlyProfit)}/mo run-rate, ${fmt$(p.recentProfit)} actual profit in ${p.recentBasisLabel}, split ${p.split.type}`).join('\n')}
+
+## Weakest Accounts By Monthly Profit
+${weakest.map((p, i) => `${i + 1}. ${p.store}: ${fmt$(p.monthlyProfit)}/mo run-rate, ${fmt$(p.recentProfit)} actual profit in ${p.recentBasisLabel}, split ${p.split.type}`).join('\n')}
+
+## Account Table
+| Account | Recent basis | Monthly run-rate | Actual recent profit | Split | J&R | Danian | Owner |
+|---|---|---:|---:|---|---:|---:|---:|
+${accountLines.join('\n')}
+
+## Prompt
+Analyze this ecommerce portfolio. Recommend the best 3 growth paths, the riskiest assumptions in this scenario, and what operational actions should happen this week. Focus on total profit and each party's take-home.`;
+}
+
+function copyWarRoomBrief() {
+  const text = $('war-ai-brief')?.textContent || generateWarRoomBrief();
+  const done = () => showToast('War Room brief copied', 'success', '📋');
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(() => window.prompt('Copy this War Room brief:', text));
+  else window.prompt('Copy this War Room brief:', text);
+}
+
 // ─── DATA GUIDE ───────────────────────────────────────────────────────────────
 function toggleGuide() {
   $('guide-section').classList.toggle('open');
@@ -3838,8 +5345,8 @@ function openClientView() {
   if (!clientStores.length) { showToast('No partner stores loaded yet', 'info', '👤'); return; }
 
   const listEl = $('client-select-list');
-  const _cvChFilter = r => CHANNEL_FILTER === 'all' || (CHANNEL_FILTER === 'tiktok' ? r.channel === 'tiktok' : r.channel !== 'tiktok');
-  const _cvEarnLabel = CHANNEL_FILTER === 'tiktok' ? 'TikTok earnings' : CHANNEL_FILTER === 'ebay' ? 'eBay earnings' : 'All-time earnings';
+  const _cvChFilter = r => channelMatches(r);
+  const _cvEarnLabel = CHANNEL_FILTER === 'all' ? 'All-time earnings' : `${channelTitle()} earnings`;
   listEl.innerHTML = clientStores.map(name => {
     const isJacob  = JACOB_STORES.includes(name);
     const pct      = isJacob ? '10%' : '50%';
@@ -3873,8 +5380,8 @@ function renderClientView(personName, opts = {}) {
   const ownerPctLabel = isJacob ? '10%' : '50%';
   const displayName   = personName === 'John Slop' ? 'Sloop' : personName;
   const isTikTokMode  = CHANNEL_FILTER === 'tiktok';
-  const isEbayMode    = CHANNEL_FILTER === 'ebay';
-  const cvChFilter    = r => CHANNEL_FILTER === 'all' || (isTikTokMode ? r.channel === 'tiktok' : r.channel !== 'tiktok');
+  const isAltStoreMode = CHANNEL_FILTER === 'tiktok' || CHANNEL_FILTER === 'amazon_fbm';
+  const cvChFilter    = r => channelMatches(r);
 
   const recs         = RAW.filter(r => r.person === personName && cvChFilter(r));
   const allTimeProfit = r2(recs.reduce((s,r) => s + r.profit, 0));
@@ -3947,7 +5454,7 @@ function renderClientView(personName, opts = {}) {
       : momPct !== null && momPct >= 0
         ? `${latestLabel || 'This month'} is trending higher than ${prevMo}, with your share continuing to grow.`
         : `This store is still early in the month, with ${myAllTime > 0 ? fmt$(myAllTime) : 'earnings'} already built all-time.`,
-    !isTikTokMode && remainingListings > 0
+    !isAltStoreMode && remainingListings > 0
       ? `The store is at ${current.toLocaleString()} active listings, with a clear path toward the ${target.toLocaleString()} listing goal.`
       : `The listing goal is in great shape, which gives the store more room to compound earnings.`,
     latestMargin > 0
@@ -3967,14 +5474,15 @@ function renderClientView(personName, opts = {}) {
   window._csProfitPerListMo = profitPerListMo;
 
   // Pre-compute channel-dependent labels and sections
-  const cvHeaderIcon    = isTikTokMode ? '⟡' : '📦';
-  const cvHeaderBg      = isTikTokMode ? 'linear-gradient(135deg,#ff2d55,#ff6b9d)' : 'linear-gradient(135deg,var(--green),var(--emerald))';
-  const cvAllTimeLabel  = isTikTokMode ? 'TikTok Earnings' : isEbayMode ? 'eBay Earnings' : 'All-Time Earnings';
-  const cvAllTimeSub    = isTikTokMode ? 'your TikTok total' : isEbayMode ? 'your eBay total' : 'your total since day one';
-  const cvFeePlatform   = isTikTokMode ? 'TikTok fees' : 'eBay fees';
+  const cvMeta          = channelMeta();
+  const cvHeaderIcon    = cvMeta.icon || '📦';
+  const cvHeaderBg      = isTikTokMode ? 'linear-gradient(135deg,#ff2d55,#ff6b9d)' : CHANNEL_FILTER === 'amazon_fbm' ? 'linear-gradient(135deg,#f59e0b,#fbbf24)' : 'linear-gradient(135deg,var(--green),var(--emerald))';
+  const cvAllTimeLabel  = CHANNEL_FILTER === 'all' ? 'All-Time Earnings' : `${cvMeta.label} Earnings`;
+  const cvAllTimeSub    = CHANNEL_FILTER === 'all' ? 'your total since day one' : `your ${cvMeta.label} total`;
+  const cvFeePlatform   = CHANNEL_FILTER === 'amazon_fbm' ? 'Amazon fees' : isTikTokMode ? 'TikTok fees' : 'eBay fees';
 
   // Listing sections are eBay-only — hide in TikTok mode or when tracker has no data for this store
-  const cvListingsHtml = (isTikTokMode || !storeSum) ? '' : `
+  const cvListingsHtml = (isAltStoreMode || !storeSum) ? '' : `
         <!-- Listings Progress -->
         <div class="card" style="padding:20px">
           <div style="font-size:13px;font-weight:700;margin-bottom:16px">📦 Your Store Listings</div>
@@ -4740,7 +6248,7 @@ function openWeeklyWrap() {
   const content = $('wrap-content');
   if (!RAW.length) { showToast('Load data first', 'error', '⚠️'); return; }
 
-  const chRAW = RAW.filter(r => CHANNEL_FILTER === 'all' || (CHANNEL_FILTER === 'tiktok' ? r.channel === 'tiktok' : r.channel !== 'tiktok'));
+  const chRAW = channelFilterRows(RAW);
 
   // Determine last full week (Mon–Sun)
   const today = new Date();

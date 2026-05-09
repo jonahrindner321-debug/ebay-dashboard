@@ -35,7 +35,7 @@ module.exports = async function handler(req, res) {
     if (!tab) { res.status(400).json({ error: 'Missing required param: tab' }); return; }
     googleUrl = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(tab)}!A:Z?key=${key}`;
   } else if (type === 'drive') {
-    googleUrl = `https://www.googleapis.com/drive/v3/files/${id}?key=${key}&fields=createdTime`;
+    googleUrl = `https://www.googleapis.com/drive/v3/files/${id}?key=${key}&fields=createdTime,modifiedTime`;
   } else if (type === 'meta') {
     googleUrl = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/_meta!A1?key=${key}`;
   } else {

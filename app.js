@@ -1105,13 +1105,12 @@ async function loadAll() {
   }
   AMAZON_FBM_SOURCES.forEach(src => allSources.push({ ...src, sourceType: 'amazon_fbm' }));
 
-  // Fetch sheet creation dates from Drive API (fire and forget — non-blocking)
+  // Fetch sheet creation + last-modified dates from Drive API (fire and forget — non-blocking)
   Promise.all(ids.map(async id => {
     try {
       const data = await googleFetch('drive', { id });
-      if (data.createdTime) {
-        STORE_CREATED[SHEETS[id]] = data.createdTime.substring(0, 10);
-      }
+      if (data.createdTime)  STORE_CREATED[SHEETS[id]]  = data.createdTime.substring(0, 10);
+      if (data.modifiedTime) SHEET_MODIFIED[SHEETS[id]] = data.modifiedTime;
     } catch(e) { /* ignore */ }
   }));
   Promise.all([

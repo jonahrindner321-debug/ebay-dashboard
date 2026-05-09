@@ -3,7 +3,6 @@ const SHEETS = {
   '1_81VM_63ZT_p5LEGkvEU2MBxbc4RBWzmd_RKgXL_icA': 'Russell',
   '1M_YHSLrdQ-XK3TitCU5Sv5OKwE-jBXR6JnvNQ1kmtMI': 'Russ LLC',
   '1k-GFkk-jFhnrD2v-qIEdV0zyy0kOpvbIZZ7NbppZTgQ': 'Johna',
-  '1IVGp49ly5EAiyEv0_qFLqcE_giK8Lz1pt5znq-6xzzY': 'Johna',
   '1nuJojKqj9b_a2RSKn7huV6vTr_62E7707uw1wBh0XDA': 'Dolo LLC',
   '1xsMWqwL381VcGxH5_yhWx_SKixLd_ojievrfqamBB5M': 'John Slop',
   '1wH5s8qdr0-imdK623Tdtu-UgKvRMELD_3Gd7OS2tNmQ': 'Jacob',
@@ -70,6 +69,7 @@ let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok' | 'amazon_fbm'
 // Store creation dates fetched from Drive API — populated on load
 const STORE_CREATED = {}; // { person: 'YYYY-MM-DD' }
 const SHEET_MODIFIED = {}; // { person: ISO datetime string }
+const SHEET_STATUS = {}; // { label: { state:'ok'|'error', checkedAt, err } }
 
 // Expenses parsed from Expense tabs — populated on load
 // Structure: { person: { 'YYYY-MM': totalAmount, ... } }
@@ -207,6 +207,9 @@ function setStatus(type, text) {
 }
 function setProgress(done, total) {
   $('progress-fill').style.width = total > 0 ? (done / total * 100) + '%' : '0%';
+}
+function markSheetStatus(label, state, err = '') {
+  SHEET_STATUS[label] = { state, checkedAt: new Date().toISOString(), err };
 }
 
 function roiPill(r) {
@@ -1157,7 +1160,7 @@ async function loadAll() {
   if (!allSources.length) {
     const msg = tabErrors.length ? 'API error: '+tabErrors[0].e : 'No tabs — check sheet sharing';
     setStatus('error', msg);
-    $('tbody').innerHTML = `<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--rose)">❌ ${msg}</td></tr>`;
+    $('tbody').innerHTML = `<tr><td colspan="12" style="text-align:center;padding:28px;color:var(--rose)">❌ ${msg}</td></tr>`;
     ri.className='';
     dismissIntro();
     return;
@@ -1478,8 +1481,10 @@ function renderKPIs(data) {
   const amazonUnit = r2(data.reduce((s,r)=>s+(r.unitCostTotal || 0), 0));
   const amazonTax = r2(data.reduce((s,r)=>s+(r.tax || 0), 0));
   const amazonOpsCost = r2(amazonUnit + amazonLabel + amazonPrep + amazonShip);
-  const feeCardLabel = isAmazonMode ? '📦 Amazon Costs' : CHANNEL_FILTER === 'tiktok' ? '🏷️ TikTok Fees' : CHANNEL_FILTER === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
-  const feeCardValue = isAmazonMode ? r2(amazonFee + amazonOpsCost + amazonTax) : fee;
+  const ebayItemCost = r2(data.filter(r=>r.channel === 'ebay').reduce((s,r)=>s+(r.cost || 0), 0));
+  const showEbayItemCost = !isAmazonMode && (CHANNEL_FILTER === 'ebay' || CHANNEL_FILTER === 'all');
+  const feeCardLabel = isAmazonMode ? '📦 Amazon Costs' : showEbayItemCost ? '🛒 Amazon Item Cost' : CHANNEL_FILTER === 'tiktok' ? '🏷️ TikTok Fees' : '🏷️ Platform Fees';
+  const feeCardValue = isAmazonMode ? r2(amazonFee + amazonOpsCost + amazonTax) : showEbayItemCost ? ebayItemCost : fee;
   const feeCardPct = rev > 0 ? feeCardValue / rev * 100 : 0;
   const showAmazonPayout = isAmazonMode && profit === 0 && amazonPayout > 0;
   const primaryValue = showAmazonPayout ? amazonPayout : profit;
@@ -1525,6 +1530,11 @@ function renderKPIs(data) {
         const dayRows = data.filter(r => r.date === d.date);
         return r2(dayRows.reduce((s,r)=>s+(r.amazonFee||r.fee||0)+(r.cost||0)+(r.tax||0),0));
       })
+    : showEbayItemCost
+      ? last30.map(d => {
+          const dayRows = data.filter(r => r.date === d.date && r.channel === 'ebay');
+          return r2(dayRows.reduce((s,r)=>s+(r.cost || 0),0));
+        })
     : null;
   const feeSpark    = feeCardSpark || last30.map(d=>d.fee);
   const roiSpark    = last30.map(d=>d.revenue>0?(d.profit/d.revenue*100):0);
@@ -1599,6 +1609,7 @@ function renderKPIs(data) {
           <div class="kpi-val" id="kv-fee">${fmt$(feeCardValue)}</div>
           <div class="kpi-sub">${fmtP(feeCardPct)} of revenue</div>
           ${isAmazonMode ? `<div class="kpi-sub" style="font-size:10px;line-height:1.45;margin-top:2px">Amazon fees ${fmt$(amazonFee)} · unit/prep ${fmt$(r2(amazonUnit+amazonPrep))} · label/ship ${fmt$(r2(amazonLabel+amazonShip))}${amazonTax?` · tax ${fmt$(amazonTax)}`:''}</div>` : ''}
+          ${showEbayItemCost ? `<div class="kpi-sub" style="font-size:10px;line-height:1.45;margin-top:2px">From eBay sheet COST column · eBay fees ${fmt$(fee)} · combined ${fmt$(r2(ebayItemCost+fee))}</div>` : ''}
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-fee" width="80" height="32"></canvas>
       </div>
@@ -1983,6 +1994,7 @@ function accountSummaryTableMarkup() {
         <th onclick="sortBy('rank')">#</th>
         <th onclick="sortBy('person')">Account <span id="sh-person"></span></th>
         <th onclick="sortBy('profit')">Profit <span id="sh-profit"></span></th>
+        <th onclick="sortBy('item_cost')" title="Amazon supplier/item cost from the eBay COST column">Amazon Cost <span id="sh-item_cost"></span></th>
         <th onclick="sortBy('fee')">Fees <span id="sh-fee"></span></th>
         <th onclick="sortBy('sales')">Sales <span id="sh-sales"></span></th>
         <th onclick="sortBy('avg_sale')">Avg Sale <span id="sh-avg_sale"></span></th>
@@ -2180,12 +2192,13 @@ function renderTable(data) {
     const rev    = r2(pr.reduce((s,r)=>s+r.price,0));
     const profit = r2(pr.reduce((s,r)=>s+r.profit,0));
     const cost   = r2(pr.reduce((s,r)=>s+r.cost,0));
+    const itemCost = r2(pr.filter(r=>r.channel === 'ebay').reduce((s,r)=>s+(r.cost || 0),0));
     const fee    = r2(pr.reduce((s,r)=>s+r.fee,0));
     const sales  = pr.length;
     const roi    = cost > 0 ? r2(profit/cost*100) : 0;
     const split  = getSplit(p, profit);
     const inactive = getInactiveDays(pr);
-    return { person:p, revenue:rev, profit, cost, fee, sales, roi,
+    return { person:p, revenue:rev, profit, cost, item_cost: itemCost, fee, sales, roi,
       avg_sale:   sales>0?r2(rev/sales):0,
       avg_profit: sales>0?r2(profit/sales):0,
       owner_take: split.storeOwner, danian_take: split.danian, jr_take: split.jr,
@@ -2201,7 +2214,7 @@ function renderTable(data) {
   rows.forEach((r,i)=>r.rank=i+1);
 
   // Update sort indicators
-  ['person','revenue','profit','roi','fee','sales','avg_sale','avg_profit','owner_take','danian_take','jr_take'].forEach(col => {
+  ['person','revenue','profit','item_cost','roi','fee','sales','avg_sale','avg_profit','owner_take','danian_take','jr_take'].forEach(col => {
     const el = $('sh-'+col);
     if (!el) return;
     el.textContent = sortCol===col ? (sortDir==='asc'?' ↑':' ↓') : '';
@@ -2211,7 +2224,7 @@ function renderTable(data) {
 
   const tb = $('tbody');
   if (!rows.length) {
-    tb.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--muted)">No data for selected filters</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:28px;color:var(--muted)">No data for selected filters</td></tr>`;
     return;
   }
   tb.innerHTML = rows.map(r => {
@@ -2224,6 +2237,7 @@ function renderTable(data) {
       <td>${rankHtml}</td>
       <td><button class="pin-btn ${PINNED.has(r.person)?'pinned':''}" onclick="togglePin('${r.person.replace(/'/g,"\\'")}',event)" title="Pin to top">${PINNED.has(r.person)?'★':'☆'}</button><strong>${r.person}</strong>${r.inactive !== null && r.inactive >= 5 ? `<span style="color:var(--rose);font-size:9px;margin-left:5px;font-weight:700">⚠️${r.inactive}d</span>` : ''}</td>
       <td><strong style="color:${r.profit>=0?'var(--emerald)':'var(--rose)'}">${fmt$(r.profit)}</strong></td>
+      <td style="color:var(--amber);font-weight:800">${fmt$(r.item_cost)}</td>
       <td style="color:var(--muted)">${fmt$(r.fee)}</td>
       <td>${fmtN(r.sales)}</td>
       <td>${fmt$(r.avg_sale)}</td>
@@ -2716,6 +2730,8 @@ function renderAllTimeBanner() {
   const allProfit=r2(data.reduce((s,r)=>s+r.profit,0));
   const allDates=[...new Set(data.filter(r=>r.date).map(r=>r.date))];
   const months=[...new Set(data.map(r=>r.month))];
+  const ebayItemCost=r2(data.filter(r=>r.channel === 'ebay').reduce((s,r)=>s+(r.cost || 0),0));
+  const showEbayItemCost = CHANNEL_FILTER === 'ebay' || CHANNEL_FILTER === 'all';
   let allJR=0;
   const persons=[...new Set(data.map(r=>r.person))];
   persons.forEach(p=>{
@@ -2730,7 +2746,10 @@ function renderAllTimeBanner() {
   $('alltime-val').textContent   = fmt$(allProfit);
   window._ALLTIME_PROFIT = allProfit;
   $('alltime-sales').textContent = fmtN(data.length);
-  $('alltime-days').textContent  = fmtN(allDates.length);
+  const extraLabel = $('alltime-extra-label');
+  if (extraLabel) extraLabel.textContent = showEbayItemCost ? 'Amazon Item Cost' : 'Active Days';
+  $('alltime-days').textContent  = showEbayItemCost ? fmt$(ebayItemCost) : fmtN(allDates.length);
+  $('alltime-days').style.color = showEbayItemCost ? 'var(--amber)' : 'var(--violet)';
   $('alltime-jr').textContent    = fmt$(allJR);
   $('alltime-meta').textContent  = `${months.length} months tracked`;
   countUp($('alltime-val'), allProfit, 1200);
@@ -2906,15 +2925,28 @@ function renderSheetActivity() {
     section.style.display = 'none';
     return;
   }
-  const entries = Object.keys(SHEET_MODIFIED);
+  let entries;
+  if (CHANNEL_FILTER === 'tiktok') {
+    entries = TIKTOK_SOURCES.map(src => `TikTok ${src.person}`);
+  } else if (CHANNEL_FILTER === 'all') {
+    entries = [...Object.values(SHEETS), ...TIKTOK_SOURCES.map(src => `TikTok ${src.person}`)];
+  } else {
+    entries = Object.values(SHEETS);
+  }
+  entries = [...new Set(entries)];
   if (!entries.length) { section.style.display = 'none'; return; }
 
   const now = Date.now();
   const cards = entries.map(person => {
-    const modTime = new Date(SHEET_MODIFIED[person]).getTime();
-    const hoursAgo = (now - modTime) / 3600000;
+    const modRaw = SHEET_MODIFIED[person];
+    const modTime = modRaw ? new Date(modRaw).getTime() : NaN;
+    const hasTimestamp = isFinite(modTime);
+    const hoursAgo = hasTimestamp ? (now - modTime) / 3600000 : Infinity;
     let color, dot, label;
-    if (hoursAgo < 12) {
+    if (!hasTimestamp) {
+      color = 'var(--muted)'; dot = '⚪';
+      label = 'No timestamp';
+    } else if (hoursAgo < 12) {
       color = 'var(--green)'; dot = '🟢';
       label = hoursAgo < 1 ? 'Just now' : `${Math.floor(hoursAgo)}h ago`;
     } else if (hoursAgo < 24) {
@@ -2928,8 +2960,11 @@ function renderSheetActivity() {
     return { person, hoursAgo, color, dot, label };
   }).sort((a, b) => b.hoursAgo - a.hoursAgo); // worst first
 
-  const overdue = cards.filter(c => c.hoursAgo >= 12).length;
-  $('sheet-activity-sub').textContent = overdue > 0 ? `${overdue} account${overdue>1?'s':''} overdue` : 'All sheets up to date';
+  const overdue = cards.filter(c => isFinite(c.hoursAgo) && c.hoursAgo >= 12).length;
+  const missing = cards.filter(c => !isFinite(c.hoursAgo)).length;
+  $('sheet-activity-sub').textContent = missing > 0
+    ? `${missing} timestamp${missing>1?'s':''} pending`
+    : overdue > 0 ? `${overdue} account${overdue>1?'s':''} overdue` : 'All sheets up to date';
 
   grid.innerHTML = cards.map(c => `
     <div class="card" style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center">

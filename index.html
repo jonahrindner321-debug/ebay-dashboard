@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1"
     integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
     crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="./styles.css?v=amazon-flow-03be446" />
+  <link rel="stylesheet" href="./styles.css?v=source-fix-20260509b" />
 </head>
 <body>
 
@@ -49,7 +49,7 @@
     <div id="intro-prog-bar"><div id="intro-prog-fill"></div></div>
     <div id="intro-prog-label"></div>
   </div>
-    <div id="intro-version">v2026.05.06-amazon-flow</div>
+    <div id="intro-version">v2026.05.09-source-fix</div>
   </div>
   <div id="intro-dots">
     <div class="intro-dot"></div>
@@ -268,7 +268,7 @@
       </div>
       <div class="alltime-divider"></div>
       <div class="alltime-stat">
-        <div class="alltime-label">Active Days</div>
+        <div class="alltime-label" id="alltime-extra-label">Active Days</div>
         <div class="alltime-val" id="alltime-days" style="color:var(--violet);font-size:16px">—</div>
       </div>
       <div class="alltime-divider"></div>
@@ -402,6 +402,7 @@
             <th onclick="sortBy('rank')">#</th>
             <th onclick="sortBy('person')">Account <span id="sh-person"></span></th>
             <th onclick="sortBy('profit')">Profit <span id="sh-profit"></span></th>
+            <th onclick="sortBy('item_cost')" title="Amazon supplier/item cost from the eBay COST column">Amazon Cost <span id="sh-item_cost"></span></th>
             <th onclick="sortBy('fee')">Fees <span id="sh-fee"></span></th>
             <th onclick="sortBy('sales')">Sales <span id="sh-sales"></span></th>
             <th onclick="sortBy('avg_sale')">Avg Sale <span id="sh-avg_sale"></span></th>
@@ -820,6 +821,6 @@
 <!-- Mr. Six (party mode) -->
 <div class="mr-six" id="mr-six">👴</div>
 
-<script src="./app.js?v=amazon-flow-03be446"></script>
+<script src="./app.js?v=source-fix-20260509b"></script>
 </body>
 </html>

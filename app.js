@@ -1,7 +1,9 @@
 // ─── CONFIG ────────────────────────────────────────────────────────────────
 const SHEETS = {
   '1_81VM_63ZT_p5LEGkvEU2MBxbc4RBWzmd_RKgXL_icA': 'Russell',
+  '1M_YHSLrdQ-XK3TitCU5Sv5OKwE-jBXR6JnvNQ1kmtMI': 'Russ LLC',
   '1k-GFkk-jFhnrD2v-qIEdV0zyy0kOpvbIZZ7NbppZTgQ': 'Johna',
+  '1IVGp49ly5EAiyEv0_qFLqcE_giK8Lz1pt5znq-6xzzY': 'Johna',
   '1nuJojKqj9b_a2RSKn7huV6vTr_62E7707uw1wBh0XDA': 'Dolo LLC',
   '1xsMWqwL381VcGxH5_yhWx_SKixLd_ojievrfqamBB5M': 'John Slop',
   '1wH5s8qdr0-imdK623Tdtu-UgKvRMELD_3Gd7OS2tNmQ': 'Jacob',
@@ -134,7 +136,7 @@ const COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06
 
 // ─── PROFIT SPLIT CONFIG ───────────────────────────────────────────────────
 // Owned stores → J&R keep 60% of profit
-const OWNED_STORES = ['Russell', 'Johna', 'Dolo LLC'];
+const OWNED_STORES = ['Russell', 'Russ LLC', 'Johna', 'Dolo LLC'];
 // Jacob → clean 50/50 split, no Danian cut
 const JACOB_STORES = ['Jacob'];
 // All others → owner 50% / Danian 30% / J&R 20%
@@ -3236,9 +3238,8 @@ function setChannelFilter(ch) {
 }
 
 function updateChannelSwitcherVisibility() {
-  const hasAltChannel = TIKTOK_SOURCES.length > 0 || AMAZON_FBM_SOURCES.length > 0 || RAW.some(r => r.channel && r.channel !== 'ebay');
   const sw = $('channel-switcher');
-  if (sw) sw.style.display = hasAltChannel ? 'flex' : 'none';
+  if (sw) sw.style.display = 'flex';
 }
 
 function renderGrowthPage() {

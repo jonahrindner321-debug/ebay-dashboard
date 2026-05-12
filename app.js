@@ -2,6 +2,7 @@
 const SHEETS = {
   '1_81VM_63ZT_p5LEGkvEU2MBxbc4RBWzmd_RKgXL_icA': 'Russell',
   '1M_YHSLrdQ-XK3TitCU5Sv5OKwE-jBXR6JnvNQ1kmtMI': 'Russ LLC',
+  '1BgTn3p1GPpbfV78vXZlz3tJAUrT8_iJ17tcVrUSlgig': 'BANOS',
   '1k-GFkk-jFhnrD2v-qIEdV0zyy0kOpvbIZZ7NbppZTgQ': 'Johna',
   '1nuJojKqj9b_a2RSKn7huV6vTr_62E7707uw1wBh0XDA': 'Dolo LLC',
   '1xsMWqwL381VcGxH5_yhWx_SKixLd_ojievrfqamBB5M': 'John Slop',
@@ -54,6 +55,8 @@ const LISTING_TRACKER_DAILY_GIDS = [
 const LISTING_NAME_MAP = {
   'Russ':         'Russell',
   'Jonah':        'Johna',
+  'BANOS':        'BANOS',
+  'Banos':        'BANOS',
   'Dolo LLC':     'Dolo LLC',
   'Jacob':        'Jacob',
   'Armando':      'Armando',
@@ -136,7 +139,7 @@ const COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06
 
 // ─── PROFIT SPLIT CONFIG ───────────────────────────────────────────────────
 // Owned stores → J&R keep 60% of profit
-const OWNED_STORES = ['Russell', 'Russ LLC', 'Johna', 'Dolo LLC'];
+const OWNED_STORES = ['Russell', 'Russ LLC', 'BANOS', 'Johna', 'Dolo LLC'];
 // Jacob → clean 50/50 split, no Danian cut
 const JACOB_STORES = ['Jacob'];
 // All others → owner 50% / Danian 30% / J&R 20%
@@ -5762,6 +5765,7 @@ const SECTION_RENAMES = {
 };
 const NICKNAMES = {
   'Austin':'Big Austin 💪','Armando':'Mando 🤙','Russell':'Russ Money 💰',
+  'Russ LLC':'Russ LLC 💼','BANOS':'BANOS Bank 🏦',
   'Johna':'Johna Bucks 💸','Jacob':'Jake 🎯','John Slop':'Slop Dogg 🐕',
   'Jack R':'Jumpin Jack 🎸','Dolo LLC':'Dolo Empire 🏢','Mariel':'Mari 🌺',
   'Johna & Russ':'J&R 🤑','Danian':'Dan the Man 😎',

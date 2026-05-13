@@ -613,17 +613,50 @@ function checkApiKey() {
 }
 
 // ─── FETCH ─────────────────────────────────────────────────────────────────
-async function apiFetch(url, retry = 4) {
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const GOOGLE_REQUEST_GAP_MS = 1100; // Keeps us under the 60 reads/min/user Sheets quota.
+const GOOGLE_MAX_RETRIES = 6;
+let _googleQueue = Promise.resolve();
+let _googleLastRequestAt = 0;
+
+function makeHttpError(res) {
+  const err = new Error('HTTP ' + res.status);
+  err.status = res.status;
+  return err;
+}
+
+function retryWaitMs(res, attempt) {
+  const retryAfter = Number(res.headers && res.headers.get('retry-after'));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter * 1000;
+  return Math.min(2000 * Math.pow(2, attempt), 30000);
+}
+
+async function fetchJsonWithRetry(url, retry = GOOGLE_MAX_RETRIES, noRetryStatuses = []) {
   for (let attempt = 0; attempt < retry; attempt++) {
     const res = await fetch(url);
     if (res.ok) return res.json();
-    if (res.status === 429 && attempt < retry - 1) {
-      // Rate limited — exponential backoff: 1.5s, 3s, 4.5s, 6s
-      await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+    if (noRetryStatuses.includes(res.status)) throw makeHttpError(res);
+    if ((res.status === 429 || res.status >= 500) && attempt < retry - 1) {
+      await sleep(retryWaitMs(res, attempt));
       continue;
     }
-    throw new Error('HTTP ' + res.status);
+    throw makeHttpError(res);
   }
+}
+
+async function withGoogleThrottle(fn) {
+  const run = _googleQueue.catch(() => {}).then(async () => {
+    const wait = Math.max(0, GOOGLE_REQUEST_GAP_MS - (Date.now() - _googleLastRequestAt));
+    if (wait) await sleep(wait);
+    _googleLastRequestAt = Date.now();
+    return fn();
+  });
+  _googleQueue = run.catch(() => {});
+  return run;
+}
+
+async function apiFetch(url, retry = GOOGLE_MAX_RETRIES) {
+  return fetchJsonWithRetry(url, retry);
 }
 
 // ─── PROXY FETCH ────────────────────────────────────────────────────────────
@@ -637,20 +670,22 @@ async function apiFetch(url, retry = 4) {
 let _proxyOk = null; // null=untested, true=working, false=use direct
 
 async function googleFetch(type, params) {
+  return withGoogleThrottle(() => googleFetchUnthrottled(type, params));
+}
+
+async function googleFetchUnthrottled(type, params) {
   if (_proxyOk === false) return _googleDirect(type, params);
   try {
     const qs = new URLSearchParams({ type, ...params }).toString();
-    const res = await fetch(`/api/sheets?${qs}`);
+    const data = await fetchJsonWithRetry(`/api/sheets?${qs}`, GOOGLE_MAX_RETRIES, [404, 405, 503]);
+    _proxyOk = true;
+    return data;
+  } catch(e) {
     // 404 = proxy not deployed, 503 = env var not set → fall back silently
-    if (res.status === 404 || res.status === 405 || res.status === 503) {
+    if (e.status === 404 || e.status === 405 || e.status === 503) {
       _proxyOk = false;
       return _googleDirect(type, params);
     }
-    if (res.status === 429) throw new Error('HTTP 429');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    _proxyOk = true;
-    return res.json();
-  } catch(e) {
     // Network error or unexpected failure on first attempt → fall back to direct
     if (_proxyOk === null) { _proxyOk = false; return _googleDirect(type, params); }
     throw e;
@@ -793,15 +828,18 @@ function parseAmazonFbmValues(values, person = 'Johna') {
   const norm = h => String(h || '').toUpperCase().replace(/\s+/g, ' ').trim();
   for (let i = 0; i < Math.min(12, values.length); i++) {
     const header = (values[i] || []).map(norm);
-    if (header.includes('DATE') && (header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('PROFIT'))) {
+    const looksLikeAmazonFbm = header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('AMAZON FEE') || header.includes('PROFIT');
+    const hasDateColumn = header.includes('DATE') || header[0] === '';
+    if (hasDateColumn && looksLikeAmazonFbm) {
       headerIdx = i;
       header.forEach((h, idx) => {
-        if (h === 'DATE') colMap.date = idx;
+        if (h === 'DATE' || (idx === 0 && !h && colMap.date === undefined)) colMap.date = idx;
         else if (h === 'SELLER ORDER ID') colMap.orderId = idx;
         else if (h === 'URL') colMap.url = idx;
         else if (h === 'SKU') colMap.sku = idx;
         else if (h === 'PRODUCT NAME') colMap.product = idx;
-        else if (h === 'BUYER ORDER MAIL') colMap.buyerMail = idx;
+        else if (h === 'BUYER ORDER ID') colMap.buyerOrderId = idx;
+        else if (h === 'BUYER ORDER MAIL' || h === 'BUYER ORDER EMAIL') colMap.buyerMail = idx;
         else if (h === 'BUYER ORDER NUMBER') colMap.buyerOrderNumber = idx;
         else if (h === 'TRACKING') colMap.tracking = idx;
         else if (h === 'CARD ENDING') colMap.cardEnding = idx;
@@ -843,6 +881,7 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     const address = String(row[colMap.address] || '').trim();
     const sku = String(row[colMap.sku] || '').trim();
     const product = String(row[colMap.product] || '').trim();
+    const buyerOrderId = String(row[colMap.buyerOrderId] || '').trim();
     const status = String(row[colMap.status] || '').trim();
     const qty = Math.max(1, Math.round(parseMoney(row[colMap.qty])) || 1);
     const price = parseMoney(row[colMap.price]);
@@ -862,7 +901,7 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     if (!hasData) continue;
     if (!dateStr && !orderId && !status && !price && !profit) continue;
     const hasRealUrl = Boolean(url && !/sellercentral\.amazon\.com\/orders-v3\/order\/?$/i.test(url));
-    const hasRowIdentity = Boolean(dateStr || orderId || buyerMail || buyerOrderNumber || hasRealUrl || tracking || cardEnding || shortCode || address || status);
+    const hasRowIdentity = Boolean(dateStr || orderId || buyerOrderId || buyerMail || buyerOrderNumber || hasRealUrl || tracking || cardEnding || shortCode || address || status);
     if (!hasRowIdentity) continue;
 
     rows.push({
@@ -878,6 +917,7 @@ function parseAmazonFbmValues(values, person = 'Johna') {
       product,
       url,
       buyerMail,
+      buyerOrderId,
       buyerOrderNumber,
       tracking,
       cardEnding,
@@ -1065,6 +1105,52 @@ function renderLoadBanner(audit) {
   kpiGrid.parentNode.insertBefore(banner, kpiGrid);
 }
 
+function prioritizeLoadSources(sources) {
+  const priority = src => {
+    if (CHANNEL_FILTER === 'amazon_fbm') return src.sourceType === 'amazon_fbm' ? 0 : src.sourceType === 'tiktok' ? 1 : 2;
+    if (CHANNEL_FILTER === 'tiktok') return src.sourceType === 'tiktok' ? 0 : src.sourceType === 'amazon_fbm' ? 1 : 2;
+    if (CHANNEL_FILTER === 'ebay') return src.sourceType ? 1 : 0;
+    return src.sourceType === 'amazon_fbm' ? 0 : src.sourceType === 'tiktok' ? 1 : 2;
+  };
+  return sources.slice().sort((a,b) => priority(a) - priority(b));
+}
+
+async function refreshSheetTimestamps(ids) {
+  const sources = [
+    ...ids.map(id => ({ id, label: SHEETS[id], type: 'ebay' })),
+    ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM', type: 'amazon_fbm' })),
+    ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}`, type: 'tiktok' })),
+  ];
+
+  for (let i = 0; i < sources.length; i++) {
+    const src = sources[i];
+    let hasMeta = false;
+
+    try {
+      const meta = await googleFetch('meta', { id: src.id });
+      const val = meta.values && meta.values[0] && meta.values[0][0];
+      if (val) {
+        SHEET_MODIFIED[src.label] = val;
+        hasMeta = true;
+      }
+    } catch(e) { /* _meta is optional */ }
+
+    try {
+      const data = await googleFetch('drive', { id: src.id });
+      if (src.type === 'ebay' && data.createdTime) STORE_CREATED[src.label] = data.createdTime.substring(0, 10);
+      if (!hasMeta && data.modifiedTime) SHEET_MODIFIED[src.label] = data.modifiedTime;
+    } catch(e) { /* Drive timestamps are status-only, never block sales data */ }
+
+    if (i % 3 === 2) {
+      renderSheetActivity();
+      if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
+    }
+  }
+
+  renderSheetActivity();
+  if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
+}
+
 // ─── MAIN LOAD ─────────────────────────────────────────────────────────────
 async function loadAll() {
   if (!API_KEY) { checkApiKey(); return; }
@@ -1094,7 +1180,7 @@ async function loadAll() {
   const delay = ms => new Promise(r => setTimeout(r, ms));
   const tabLists = [];
   for (let i = 0; i < ids.length; i++) {
-    if (i > 0) await delay(400);
+    if (i > 0) await delay(50);
     const list = await getDataTabs(ids[i]).catch(e => { tabErrors.push({id: ids[i], e: e.message}); return []; });
     tabLists.push(list);
     _introSetProgress(i + 1, ids.length + TIKTOK_SOURCES.length, `${i + 1} / ${ids.length} eBay stores`);
@@ -1102,7 +1188,7 @@ async function loadAll() {
   ids.forEach((id,i)=>tabLists[i].forEach(tab=>allSources.push({id,person:SHEETS[id],tab})));
   for (let i = 0; i < TIKTOK_SOURCES.length; i++) {
     const src = TIKTOK_SOURCES[i];
-    if (ids.length || i > 0) await delay(400);
+    if (ids.length || i > 0) await delay(50);
     const list = await getDataTabs(src.id).catch(e => { tabErrors.push({ id: src.id, e: e.message, sourceType: 'tiktok' }); return []; });
     list
       .filter(tab => /tik.?tok/i.test(tab))
@@ -1110,53 +1196,7 @@ async function loadAll() {
     _introSetProgress(ids.length + i + 1, ids.length + TIKTOK_SOURCES.length, `${ids.length} eBay stores · ${i + 1} TikTok source${i ? 's' : ''}`);
   }
   AMAZON_FBM_SOURCES.forEach(src => allSources.push({ ...src, sourceType: 'amazon_fbm' }));
-
-  // Fetch sheet creation + last-modified dates from Drive API (fire and forget — non-blocking)
-  Promise.all(ids.map(async id => {
-    try {
-      const data = await googleFetch('drive', { id });
-      if (data.createdTime)  STORE_CREATED[SHEETS[id]]  = data.createdTime.substring(0, 10);
-      if (data.modifiedTime) SHEET_MODIFIED[SHEETS[id]] = data.modifiedTime;
-    } catch(e) { /* ignore */ }
-  }));
-  Promise.all([
-    ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM' })),
-    ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}` })),
-  ].map(async src => {
-    try {
-      const data = await googleFetch('drive', { id: src.id });
-      if (data.modifiedTime) SHEET_MODIFIED[src.label] = data.modifiedTime;
-    } catch(e) { /* ignore */ }
-  })).then(() => {
-    renderSheetActivity();
-    if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
-  }).catch(() => {});
-
-  // Fetch last-edit timestamps from _meta!A1 — staggered to avoid 429
-  (async () => {
-    for (let i = 0; i < ids.length; i++) {
-      if (i > 0) await delay(400);
-      try {
-        const data = await googleFetch('meta', { id: ids[i] });
-        const val = data.values && data.values[0] && data.values[0][0];
-        if (val) SHEET_MODIFIED[SHEETS[ids[i]]] = val;
-      } catch(e) { /* _meta tab not yet created */ }
-    }
-    const externalMeta = [
-      ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM' })),
-      ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}` })),
-    ];
-    for (let i = 0; i < externalMeta.length; i++) {
-      if (ids.length || i > 0) await delay(400);
-      try {
-        const data = await googleFetch('meta', { id: externalMeta[i].id });
-        const val = data.values && data.values[0] && data.values[0][0];
-        if (val) SHEET_MODIFIED[externalMeta[i].label] = val;
-      } catch(e) { /* _meta tab not yet created */ }
-    }
-    renderSheetActivity();
-    if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
-  })();
+  allSources = prioritizeLoadSources(allSources);
 
   loadListingTracker();
 
@@ -1177,13 +1217,13 @@ async function loadAll() {
   _introSetSub('');
   _introSetProgress(0, totalJobs, `0 / ${totalJobs} tabs`);
 
-  // Reset safety timer now that we know tab count — give 1s per tab + 15s buffer
+  // Reset safety timer now that we know tab count — throttled loads need a little room.
   clearTimeout(_introSafetyTimer);
-  _introSafetyTimer = setTimeout(() => { if (!_introDismissed) dismissIntro(); }, totalJobs * 1000 + 15000);
+  _introSafetyTimer = setTimeout(() => { if (!_introDismissed) dismissIntro(); }, totalJobs * 1600 + 30000);
 
   const loadAudit = [];
 
-  const BATCH = 3;
+  const BATCH = 1;
   for (let i = 0; i < allSources.length; i += BATCH) {
     const batch = allSources.slice(i, i + BATCH);
     await Promise.all(batch.map(async src => {
@@ -1247,7 +1287,7 @@ async function loadAll() {
         if (doneJobs === Math.floor(totalJobs / 2)) _introSetSub('');
       }
     }));
-    if (i + BATCH < allSources.length) await delay(500);
+    if (i + BATCH < allSources.length) await delay(100);
   }
   window._loadAudit = loadAudit;
 
@@ -1272,6 +1312,7 @@ async function loadAll() {
     maybeOpenClientFromUrl();
     setTimeout(() => { if (window._initBreadcrumbObs) { window._initBreadcrumbObs(); window._initBreadcrumbObs = null; } }, 500);
     renderLoadBanner(loadAudit);
+    refreshSheetTimestamps(ids).catch(e => console.warn('Timestamp refresh failed:', e));
     if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
     else showToast('Data refreshed', 'info', '🔄');
     // Give Chart.js and the DOM 400ms to finish painting before pulling the overlay.

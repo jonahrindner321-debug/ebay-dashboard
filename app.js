@@ -12,6 +12,8 @@ const SHEETS = {
   '1rrATZ5UBihrfmt0fQF55hVaaq-Ku-C6fYFm6C8kymHA': 'Jack R',
   '1ZoNmwDq6FK-R209uTsra2sPv33vAuc1pFD3NQPAGK2c': 'Delmor',
   '1UHUjPqORhDMX9McbJueVhpRkP7fc3FeOXOiaOWZwhuQ': 'Mariel',
+  '1QOVD_ggFSuNxm4-s15wIIcZ-d31alQcVEvJPvBZpbnY': 'Levi',
+  '14yqVyVqwAfHdSN2KGI6piacNaK5EhwtS8xPvCI_EVVE': 'Elle',
 };
 
 const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i;
@@ -65,6 +67,8 @@ const LISTING_NAME_MAP = {
   'Mariel':       'Mariel',
   'Huny (delmor)':'Delmor',
   'Jack':         'Jack R',
+  'Levi':         'Levi',
+  'Elle':         'Elle',
 };
 let LISTING_DATA = { summary: [], todayRow: null, dailyColNames: [] };
 let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok' | 'amazon_fbm'
@@ -72,7 +76,7 @@ let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok' | 'amazon_fbm'
 // Store creation dates fetched from Drive API — populated on load
 const STORE_CREATED = {}; // { person: 'YYYY-MM-DD' }
 const SHEET_MODIFIED = {}; // { person: ISO datetime string }
-const SHEET_STATUS = {}; // { label: { state:'ok'|'error', checkedAt, err } }
+const SHEET_STATUS = {}; // { label: { state:'pending'|'ok'|'missing', checkedAt, type } }
 
 // Expenses parsed from Expense tabs — populated on load
 // Structure: { person: { 'YYYY-MM': totalAmount, ... } }
@@ -142,19 +146,60 @@ const COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06
 const OWNED_STORES = ['Russell', 'Russ LLC', 'BANOS', 'Johna', 'Dolo LLC'];
 // Jacob → clean 50/50 split, no Danian cut
 const JACOB_STORES = ['Jacob'];
-// All others → owner 50% / Danian 30% / J&R 20%
+const SPECIAL_STORE_SPLITS = {
+  Levi: {
+    type: 'premium_partner',
+    label: '60/40',
+    className: 'premium',
+    ownerLabel: '40%',
+    ownerNote: '',
+    storeOwnerPct: 40,
+    danianPct: 30,
+    jrPct: 30,
+  },
+};
+// All other client stores → owner 50% / Danian 30% / J&R 20%
+
+function buildSplit(type, profit, storeOwnerPct, danianPct, jrPct, extra = {}) {
+  return {
+    type,
+    label: extra.label || type,
+    className: extra.className || type,
+    ownerLabel: extra.ownerLabel || `${storeOwnerPct}%`,
+    ownerNote: extra.ownerNote || '',
+    storeOwnerPct,
+    ownerPct: storeOwnerPct,
+    danianPct,
+    jrPct,
+    storeOwner: r2(profit * storeOwnerPct / 100),
+    danian: r2(profit * danianPct / 100),
+    jr: r2(profit * jrPct / 100),
+  };
+}
 
 function getSplit(person, profit) {
+  const custom = SPECIAL_STORE_SPLITS[person];
+  if (custom) {
+    return buildSplit(custom.type, profit, custom.storeOwnerPct, custom.danianPct, custom.jrPct, custom);
+  }
   if (OWNED_STORES.includes(person)) {
     // J&R own the store: J&R 60%, Danian 40%
-    return { type: 'owned', storeOwner: 0, danian: r2(profit * 0.40), danianPct: 40, jr: r2(profit * 0.60), jrPct: 60 };
+    return buildSplit('owned', profit, 0, 40, 60, { label: 'Owner', className: 'owned', ownerLabel: '— owner', ownerNote: 'J&R own this store' });
   } else if (JACOB_STORES.includes(person)) {
     // J&R get 60% but give Jacob 10% name fee → J&R net 50%, Jacob 10%, Danian 40%
-    return { type: 'jacob', storeOwner: r2(profit * 0.10), danian: r2(profit * 0.40), danianPct: 40, jr: r2(profit * 0.50), jrPct: 50 };
+    return buildSplit('jacob', profit, 10, 40, 50, { label: '50/50', className: 'jacob', ownerLabel: '10% (fee)', ownerNote: 'name fee' });
   } else {
     // Partner stores: owner 50%, Danian 30%, J&R 20%
-    return { type: 'partner', storeOwner: r2(profit * 0.50), danian: r2(profit * 0.30), danianPct: 30, jr: r2(profit * 0.20), jrPct: 20 };
+    return buildSplit('partner', profit, 50, 30, 20, { label: 'Partner', className: 'partner', ownerLabel: '50%' });
   }
+}
+
+function splitTagHtml(split) {
+  return `<span class="split-tag ${split.className || split.type}">${escapeHtml(split.label || split.type)}</span>`;
+}
+
+function splitOwnerLabel(split) {
+  return split.ownerLabel || `${split.storeOwnerPct || split.ownerPct || 0}%`;
 }
 
 // ─── STATE ─────────────────────────────────────────────────────────────────
@@ -969,6 +1014,10 @@ const INTRO_BANTER = [
   'Making eBay, TikTok, and FBM shake hands…',
   'Checking the money weather…',
   'Turning tab soup into strategy…',
+  'Welcoming the new stores to the board…',
+  'Finding every new store tab…',
+  'Checking the new client split math…',
+  'Asking _meta who touched what…',
   'Finding stores with main character energy…',
   'Giving the charts a quick pep talk…',
   'Measuring the sauce viscosity…',
@@ -1122,9 +1171,17 @@ async function refreshSheetTimestamps(ids) {
     ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}`, type: 'tiktok' })),
   ];
 
+  sources.forEach(src => {
+    if (!SHEET_MODIFIED[src.label]) {
+      SHEET_STATUS[src.label] = { state: 'pending', checkedAt: Date.now(), type: src.type };
+    }
+  });
+  renderSheetActivity();
+
   for (let i = 0; i < sources.length; i++) {
     const src = sources[i];
     let hasMeta = false;
+    let hasTimestamp = false;
 
     try {
       const meta = await googleFetch('meta', { id: src.id });
@@ -1132,14 +1189,24 @@ async function refreshSheetTimestamps(ids) {
       if (val) {
         SHEET_MODIFIED[src.label] = val;
         hasMeta = true;
+        hasTimestamp = true;
       }
     } catch(e) { /* _meta is optional */ }
 
     try {
       const data = await googleFetch('drive', { id: src.id });
       if (src.type === 'ebay' && data.createdTime) STORE_CREATED[src.label] = data.createdTime.substring(0, 10);
-      if (!hasMeta && data.modifiedTime) SHEET_MODIFIED[src.label] = data.modifiedTime;
+      if (!hasMeta && data.modifiedTime) {
+        SHEET_MODIFIED[src.label] = data.modifiedTime;
+        hasTimestamp = true;
+      }
     } catch(e) { /* Drive timestamps are status-only, never block sales data */ }
+
+    SHEET_STATUS[src.label] = {
+      state: hasTimestamp ? 'ok' : 'missing',
+      checkedAt: Date.now(),
+      type: src.type,
+    };
 
     if (i % 3 === 2) {
       renderSheetActivity();
@@ -1326,7 +1393,7 @@ async function loadAll() {
 
 // ─── FILTERS ───────────────────────────────────────────────────────────────
 function populateFilters() {
-  const persons = [...new Set(RAW.map(r=>r.person))].sort();
+  const persons = [...new Set([...Object.values(SHEETS), ...RAW.map(r=>r.person)])].sort();
   const months  = [...new Set(RAW.map(r=>r.month))].filter(m => monthIndex(m) < 900).sort((a,b)=>monthIndex(a)-monthIndex(b));
   const pSel = $('filter-person'), mSel = $('filter-month');
   const pv = pSel.value, mv = mSel.value;
@@ -1444,16 +1511,14 @@ function renderSplitSummary(data) {
         <span class="split-proj-val" style="color:${color}">${fmt$(val)}</span>
        </div>` : '';
 
-  const tagLabel = { owned: 'Owner', jacob: '50/50', partner: 'Partner' };
-  const tagClass = { owned: 'owned', jacob: 'jacob', partner: 'partner' };
-  const ownerPctLabel = x => x.split.type === 'jacob' ? '10% (fee)' : '50%';
+  const ownerPctLabel = x => splitOwnerLabel(x.split);
 
   const jrRows = byPerson
     .filter(x => x.split.jr > 0).sort((a, b) => b.split.jr - a.split.jr)
     .map(x => `<div class="split-row">
       <span class="split-row-lbl">${x.p}</span>
       <span class="split-row-right">
-        <span class="split-tag ${tagClass[x.split.type]}">${tagLabel[x.split.type]}</span>
+        ${splitTagHtml(x.split)}
         <span class="split-row-v" style="color:var(--emerald)">${fmt$(x.split.jr)}</span>
         <span style="font-size:10px;color:var(--muted)">${x.split.jrPct}%</span>
       </span></div>`).join('');
@@ -1463,7 +1528,7 @@ function renderSplitSummary(data) {
     .map(x => `<div class="split-row">
       <span class="split-row-lbl">${x.p}</span>
       <span class="split-row-right">
-        <span class="split-tag ${tagClass[x.split.type]}">${tagLabel[x.split.type]}</span>
+        ${splitTagHtml(x.split)}
         <span class="split-row-v" style="color:#818cf8">${fmt$(x.split.danian)}</span>
         <span style="font-size:10px;color:var(--muted)">${x.split.danianPct}%</span>
       </span></div>`).join('');
@@ -1472,7 +1537,7 @@ function renderSplitSummary(data) {
     .filter(x => x.split.storeOwner > 0).sort((a, b) => b.split.storeOwner - a.split.storeOwner)
     .map(x => {
       return `<div class="split-row">
-        <span class="split-row-lbl">${x.p}${x.split.type === 'jacob' ? ' <span style="color:var(--muted);font-size:10px">(name fee)</span>' : ''}</span>
+        <span class="split-row-lbl">${x.p}${x.split.ownerNote ? ` <span style="color:var(--muted);font-size:10px">(${escapeHtml(x.split.ownerNote)})</span>` : ''}</span>
         <span class="split-row-right">
           <span class="split-row-v" style="color:var(--yellow)">${fmt$(x.split.storeOwner)}</span>
           <span style="font-size:10px;color:var(--muted)">${ownerPctLabel(x)}</span>
@@ -1701,14 +1766,12 @@ function renderKPIs(data) {
       .map(([person, pProfit]) => ({ person, profit: pProfit, split: getSplit(person, pProfit) }))
       .sort((a, b) => b.profit - a.profit);
 
-    const tagLabel = { owned: 'Owner', jacob: '50/50', partner: 'Partner' };
-    const tagClass = { owned: 'owned', jacob: 'jacob', partner: 'partner' };
     const mkRows = (getValue, getPct) => personSplits
       .filter(x => getValue(x) > 0)
       .sort((a, b) => getValue(b) - getValue(a))
       .map(x => `<div class="take-row">
-        <span class="take-row-name">${x.person}${x.split.type === 'jacob' ? ' <span style="color:var(--muted);font-size:10px">(name fee)</span>' : ''}</span>
-        <span class="split-tag ${tagClass[x.split.type]}">${tagLabel[x.split.type]}</span>
+        <span class="take-row-name">${x.person}${x.split.ownerNote ? ` <span style="color:var(--muted);font-size:10px">(${escapeHtml(x.split.ownerNote)})</span>` : ''}</span>
+        ${splitTagHtml(x.split)}
         <span class="take-row-val">${fmt$(getValue(x))}</span>
         <span class="take-row-pct">${getPct(x)}</span>
       </div>`).join('');
@@ -1733,7 +1796,7 @@ function renderKPIs(data) {
         <div class="take-label">🟡 Owner Take</div>
         <div class="take-val" style="color:#f59e0b">${fmt$(dayOwner)}</div>
         <div class="take-who">${ownerCount} store owner${ownerCount !== 1 ? 's' : ''} · ${dayLabel}</div>
-        <div class="take-rows">${mkRows(x => x.split.storeOwner, x => x.split.type === 'jacob' ? '10% (fee)' : '50%')}</div>
+        <div class="take-rows">${mkRows(x => x.split.storeOwner, x => splitOwnerLabel(x.split))}</div>
       </div>` : ''}
       <div class="take-card">
         <div class="take-label">📦 Total Profit</div>
@@ -2383,17 +2446,19 @@ function openPayoutCalc() {
 function updateCalc() {
   const profit = parseFloat($('calc-profit-input').value) || 0;
   const type   = $('calc-type').value;
-  let jr, jrPct, danian, danianPct, owner, ownerPct, ownerLbl;
-  if (type === 'owned')  { jr=r2(profit*.60);jrPct=60;danian=r2(profit*.40);danianPct=40;owner=0;ownerPct=0;ownerLbl='J&R own this store'; }
-  else if (type==='jacob'){ jr=r2(profit*.50);jrPct=50;danian=r2(profit*.40);danianPct=40;owner=r2(profit*.10);ownerPct=10;ownerLbl='Jacob (name fee)'; }
-  else                   { jr=r2(profit*.20);jrPct=20;danian=r2(profit*.30);danianPct=30;owner=r2(profit*.50);ownerPct=50;ownerLbl='Store Owner'; }
+  const sampleName = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : type === 'premium_partner' ? 'Levi' : '__partner__';
+  const split = getSplit(sampleName, profit);
+  const ownerLbl = split.type === 'owned' ? 'J&R own this store'
+    : split.type === 'jacob' ? 'Jacob (name fee)'
+    : split.type === 'premium_partner' ? 'Store Owner'
+    : 'Store Owner';
   const row = (lbl, val, color) => `<div class="calc-row"><span class="calc-lbl">${lbl}</span><span style="color:${color};font-weight:700">${fmtFull$(val)}</span></div>`;
   $('calc-result').innerHTML = `
     ${row('Total Profit', profit, 'var(--text)')}
-    ${row(`J&R Take (${jrPct}%)`, jr, 'var(--emerald)')}
-    ${row(`Danian (${danianPct}%)`, danian, '#818cf8')}
-    ${owner > 0 ? row(`${ownerLbl} (${ownerPct}%)`, owner, 'var(--yellow)') : `<div class="calc-row"><span class="calc-lbl">${ownerLbl}</span><span style="color:var(--muted)">—</span></div>`}
-    ${row('J&R + Danian Total', r2(jr+danian), 'var(--cyan)')}
+    ${row(`J&R Take (${split.jrPct}%)`, split.jr, 'var(--emerald)')}
+    ${row(`Danian (${split.danianPct}%)`, split.danian, '#818cf8')}
+    ${split.storeOwner > 0 ? row(`${ownerLbl} (${splitOwnerLabel(split)})`, split.storeOwner, 'var(--yellow)') : `<div class="calc-row"><span class="calc-lbl">${ownerLbl}</span><span style="color:var(--muted)">—</span></div>`}
+    ${row('J&R + Danian Total', r2(split.jr+split.danian), 'var(--cyan)')}
   `;
 }
 
@@ -2425,7 +2490,7 @@ function openPayoutReport() {
       ${rows.filter(x=>x.split.danian>0).map(x=>`<div class="report-row"><span>${x.p} <span style="color:var(--muted);font-size:10px">(${x.split.danianPct}%)</span></span><span style="color:#818cf8;font-weight:700">${fmtFull$(x.split.danian)}</span></div>`).join('')}
       <div class="report-total"><span>Total Danian Take</span><span style="color:#818cf8">${fmtFull$(allDanian)}</span></div></div>
     ${ownerRows.length?`<div class="report-sec"><h4>🏪 Store Owners</h4>
-      ${ownerRows.map(x=>`<div class="report-row"><span>${x.p} <span style="color:var(--muted);font-size:10px">(${x.split.type==='jacob'?'10% name fee':'50%'})</span></span><span style="color:var(--yellow);font-weight:700">${fmtFull$(x.split.storeOwner)}</span></div>`).join('')}
+      ${ownerRows.map(x=>`<div class="report-row"><span>${x.p} <span style="color:var(--muted);font-size:10px">(${splitOwnerLabel(x.split)})</span></span><span style="color:var(--yellow);font-weight:700">${fmtFull$(x.split.storeOwner)}</span></div>`).join('')}
       <div class="report-total"><span>Total Owner Payouts</span><span style="color:var(--yellow)">${fmtFull$(allOwners)}</span></div></div>`:''}
     <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-top:8px">
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px"><span style="color:var(--muted)">Total Gross Profit</span><span style="font-weight:800">${fmtFull$(r2(allJR+allDanian+allOwners))}</span></div>
@@ -2986,10 +3051,16 @@ function renderSheetActivity() {
     const modTime = modRaw ? new Date(modRaw).getTime() : NaN;
     const hasTimestamp = isFinite(modTime);
     const hoursAgo = hasTimestamp ? (now - modTime) / 3600000 : Infinity;
+    const status = SHEET_STATUS[person]?.state || 'pending';
     let color, dot, label;
     if (!hasTimestamp) {
-      color = 'var(--muted)'; dot = '⚪';
-      label = 'No timestamp';
+      if (status === 'pending') {
+        color = 'var(--cyan)'; dot = '⏳';
+        label = 'Checking…';
+      } else {
+        color = 'var(--muted)'; dot = '⚪';
+        label = 'No _meta yet';
+      }
     } else if (hoursAgo < 12) {
       color = 'var(--green)'; dot = '🟢';
       label = hoursAgo < 1 ? 'Just now' : `${Math.floor(hoursAgo)}h ago`;
@@ -3001,13 +3072,18 @@ function renderSheetActivity() {
       const days = Math.floor(hoursAgo / 24);
       label = `${days}d ago`;
     }
-    return { person, hoursAgo, color, dot, label };
-  }).sort((a, b) => b.hoursAgo - a.hoursAgo); // worst first
+    return { person, hoursAgo, color, dot, label, pending: !hasTimestamp && status === 'pending', missing: !hasTimestamp && status !== 'pending' };
+  }).sort((a, b) => {
+    if (a.pending !== b.pending) return a.pending ? -1 : 1;
+    return b.hoursAgo - a.hoursAgo;
+  }); // checking first, then worst first
 
   const overdue = cards.filter(c => isFinite(c.hoursAgo) && c.hoursAgo >= 12).length;
-  const missing = cards.filter(c => !isFinite(c.hoursAgo)).length;
-  $('sheet-activity-sub').textContent = missing > 0
-    ? `${missing} timestamp${missing>1?'s':''} pending`
+  const pending = cards.filter(c => c.pending).length;
+  const missing = cards.filter(c => c.missing).length;
+  $('sheet-activity-sub').textContent = pending > 0
+    ? `${pending} timestamp${pending>1?'s':''} checking`
+    : missing > 0 ? `${missing} _meta timestamp${missing>1?'s':''} missing`
     : overdue > 0 ? `${overdue} account${overdue>1?'s':''} overdue` : 'All sheets up to date';
 
   grid.innerHTML = cards.map(c => `
@@ -4350,12 +4426,44 @@ const WAR_MOVE_TO_LEVER = {
 };
 
 function warSplitForType(type, profit) {
-  const key = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : '__partner__';
+  const key = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : type === 'premium_partner' ? 'Levi' : '__partner__';
   return getSplit(key, profit);
 }
 
+function warSplitTypeLabel(type) {
+  if (type === 'owned') return 'owned';
+  if (type === 'jacob') return 'name-fee';
+  if (type === 'premium_partner') return 'premium client';
+  return 'partner';
+}
+
+function warBuildRawFallbackAccounts(existingAccounts = []) {
+  const existing = new Set(existingAccounts.map(p => p.dashName || p.store));
+  return [...new Set(RAW.filter(channelMatches).map(r => r.person))]
+    .filter(person => person && !existing.has(person))
+    .map(person => {
+      const recs = RAW.filter(r => r.person === person && channelMatches(r));
+      if (!recs.length) return null;
+      const latestDate = recs.map(r => r.date).filter(Boolean).sort().pop() || '';
+      return {
+        store: person,
+        dashName: person,
+        current: 1,
+        target: 5000,
+        dailyGoal: 0,
+        recs,
+        latestDate,
+        profitPerListMo: 0,
+        recentMoLabel: 'sales run-rate',
+        source: 'sales',
+      };
+    })
+    .filter(Boolean);
+}
+
 function warGetAccounts() {
-  const baseAccounts = Object.values(_growthPersonData || {}).filter(p => p && p.store && p.current > 0);
+  const trackerAccounts = Object.values(_growthPersonData || {}).filter(p => p && p.store && p.current > 0);
+  const baseAccounts = [...trackerAccounts, ...warBuildRawFallbackAccounts(trackerAccounts)];
   const windowDays = Math.max(1, Math.floor(warReadNumber('war-recent-window', 14)));
   const latestTs = baseAccounts.reduce((max, p) => {
     (p.recs || []).forEach(r => {
@@ -4367,7 +4475,7 @@ function warGetAccounts() {
   }, 0);
   const cutoffTs = latestTs ? latestTs - ((windowDays - 1) * 86400000) : 0;
   return baseAccounts
-    .filter(p => p && p.store && p.current > 0)
+    .filter(p => p && p.store)
     .map(p => {
       const recentRows = latestTs
         ? (p.recs || []).filter(r => r.date && new Date(r.date + 'T00:00:00').getTime() >= cutoffTs)
@@ -4375,11 +4483,11 @@ function warGetAccounts() {
       const recentProfit = r2(recentRows.reduce((s, r) => s + (r.profit || 0), 0));
       const recentRevenue = r2(recentRows.reduce((s, r) => s + (r.price || 0), 0));
       const monthlyProfit = r2(recentProfit / windowDays * 30);
-  const split = getSplit(p.dashName || p.store, monthlyProfit);
-  return {
-    ...p,
-    monthlyProfit,
-    monthlyRate: 0,
+      const split = getSplit(p.dashName || p.store, monthlyProfit);
+      return {
+        ...p,
+        monthlyProfit,
+        monthlyRate: 0,
         split,
         recentRows: recentRows.length,
         recentProfit,
@@ -4462,7 +4570,7 @@ function warDraftToMove() {
 
 function warMoveLabel(move) {
   if (!move) return 'Move';
-  if (move.type === 'add') return `Add ${move.count || 0} ${move.split || 'partner'} store${Number(move.count) === 1 ? '' : 's'}`;
+  if (move.type === 'add') return `Add ${move.count || 0} ${warSplitTypeLabel(move.split || 'partner')} store${Number(move.count) === 1 ? '' : 's'}`;
   if (move.type === 'improve') return `${move.target || 'Store'} toward ${move.benchmark || 'benchmark'}`;
   if (move.type === 'lift') return `${move.pct || 0}% portfolio lift`;
   return move.note || 'Logged growth move';
@@ -4500,7 +4608,7 @@ function warMoveToLever(move, accounts, baseline) {
     const profitEach = Math.max(0, Number(move.profit) || 0);
     const profit = r2(count * profitEach);
     const split = warSplitForType(move.split || 'partner', profit);
-    return { id: move.id, key: 'clients', name: `${count} new ${move.split || 'partner'} store${count === 1 ? '' : 's'} at ${fmt$(profitEach)}/mo`, profit, split, move };
+    return { id: move.id, key: 'clients', name: `${count} new ${warSplitTypeLabel(move.split || 'partner')} store${count === 1 ? '' : 's'} at ${fmt$(profitEach)}/mo`, profit, split, move };
   }
   if (move.type === 'improve') {
     const target = accounts.find(p => p.store === move.target) || accounts[accounts.length - 1];
@@ -4596,6 +4704,7 @@ function renderWarMoveBuilder(data) {
       <label class="war-builder-field">What kind?
         <select id="war-builder-split" onchange="warMoveChanged()">
           <option value="partner" ${draft.split === 'partner' ? 'selected' : ''}>Partner/client store</option>
+          <option value="premium_partner" ${draft.split === 'premium_partner' ? 'selected' : ''}>Premium client store (60/40)</option>
           <option value="owned" ${draft.split === 'owned' ? 'selected' : ''}>Owned store</option>
           <option value="jacob" ${draft.split === 'jacob' ? 'selected' : ''}>Name-fee store</option>
         </select>
@@ -4611,7 +4720,7 @@ function renderWarMoveBuilder(data) {
       </label>
       <button type="button" class="war-builder-pill" onclick="warUseSelectedRate()">Use chosen store's current rate</button>
       <button type="button" class="war-builder-pill primary" onclick="addWarScenarioMove()">Add to scenario stack</button>`;
-    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${draft.split} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
+    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${warSplitTypeLabel(draft.split)} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
     return;
   }
 
@@ -4666,6 +4775,7 @@ function renderWarMoveBuilder(data) {
     <label class="war-builder-field">Who gets paid like?
       <select id="war-builder-log-split" onchange="warMoveChanged()">
         <option value="partner" ${draft.split === 'partner' ? 'selected' : ''}>Partner/client split</option>
+        <option value="premium_partner" ${draft.split === 'premium_partner' ? 'selected' : ''}>Premium client split (60/40)</option>
         <option value="owned" ${draft.split === 'owned' ? 'selected' : ''}>Owned split</option>
         <option value="jacob" ${draft.split === 'jacob' ? 'selected' : ''}>Name-fee split</option>
       </select>
@@ -4686,7 +4796,7 @@ function renderWarMoveNote(data) {
   const weakest = [...accounts].sort((a, b) => a.monthlyProfit - b.monthlyProfit)[0];
   if (_warMoveMode === 'add') {
     const draft = _warBuilderDraft.add;
-    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${draft.split} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
+    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${warSplitTypeLabel(draft.split)} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
     return;
   }
   if (_warMoveMode === 'improve') {
@@ -5117,7 +5227,7 @@ function renderWarAccountBank(accounts) {
     return `<button class="war-account-card ${rankTone}" draggable="true" ondragstart="warDragAccount(event, ${JSON.stringify(p.store).replace(/"/g, '&quot;')})">
       <span>${escapeHtml(p.store)}</span>
       <strong>${fmt$(p.monthlyProfit)}/mo</strong>
-      <em>${p.split.type} split · ${p.recentBasisLabel} run-rate</em>
+      <em>${escapeHtml(p.split.label || p.split.type)} split · ${p.recentBasisLabel} run-rate</em>
       <small>${fmt$(p.recentProfit)} profit · ${p.recentRows} sales in ${p.recentBasisLabel}</small>
     </button>`;
   }).join('');
@@ -5426,11 +5536,11 @@ function openClientView() {
   const _cvChFilter = r => channelMatches(r);
   const _cvEarnLabel = CHANNEL_FILTER === 'all' ? 'All-time earnings' : `${channelTitle()} earnings`;
   listEl.innerHTML = clientStores.map(name => {
-    const isJacob  = JACOB_STORES.includes(name);
-    const pct      = isJacob ? '10%' : '50%';
     const recs     = RAW.filter(r => r.person === name && _cvChFilter(r));
     const profit   = r2(recs.reduce((s,r) => s + r.profit, 0));
-    const myShare  = isJacob ? r2(profit * 0.10) : r2(profit * 0.50);
+    const split    = getSplit(name, profit);
+    const pct      = splitOwnerLabel(split);
+    const myShare  = split.storeOwner;
     const displayName = name === 'John Slop' ? 'Sloop' : name;
     const link = getClientLink(name);
     return `<div style="display:flex;flex-direction:column;gap:8px;padding:12px;background:var(--card);border:1px solid var(--card-border);border-radius:12px">
@@ -5453,9 +5563,9 @@ function openClientView() {
 }
 
 function renderClientView(personName, opts = {}) {
-  const isJacob   = JACOB_STORES.includes(personName);
-  const ownerPct  = isJacob ? 0.10 : 0.50;
-  const ownerPctLabel = isJacob ? '10%' : '50%';
+  const previewSplit = getSplit(personName, 1);
+  const ownerPct  = (previewSplit.storeOwnerPct || previewSplit.ownerPct || 0) / 100;
+  const ownerPctLabel = splitOwnerLabel(previewSplit);
   const displayName   = personName === 'John Slop' ? 'Sloop' : personName;
   const isTikTokMode  = CHANNEL_FILTER === 'tiktok';
   const isAltStoreMode = CHANNEL_FILTER === 'tiktok' || CHANNEL_FILTER === 'amazon_fbm';

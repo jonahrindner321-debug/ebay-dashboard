@@ -3072,7 +3072,12 @@ function renderSheetActivity() {
       const days = Math.floor(hoursAgo / 24);
       label = `${days}d ago`;
     }
-    return { person, hoursAgo, color, dot, label, pending: !hasTimestamp && status === 'pending', missing: !hasTimestamp && status !== 'pending' };
+    const pending = !hasTimestamp && status === 'pending';
+    const labelHtml = pending
+      ? `<span class="sheet-checking-label">Checking<span class="sheet-checking-dots"><i></i><i></i><i></i></span></span>`
+      : label;
+    const dotHtml = pending ? '<span class="sheet-check-orbit"><i></i></span>' : dot;
+    return { person, hoursAgo, color, dot, label, labelHtml, dotHtml, pending, missing: !hasTimestamp && status !== 'pending' };
   }).sort((a, b) => {
     if (a.pending !== b.pending) return a.pending ? -1 : 1;
     return b.hoursAgo - a.hoursAgo;
@@ -3087,14 +3092,14 @@ function renderSheetActivity() {
     : overdue > 0 ? `${overdue} account${overdue>1?'s':''} overdue` : 'All sheets up to date';
 
   grid.innerHTML = cards.map(c => `
-    <div class="card" style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
+    <div class="card sheet-activity-card ${c.pending ? 'is-checking' : ''}">
       <div>
         <div style="font-weight:700;font-size:13px">${c.person}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">Last updated</div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:15px;font-weight:800;color:${c.color}">${c.label}</div>
-        <div style="font-size:13px">${c.dot}</div>
+        <div class="sheet-activity-time" style="color:${c.color}">${c.labelHtml}</div>
+        <div class="sheet-activity-dot">${c.dotHtml}</div>
       </div>
     </div>`).join('');
 

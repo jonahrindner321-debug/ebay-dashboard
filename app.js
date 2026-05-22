@@ -77,6 +77,8 @@ let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok' | 'amazon_fbm'
 const STORE_CREATED = {}; // { person: 'YYYY-MM-DD' }
 const SHEET_MODIFIED = {}; // { person: ISO datetime string }
 const SHEET_STATUS = {}; // { label: { state:'pending'|'ok'|'missing', checkedAt, type } }
+let DASHBOARD_SYNCED_AT = null;
+let _freshnessTimer = null;
 
 // Expenses parsed from Expense tabs — populated on load
 // Structure: { person: { 'YYYY-MM': totalAmount, ... } }
@@ -1091,6 +1093,56 @@ function _introSetSub(text) {
   if (el) el.textContent = text || '';
 }
 
+function formatRelativeAge(date) {
+  if (!date || Number.isNaN(date.getTime())) return 'unknown';
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 45) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function updateFreshnessDisplay() {
+  const el = $('freshness-pill');
+  if (!el) return;
+  const synced = DASHBOARD_SYNCED_AT ? new Date(DASHBOARD_SYNCED_AT) : null;
+  if (!synced || Number.isNaN(synced.getTime())) {
+    el.textContent = 'Data freshness —';
+    el.title = 'No sync timestamp loaded yet';
+    el.className = 'freshness-pill stale';
+    return;
+  }
+  const ageMs = Date.now() - synced.getTime();
+  el.textContent = `Data synced ${formatRelativeAge(synced)}`;
+  el.title = `Last synced ${synced.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`;
+  el.className = 'freshness-pill' + (ageMs > 2 * 60 * 60 * 1000 ? ' stale' : ageMs > 45 * 60 * 1000 ? ' warn' : '');
+}
+
+function setDashboardSyncTime(value) {
+  DASHBOARD_SYNCED_AT = value || null;
+  updateFreshnessDisplay();
+  if (!_freshnessTimer) _freshnessTimer = setInterval(updateFreshnessDisplay, 60000);
+}
+
+async function playFastCachedIntro(rowCount) {
+  const steps = [
+    ['connect', 'Opening the fast lane…', 'Finding cached brain', 1, 4],
+    ['discover', 'Checking freshness…', 'Reading snapshot timestamp', 2, 4],
+    ['load', 'Pouring rows into the dashboard…', `${(rowCount || 0).toLocaleString()} cached rows`, 3, 4],
+    ['render', 'Ready.', 'Polishing the numbers', 4, 4],
+  ];
+  for (const [stage, banter, sub, done, total] of steps) {
+    _introSetStage(stage);
+    _introSetBanter(banter);
+    _introSetSub(sub);
+    _introSetProgress(done, total, sub);
+    await sleep(130);
+  }
+}
+
 function dismissIntro() {
   if (_introDismissed) return;
   _introDismissed = true;
@@ -1136,6 +1188,7 @@ function finishDashboardLoad({ loadAudit = [], fromCache = false, generatedAt = 
   const ri = $('ri');
   if (ri) { ri.className = ''; ri.textContent = '↻'; }
   const when = generatedAt ? new Date(generatedAt) : new Date();
+  setDashboardSyncTime(generatedAt || when.toISOString());
   $('last-upd').textContent = `${fromCache ? 'Cached' : 'Updated'} ${when.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
 
   if (!RAW.length) {
@@ -1184,7 +1237,7 @@ async function loadDashboardSnapshot() {
     Object.assign(STORE_CREATED, payload.storeCreated || {});
     Object.assign(SHEET_MODIFIED, payload.sheetModified || {});
     Object.assign(SHEET_STATUS, payload.sheetStatus || {});
-    _introSetProgress(3, 3, `${RAW.length.toLocaleString()} cached rows`);
+    await playFastCachedIntro(RAW.length);
     return finishDashboardLoad({
       loadAudit: payload.loadAudit || [],
       fromCache: true,

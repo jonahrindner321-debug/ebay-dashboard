@@ -4,12 +4,6 @@
       "maxDuration": 60
     }
   },
-  "crons": [
-    {
-      "path": "/api/sync-dashboard",
-      "schedule": "0 8 * * *"
-    }
-  ],
   "rewrites": [
     { "source": "/((?!api/.*).*)", "destination": "/index.html" }
   ]

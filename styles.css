@@ -755,7 +755,15 @@
       pointer-events: none;
     }
     #intro-overlay.out {
-      animation: introOut .72s cubic-bezier(.4,0,.2,1) forwards;
+      animation: introOut 1.35s cubic-bezier(.22,1,.36,1) forwards;
+    }
+    #intro-overlay.out::before {
+      animation: introFinalWash 1.2s cubic-bezier(.22,1,.36,1) forwards;
+      opacity: .95;
+    }
+    #intro-overlay.out .intro-card {
+      animation: introCardPortal 1.15s cubic-bezier(.22,1,.36,1) forwards;
+      transform-origin: 50% 48%;
     }
     .intro-orb {
       position: absolute; border-radius: 38%; filter: blur(100px); pointer-events: none; opacity: .52;
@@ -799,6 +807,25 @@
       transform: translateX(-130%);
       animation: introGlassSweep 3.2s ease-in-out infinite .8s;
       pointer-events: none;
+    }
+    .intro-card::after {
+      content: "";
+      position: absolute;
+      left: -18%; right: -18%; bottom: -42%;
+      height: 58%;
+      border-radius: 45% 45% 0 0;
+      background:
+        radial-gradient(circle at 24% 18%, rgba(255,255,255,.34), transparent 18%),
+        radial-gradient(circle at 72% 10%, rgba(255,255,255,.18), transparent 16%),
+        linear-gradient(180deg, rgba(103,232,249,.42), rgba(52,211,153,.34) 56%, rgba(99,102,241,.18));
+      box-shadow: 0 -18px 55px rgba(34,211,238,.18), inset 0 1px 0 rgba(255,255,255,.35);
+      opacity: 0;
+      transform: translateY(52%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    #intro-overlay.out .intro-card::after {
+      animation: introWaterFill 1.05s cubic-bezier(.22,1,.36,1) forwards;
     }
     .intro-topline {
       display: flex; align-items: center; justify-content: center; gap: 14px;
@@ -954,6 +981,13 @@
     .intro-dot:nth-child(2) { background: var(--violet); animation-delay: .2s; }
     .intro-dot:nth-child(3) { background: var(--cyan);   animation-delay: .4s; }
 
+    body.intro-reveal .header,
+    body.intro-reveal .container,
+    body.intro-reveal .bg-canvas {
+      animation: dashboardReveal 1.25s cubic-bezier(.22,1,.36,1) both;
+      transform-origin: 50% 18%;
+    }
+
     /* ── Skeleton loading for background refreshes ── */
     @keyframes skelPulse { 0%,100%{opacity:.5} 50%{opacity:1} }
     .skel {
@@ -970,7 +1004,11 @@
 
     /* ── Animations ── */
     @keyframes introFadeIn  { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes introOut     { 0%   { opacity:1; transform:scale(1); filter:blur(0); } 35% { opacity:1; transform:scale(1.015); } 100% { opacity:0; transform:scale(1.06); filter:blur(10px); } }
+    @keyframes introOut     { 0% { opacity:1; transform:scale(1); filter:blur(0); } 58% { opacity:1; transform:scale(.985); filter:blur(0); } 100% { opacity:0; transform:scale(1.18); filter:blur(18px); } }
+    @keyframes introCardPortal { 0% { transform:translateY(0) scale(1); opacity:1; } 48% { transform:translateY(-8px) scale(.94); opacity:1; } 100% { transform:translateY(-22px) scale(.68); opacity:0; } }
+    @keyframes introWaterFill { 0% { opacity:0; transform:translateY(52%) scaleX(1.04); } 34% { opacity:.95; transform:translateY(6%) scaleX(1.02); } 100% { opacity:1; transform:translateY(-118%) scaleX(1.08); } }
+    @keyframes introFinalWash { 0% { transform:translateX(-45%) scale(1); } 100% { transform:translateX(0) scale(1.22); } }
+    @keyframes dashboardReveal { 0% { transform:scale(.965) translateY(18px); filter:blur(10px); opacity:.18; } 52% { transform:scale(.985) translateY(8px); filter:blur(4px); opacity:.7; } 100% { transform:scale(1) translateY(0); filter:blur(0); opacity:1; } }
     @keyframes introCardIn  { from { opacity:0; transform:translateY(18px) scale(.96); } to { opacity:1; transform:translateY(0) scale(1); } }
     @keyframes introLogoPop { from { opacity:0; transform:scale(.35) rotate(-18deg); } to { opacity:1; transform:scale(1) rotate(0); } }
     @keyframes introLogoFloat { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-5px); } }

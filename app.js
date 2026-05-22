@@ -1161,10 +1161,14 @@ function dismissIntro() {
   _introSetBanter('All set. Let’s make money moves.');
   _introSetSub('');
   _introSetProgress(1, 1, '');
+  document.body.classList.add('intro-reveal');
   setTimeout(() => {
     ov.classList.add('out');
-    setTimeout(() => { ov.style.display = 'none'; }, 700);
-  }, 420);
+    setTimeout(() => {
+      ov.style.display = 'none';
+      document.body.classList.remove('intro-reveal');
+    }, 1450);
+  }, 260);
 }
 
 function animateChannelSwitch(ch) {

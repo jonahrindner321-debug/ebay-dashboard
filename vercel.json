@@ -7,7 +7,7 @@
   "crons": [
     {
       "path": "/api/sync-dashboard",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 8 * * *"
     }
   ],
   "rewrites": [

@@ -1129,17 +1129,21 @@ function setDashboardSyncTime(value) {
 
 async function playFastCachedIntro(rowCount) {
   const steps = [
-    ['connect', 'Opening the fast lane…', 'Finding cached brain', 1, 4],
-    ['discover', 'Checking freshness…', 'Reading snapshot timestamp', 2, 4],
-    ['load', 'Pouring rows into the dashboard…', `${(rowCount || 0).toLocaleString()} cached rows`, 3, 4],
-    ['render', 'Ready.', 'Polishing the numbers', 4, 4],
+    ['connect', 'Opening the fast lane…', 'Finding cached brain', 1, 8],
+    ['connect', 'Combobulating money moves…', 'Waking up Seller OS', 2, 8],
+    ['discover', 'Checking freshness…', 'Reading snapshot timestamp', 3, 8],
+    ['discover', 'Asking the tabs what changed…', 'Confirming source health', 4, 8],
+    ['load', 'Pouring rows into the dashboard…', `${(rowCount || 0).toLocaleString()} cached rows`, 5, 8],
+    ['load', 'Turning rows into decisions…', 'Building the command center', 6, 8],
+    ['render', 'Polishing the money mirror…', 'Final dashboard pass', 7, 8],
+    ['render', 'All set. Let’s make money moves.', 'Ready', 8, 8],
   ];
   for (const [stage, banter, sub, done, total] of steps) {
     _introSetStage(stage);
     _introSetBanter(banter);
     _introSetSub(sub);
     _introSetProgress(done, total, sub);
-    await sleep(130);
+    await sleep(1180);
   }
 }
 

@@ -1122,6 +1122,105 @@ function animateChannelSwitch(ch) {
 // Safety fallback — overridden dynamically once tab count is known
 let _introSafetyTimer = setTimeout(() => { if (!_introDismissed) dismissIntro(); }, 90000);
 
+function clearRuntimeData() {
+  RAW = [];
+  doneJobs = 0;
+  Object.keys(EXPENSES).forEach(k => delete EXPENSES[k]);
+  Object.keys(STORE_CREATED).forEach(k => delete STORE_CREATED[k]);
+  Object.keys(SHEET_MODIFIED).forEach(k => delete SHEET_MODIFIED[k]);
+  Object.keys(SHEET_STATUS).forEach(k => delete SHEET_STATUS[k]);
+}
+
+function finishDashboardLoad({ loadAudit = [], fromCache = false, generatedAt = null } = {}) {
+  window._loadAudit = loadAudit;
+  const ri = $('ri');
+  if (ri) { ri.className = ''; ri.textContent = '↻'; }
+  const when = generatedAt ? new Date(generatedAt) : new Date();
+  $('last-upd').textContent = `${fromCache ? 'Cached' : 'Updated'} ${when.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+
+  if (!RAW.length) {
+    setStatus('error', 'No data — check API key / permissions');
+    showToast('No data found', 'error', '⚠️');
+    dismissIntro();
+    return false;
+  }
+
+  _introSetStage('render');
+  _introSetSub('');
+  _introSetProgress(1, 1, '');
+  setStatus('live', fromCache ? '● CACHED' : '● LIVE');
+  populateFilters();
+  renderAllTimeBanner();
+  try { applyFilters(); } catch(e) { console.error('applyFilters error:', e); }
+  updateChannelSwitcherVisibility();
+  setTimeout(updateChannelSwitcherVisibility, 1000);
+  $('audit-btn').style.display = '';
+  try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
+  maybeOpenClientFromUrl();
+  setTimeout(() => { if (window._initBreadcrumbObs) { window._initBreadcrumbObs(); window._initBreadcrumbObs = null; } }, 500);
+  renderLoadBanner(loadAudit);
+  if (firstLoad) { showToast(`${fromCache ? 'Loaded cached' : 'Loaded'} ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
+  else showToast(fromCache ? 'Cached data refreshed' : 'Data refreshed', 'info', '🔄');
+  setTimeout(() => dismissIntro(), 400);
+  return true;
+}
+
+async function loadDashboardSnapshot() {
+  if (location.protocol === 'file:') return false;
+  try {
+    _introSetStage('connect');
+    _introSetBanter('Opening the fast lane…');
+    _introSetSub('Loading cached Seller OS data');
+    _introSetProgress(1, 3, 'cache');
+    const res = await fetch('/api/dashboard-data');
+    if (!res.ok) return false;
+    const data = await res.json();
+    const payload = data.payload || {};
+    if (!payload.raw || !payload.raw.length) return false;
+
+    clearRuntimeData();
+    RAW = payload.raw || [];
+    Object.assign(EXPENSES, payload.expenses || {});
+    Object.assign(STORE_CREATED, payload.storeCreated || {});
+    Object.assign(SHEET_MODIFIED, payload.sheetModified || {});
+    Object.assign(SHEET_STATUS, payload.sheetStatus || {});
+    _introSetProgress(3, 3, `${RAW.length.toLocaleString()} cached rows`);
+    return finishDashboardLoad({
+      loadAudit: payload.loadAudit || [],
+      fromCache: true,
+      generatedAt: payload.generatedAt || data.generatedAt,
+    });
+  } catch (e) {
+    console.warn('Cached dashboard unavailable; falling back to live sheets:', e.message);
+    return false;
+  }
+}
+
+async function refreshDashboard() {
+  if (location.protocol !== 'file:') {
+    try {
+      setStatus('loading', 'Syncing…');
+      const ri = $('ri'); if (ri) { ri.className = 'spin'; ri.textContent = '↻'; }
+      _introDismissed = false;
+      const ov = $('intro-overlay');
+      if (ov) { ov.style.display = ''; ov.classList.remove('out'); }
+      _introStartBanter();
+      _introSetStage('load');
+      _introSetBanter('Syncing the warehouse…');
+      _introSetSub('Refreshing server-side sheet cache');
+      _introSetProgress(1, 2, 'server sync');
+      const res = await fetch('/api/sync-dashboard', { method: 'POST' });
+      if (res.ok) {
+        await loadDashboardSnapshot();
+        return;
+      }
+    } catch (e) {
+      console.warn('Server sync unavailable; falling back to live sheets:', e.message);
+    }
+  }
+  loadAll(true);
+}
+
 // ─── LOAD FAILURE BANNER ────────────────────────────────────────────────────
 function renderLoadBanner(audit) {
   const existing = $('load-warn-banner');
@@ -1219,22 +1318,18 @@ async function refreshSheetTimestamps(ids) {
 }
 
 // ─── MAIN LOAD ─────────────────────────────────────────────────────────────
-async function loadAll() {
+async function loadAll(forceLive = false) {
   if (!API_KEY) { checkApiKey(); return; }
+  if (!forceLive && await loadDashboardSnapshot()) return;
   setStatus('loading', 'Loading…');
   const ri = $('ri'); ri.className = 'spin'; ri.textContent = '↻';
-  RAW = []; doneJobs = 0;
+  clearRuntimeData();
 
   // Stage 1: Connect
   _introStartBanter();
   _introSetStage('connect');
   _introSetSub('');
   _introSetProgress(0, 1, '');
-
-  // Clear accumulated state so refreshes don't double-count
-  Object.keys(EXPENSES).forEach(k => delete EXPENSES[k]);
-  Object.keys(STORE_CREATED).forEach(k => delete STORE_CREATED[k]);
-  Object.keys(SHEET_MODIFIED).forEach(k => delete SHEET_MODIFIED[k]);
 
   const ids = Object.keys(SHEETS);
   let allSources = [], tabErrors = [];
@@ -1356,38 +1451,8 @@ async function loadAll() {
     }));
     if (i + BATCH < allSources.length) await delay(100);
   }
-  window._loadAudit = loadAudit;
-
-  ri.className=''; ri.textContent='↻';
-  const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-  $('last-upd').textContent = 'Updated ' + now;
-
-  if (RAW.length) {
-    // Stage 4: Render
-    _introSetStage('render');
-    _introSetSub('');
-    _introSetProgress(1, 1, '');
-
-    setStatus('live', '● LIVE');
-    populateFilters();
-    renderAllTimeBanner();
-    try { applyFilters(); } catch(e) { console.error('applyFilters error:', e); }
-    updateChannelSwitcherVisibility();
-    setTimeout(updateChannelSwitcherVisibility, 1000);
-    $('audit-btn').style.display = '';
-    try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
-    maybeOpenClientFromUrl();
-    setTimeout(() => { if (window._initBreadcrumbObs) { window._initBreadcrumbObs(); window._initBreadcrumbObs = null; } }, 500);
-    renderLoadBanner(loadAudit);
+  if (finishDashboardLoad({ loadAudit })) {
     refreshSheetTimestamps(ids).catch(e => console.warn('Timestamp refresh failed:', e));
-    if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
-    else showToast('Data refreshed', 'info', '🔄');
-    // Give Chart.js and the DOM 400ms to finish painting before pulling the overlay.
-    setTimeout(() => dismissIntro(), 400);
-  } else {
-    setStatus('error', 'No data — check API key / permissions');
-    showToast('No data found', 'error', '⚠️');
-    dismissIntro();
   }
 }
 
@@ -5389,11 +5454,11 @@ function openAudit() {
              <div style="font-size:24px;font-weight:800;color:${cached.length?'var(--amber)':'var(--muted)'}">${cached.length}</div></div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;border-top:1px solid rgba(99,102,241,.2);padding-top:12px">
-        <button onclick="closeModal('audit-modal'); _tabDataCache={}; _expDataCache={}; loadAll(); showToast('Cache cleared — reloading all data fresh','success','🗑️')"
+        <button onclick="closeModal('audit-modal'); _tabDataCache={}; _expDataCache={}; loadAll(true); showToast('Cache cleared — reloading all data fresh','success','🗑️')"
           style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:var(--rose);padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
           🗑️ Clear Cache &amp; Force Reload
         </button>
-        <button onclick="closeModal('audit-modal'); loadAll(); showToast('Reloading (using valid cache)','info','↻')"
+        <button onclick="closeModal('audit-modal'); refreshDashboard(); showToast('Reloading dashboard cache','info','↻')"
           style="background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);color:var(--indigo);padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
           ↻ Reload (keep cache)
         </button>

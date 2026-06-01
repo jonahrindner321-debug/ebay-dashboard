@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1"
     integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
     crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="./styles.css?v=amazon-flow-03be446" />
+  <link rel="stylesheet" href="./styles.css?v=source-fix-20260509b" />
 </head>
 <body>
 
@@ -49,7 +49,7 @@
     <div id="intro-prog-bar"><div id="intro-prog-fill"></div></div>
     <div id="intro-prog-label"></div>
   </div>
-    <div id="intro-version">v2026.05.06-amazon-flow</div>
+    <div id="intro-version">v2026.05.20-LNE</div>
   </div>
   <div id="intro-dots">
     <div class="intro-dot"></div>
@@ -111,6 +111,7 @@
     </div>
     <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
     <span class="last-upd" id="last-upd"></span>
+    <span class="freshness-pill" id="freshness-pill" title="Waiting for data sync time">Data freshness —</span>
     <span class="live-clock" id="live-clock"></span>
   </div>
 
@@ -126,7 +127,7 @@
       <button class="btn-clr-dates" onclick="clearDates()" title="Clear date filter">✕</button>
     </div>
     <button class="btn btn-export" onclick="exportCSV()">⬇ CSV</button>
-    <button class="btn btn-primary" onclick="loadAll()"><span id="ri">↻</span> Refresh</button>
+    <button class="btn btn-primary" onclick="refreshDashboard()"><span id="ri">↻</span> Refresh</button>
     <button class="btn btn-ghost" id="tiktok-connect-btn" onclick="connectTikTokShop()" style="border-color:rgba(255,45,85,.4);color:#ff6b9d">⟡ TikTok</button>
     <button class="btn btn-ghost" onclick="openClientView()" style="border-color:rgba(16,185,129,.4);color:var(--green)">👤 Client</button>
     <button class="btn btn-ghost" id="theme-btn" onclick="cycleTheme()" title="Switch theme">🌙</button>
@@ -173,6 +174,7 @@
       <select id="calc-type" onchange="updateCalc()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--text);padding:6px 10px;border-radius:8px;font-size:12px;width:100%;outline:none">
         <option value="owned">Owned Store — J&amp;R 60%, Danian 40%</option>
         <option value="jacob">Jacob Store — J&amp;R 50%, Danian 40%, Jacob 10%</option>
+        <option value="premium_partner">Premium Client — Owner 40%, Danian 30%, J&amp;R 30%</option>
         <option value="partner">Partner Store — Owner 50%, Danian 30%, J&amp;R 20%</option>
       </select>
     </div>
@@ -268,7 +270,7 @@
       </div>
       <div class="alltime-divider"></div>
       <div class="alltime-stat">
-        <div class="alltime-label">Active Days</div>
+        <div class="alltime-label" id="alltime-extra-label">Active Days</div>
         <div class="alltime-val" id="alltime-days" style="color:var(--violet);font-size:16px">—</div>
       </div>
       <div class="alltime-divider"></div>
@@ -402,6 +404,7 @@
             <th onclick="sortBy('rank')">#</th>
             <th onclick="sortBy('person')">Account <span id="sh-person"></span></th>
             <th onclick="sortBy('profit')">Profit <span id="sh-profit"></span></th>
+            <th onclick="sortBy('item_cost')" title="Amazon supplier/item cost from the eBay COST column">Amazon Cost <span id="sh-item_cost"></span></th>
             <th onclick="sortBy('fee')">Fees <span id="sh-fee"></span></th>
             <th onclick="sortBy('sales')">Sales <span id="sh-sales"></span></th>
             <th onclick="sortBy('avg_sale')">Avg Sale <span id="sh-avg_sale"></span></th>
@@ -820,6 +823,6 @@
 <!-- Mr. Six (party mode) -->
 <div class="mr-six" id="mr-six">👴</div>
 
-<script src="./app.js?v=amazon-flow-03be446"></script>
+<script src="./app.js?v=portal-load-20260522"></script>
 </body>
 </html>

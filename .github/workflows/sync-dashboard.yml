@@ -1,0 +1,28 @@
+name: Sync Seller OS Dashboard
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sync-dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refresh dashboard snapshot
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -X POST https://ebay-dashboard-gamma.vercel.app/api/sync-dashboard)"
+          echo "$response" | node -e '
+            let body = "";
+            process.stdin.on("data", chunk => body += chunk);
+            process.stdin.on("end", () => {
+              const data = JSON.parse(body);
+              if (!data.ok || data.errorCount > 0) {
+                console.error(JSON.stringify(data, null, 2));
+                process.exit(1);
+              }
+              console.log(`Synced ${data.rowCount} rows from ${data.sourceCount} sources at ${data.generatedAt}`);
+            });
+          '

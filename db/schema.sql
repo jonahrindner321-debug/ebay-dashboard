@@ -63,3 +63,13 @@ create table if not exists sync_runs (
 create index if not exists idx_stores_client_id on stores(client_id);
 create index if not exists idx_connections_store_id on platform_connections(store_id);
 create index if not exists idx_connections_platform on platform_connections(platform);
+
+create table if not exists dashboard_snapshots (
+  key text primary key,
+  payload jsonb not null,
+  generated_at timestamptz not null default now(),
+  source_count integer not null default 0,
+  row_count integer not null default 0,
+  error_count integer not null default 0,
+  updated_at timestamptz not null default now()
+);

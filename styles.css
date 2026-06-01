@@ -226,6 +226,21 @@
     .progress-fill { height: 100%; background: linear-gradient(90deg,var(--indigo),var(--cyan)); border-radius: 99px; transition: width .3s; }
     .live-clock { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
     .last-upd { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .freshness-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 8px; border-radius: 999px;
+      background: rgba(16,185,129,.09);
+      border: 1px solid rgba(16,185,129,.22);
+      color: var(--green);
+      font-size: 11px; font-weight: 800;
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .freshness-pill::before {
+      content: ''; width: 6px; height: 6px; border-radius: 50%;
+      background: currentColor; box-shadow: 0 0 10px currentColor;
+    }
+    .freshness-pill.warn { background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.26); color: var(--amber); }
+    .freshness-pill.stale { background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.28); color: var(--red); }
     .header-right { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
     .filters { display: flex; gap: 6px; }
     select.sf {
@@ -248,6 +263,11 @@
     .btn-export { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.25); color: var(--emerald); }
     .btn-export:hover { background: rgba(16,185,129,.2); }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes sheetScan { 0%,20%{transform:translateX(-120%)} 70%,100%{transform:translateX(120%)} }
+    @keyframes sheetPulseText { 0%,100%{opacity:.78} 50%{opacity:1} }
+    @keyframes sheetDotBounce { 0%,100%{transform:translateY(0);opacity:.35} 45%{transform:translateY(-3px);opacity:1} }
+    @keyframes sheetOrbit { to { transform: rotate(360deg); } }
+    @keyframes sheetGlow { 0%,100%{transform:scale(.86);opacity:.65} 50%{transform:scale(1.08);opacity:1} }
     .spin { animation: spin .8s linear infinite; display:inline-block; }
 
     /* ── Container ── */
@@ -263,6 +283,95 @@
       transition: border-color .2s, box-shadow .2s, transform .15s;
     }
     .card:hover { border-color: rgba(255,255,255,.14); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 8px 36px rgba(0,0,0,.5); }
+    .sheet-activity-card {
+      position: relative;
+      overflow: hidden;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 72px;
+    }
+    .sheet-activity-card.is-checking {
+      border-color: rgba(6,182,212,.22);
+      background:
+        linear-gradient(135deg, rgba(6,182,212,.08), rgba(99,102,241,.05)),
+        var(--card);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 22px rgba(6,182,212,.08);
+    }
+    .sheet-activity-card.is-checking::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,.09) 45%, transparent 70%);
+      transform: translateX(-120%);
+      animation: sheetScan 2.2s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .sheet-activity-time {
+      font-size: 15px;
+      font-weight: 800;
+      min-width: 92px;
+    }
+    .sheet-activity-dot {
+      margin-top: 3px;
+      min-height: 16px;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      font-size: 13px;
+    }
+    .sheet-checking-label {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 3px;
+      animation: sheetPulseText 1.7s ease-in-out infinite;
+    }
+    .sheet-checking-dots {
+      display: inline-flex;
+      gap: 2px;
+      width: 18px;
+    }
+    .sheet-checking-dots i {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: .42;
+      animation: sheetDotBounce 1.1s ease-in-out infinite;
+    }
+    .sheet-checking-dots i:nth-child(2) { animation-delay: .15s; }
+    .sheet-checking-dots i:nth-child(3) { animation-delay: .3s; }
+    .sheet-check-orbit {
+      position: relative;
+      width: 16px;
+      height: 16px;
+      display: inline-block;
+      border-radius: 50%;
+      border: 1px solid rgba(6,182,212,.22);
+      background: rgba(6,182,212,.08);
+    }
+    .sheet-check-orbit::before {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--cyan), rgba(6,182,212,.12));
+      box-shadow: 0 0 12px rgba(6,182,212,.55);
+      animation: sheetGlow 1.35s ease-in-out infinite;
+    }
+    .sheet-check-orbit i {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      top: -1px;
+      left: 6px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 0 8px rgba(255,255,255,.8);
+      transform-origin: 2px 9px;
+      animation: sheetOrbit 1.1s linear infinite;
+    }
 
     /* ── KPI Grid ── */
     .kpi-grid {
@@ -537,6 +646,7 @@
     .split-tag.owned  { background: rgba(99,102,241,.15); color: #818cf8; }
     .split-tag.jacob  { background: rgba(6,182,212,.15);  color: var(--cyan); }
     .split-tag.partner{ background: rgba(245,158,11,.15); color: var(--yellow); }
+    .split-tag.premium{ background: rgba(16,185,129,.15); color: var(--green); }
     .split-proj {
       display: flex; justify-content: space-between; align-items: center;
       margin-top: 10px; padding: 8px 12px; border-radius: 10px;
@@ -645,7 +755,15 @@
       pointer-events: none;
     }
     #intro-overlay.out {
-      animation: introOut .72s cubic-bezier(.4,0,.2,1) forwards;
+      animation: introOut 1.35s cubic-bezier(.22,1,.36,1) forwards;
+    }
+    #intro-overlay.out::before {
+      animation: introFinalWash 1.2s cubic-bezier(.22,1,.36,1) forwards;
+      opacity: .95;
+    }
+    #intro-overlay.out .intro-card {
+      animation: introCardPortal 1.15s cubic-bezier(.22,1,.36,1) forwards;
+      transform-origin: 50% 48%;
     }
     .intro-orb {
       position: absolute; border-radius: 38%; filter: blur(100px); pointer-events: none; opacity: .52;
@@ -689,6 +807,25 @@
       transform: translateX(-130%);
       animation: introGlassSweep 3.2s ease-in-out infinite .8s;
       pointer-events: none;
+    }
+    .intro-card::after {
+      content: "";
+      position: absolute;
+      left: -18%; right: -18%; bottom: -42%;
+      height: 58%;
+      border-radius: 45% 45% 0 0;
+      background:
+        radial-gradient(circle at 24% 18%, rgba(255,255,255,.34), transparent 18%),
+        radial-gradient(circle at 72% 10%, rgba(255,255,255,.18), transparent 16%),
+        linear-gradient(180deg, rgba(103,232,249,.42), rgba(52,211,153,.34) 56%, rgba(99,102,241,.18));
+      box-shadow: 0 -18px 55px rgba(34,211,238,.18), inset 0 1px 0 rgba(255,255,255,.35);
+      opacity: 0;
+      transform: translateY(52%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    #intro-overlay.out .intro-card::after {
+      animation: introWaterFill 1.05s cubic-bezier(.22,1,.36,1) forwards;
     }
     .intro-topline {
       display: flex; align-items: center; justify-content: center; gap: 14px;
@@ -844,6 +981,13 @@
     .intro-dot:nth-child(2) { background: var(--violet); animation-delay: .2s; }
     .intro-dot:nth-child(3) { background: var(--cyan);   animation-delay: .4s; }
 
+    body.intro-reveal .header,
+    body.intro-reveal .container,
+    body.intro-reveal .bg-canvas {
+      animation: dashboardReveal 1.25s cubic-bezier(.22,1,.36,1) both;
+      transform-origin: 50% 18%;
+    }
+
     /* ── Skeleton loading for background refreshes ── */
     @keyframes skelPulse { 0%,100%{opacity:.5} 50%{opacity:1} }
     .skel {
@@ -860,7 +1004,11 @@
 
     /* ── Animations ── */
     @keyframes introFadeIn  { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes introOut     { 0%   { opacity:1; transform:scale(1); filter:blur(0); } 35% { opacity:1; transform:scale(1.015); } 100% { opacity:0; transform:scale(1.06); filter:blur(10px); } }
+    @keyframes introOut     { 0% { opacity:1; transform:scale(1); filter:blur(0); } 58% { opacity:1; transform:scale(.985); filter:blur(0); } 100% { opacity:0; transform:scale(1.18); filter:blur(18px); } }
+    @keyframes introCardPortal { 0% { transform:translateY(0) scale(1); opacity:1; } 48% { transform:translateY(-8px) scale(.94); opacity:1; } 100% { transform:translateY(-22px) scale(.68); opacity:0; } }
+    @keyframes introWaterFill { 0% { opacity:0; transform:translateY(52%) scaleX(1.04); } 34% { opacity:.95; transform:translateY(6%) scaleX(1.02); } 100% { opacity:1; transform:translateY(-118%) scaleX(1.08); } }
+    @keyframes introFinalWash { 0% { transform:translateX(-45%) scale(1); } 100% { transform:translateX(0) scale(1.22); } }
+    @keyframes dashboardReveal { 0% { transform:scale(.965) translateY(18px); filter:blur(10px); opacity:.18; } 52% { transform:scale(.985) translateY(8px); filter:blur(4px); opacity:.7; } 100% { transform:scale(1) translateY(0); filter:blur(0); opacity:1; } }
     @keyframes introCardIn  { from { opacity:0; transform:translateY(18px) scale(.96); } to { opacity:1; transform:translateY(0) scale(1); } }
     @keyframes introLogoPop { from { opacity:0; transform:scale(.35) rotate(-18deg); } to { opacity:1; transform:scale(1) rotate(0); } }
     @keyframes introLogoFloat { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-5px); } }
@@ -973,12 +1121,13 @@
     /* ── Responsive ── */
     @media (max-width: 900px) {
       /* Table: hide Owner Take + Danian Take columns */
-      table th:nth-child(8), table td:nth-child(8),
-      table th:nth-child(9), table td:nth-child(9) { display: none; }
+      table th:nth-child(9), table td:nth-child(9),
+      table th:nth-child(10), table td:nth-child(10) { display: none; }
     }
     @media (max-width: 800px) {
       .header { flex-direction: column; align-items: flex-start; gap: 8px; }
-      .header-mid { display: none; }
+      .header-mid { display: flex; width: 100%; flex-wrap: wrap; }
+      .header-mid .progress-bar, .header-mid .live-clock { display: none; }
       .header-right { width: 100%; }
       .filters { flex: 1; }
       .filters .sf { flex: 1; }
@@ -990,9 +1139,9 @@
     }
     @media (max-width: 600px) {
       /* Table: also hide Fees, Avg Sale, Avg Profit */
-      table th:nth-child(4), table td:nth-child(4),
-      table th:nth-child(6), table td:nth-child(6),
-      table th:nth-child(7), table td:nth-child(7) { display: none; }
+      table th:nth-child(5), table td:nth-child(5),
+      table th:nth-child(7), table td:nth-child(7),
+      table th:nth-child(8), table td:nth-child(8) { display: none; }
       /* Hide date range — use month filter instead */
       .date-range-wrap { display: none; }
     }

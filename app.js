@@ -2,8 +2,8 @@
 const SHEETS = {
   '1_81VM_63ZT_p5LEGkvEU2MBxbc4RBWzmd_RKgXL_icA': 'Russell',
   '1M_YHSLrdQ-XK3TitCU5Sv5OKwE-jBXR6JnvNQ1kmtMI': 'Russ LLC',
+  '1BgTn3p1GPpbfV78vXZlz3tJAUrT8_iJ17tcVrUSlgig': 'BANOS',
   '1k-GFkk-jFhnrD2v-qIEdV0zyy0kOpvbIZZ7NbppZTgQ': 'Johna',
-  '1IVGp49ly5EAiyEv0_qFLqcE_giK8Lz1pt5znq-6xzzY': 'Johna',
   '1nuJojKqj9b_a2RSKn7huV6vTr_62E7707uw1wBh0XDA': 'Dolo LLC',
   '1xsMWqwL381VcGxH5_yhWx_SKixLd_ojievrfqamBB5M': 'John Slop',
   '1wH5s8qdr0-imdK623Tdtu-UgKvRMELD_3Gd7OS2tNmQ': 'Jacob',
@@ -12,6 +12,8 @@ const SHEETS = {
   '1rrATZ5UBihrfmt0fQF55hVaaq-Ku-C6fYFm6C8kymHA': 'Jack R',
   '1ZoNmwDq6FK-R209uTsra2sPv33vAuc1pFD3NQPAGK2c': 'Delmor',
   '1UHUjPqORhDMX9McbJueVhpRkP7fc3FeOXOiaOWZwhuQ': 'Mariel',
+  '1QOVD_ggFSuNxm4-s15wIIcZ-d31alQcVEvJPvBZpbnY': 'Levi',
+  '14yqVyVqwAfHdSN2KGI6piacNaK5EhwtS8xPvCI_EVVE': 'Elle',
 };
 
 const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i;
@@ -55,6 +57,8 @@ const LISTING_TRACKER_DAILY_GIDS = [
 const LISTING_NAME_MAP = {
   'Russ':         'Russell',
   'Jonah':        'Johna',
+  'BANOS':        'BANOS',
+  'Banos':        'BANOS',
   'Dolo LLC':     'Dolo LLC',
   'Jacob':        'Jacob',
   'Armando':      'Armando',
@@ -63,6 +67,8 @@ const LISTING_NAME_MAP = {
   'Mariel':       'Mariel',
   'Huny (delmor)':'Delmor',
   'Jack':         'Jack R',
+  'Levi':         'Levi',
+  'Elle':         'Elle',
 };
 let LISTING_DATA = { summary: [], todayRow: null, dailyColNames: [] };
 let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok' | 'amazon_fbm'
@@ -70,6 +76,9 @@ let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok' | 'amazon_fbm'
 // Store creation dates fetched from Drive API — populated on load
 const STORE_CREATED = {}; // { person: 'YYYY-MM-DD' }
 const SHEET_MODIFIED = {}; // { person: ISO datetime string }
+const SHEET_STATUS = {}; // { label: { state:'pending'|'ok'|'missing', checkedAt, type } }
+let DASHBOARD_SYNCED_AT = null;
+let _freshnessTimer = null;
 
 // Expenses parsed from Expense tabs — populated on load
 // Structure: { person: { 'YYYY-MM': totalAmount, ... } }
@@ -136,22 +145,63 @@ const COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06
 
 // ─── PROFIT SPLIT CONFIG ───────────────────────────────────────────────────
 // Owned stores → J&R keep 60% of profit
-const OWNED_STORES = ['Russell', 'Russ LLC', 'Johna', 'Dolo LLC'];
+const OWNED_STORES = ['Russell', 'Russ LLC', 'BANOS', 'Johna', 'Dolo LLC'];
 // Jacob → clean 50/50 split, no Danian cut
 const JACOB_STORES = ['Jacob'];
-// All others → owner 50% / Danian 30% / J&R 20%
+const SPECIAL_STORE_SPLITS = {
+  Levi: {
+    type: 'premium_partner',
+    label: '60/40',
+    className: 'premium',
+    ownerLabel: '40%',
+    ownerNote: '',
+    storeOwnerPct: 40,
+    danianPct: 30,
+    jrPct: 30,
+  },
+};
+// All other client stores → owner 50% / Danian 30% / J&R 20%
+
+function buildSplit(type, profit, storeOwnerPct, danianPct, jrPct, extra = {}) {
+  return {
+    type,
+    label: extra.label || type,
+    className: extra.className || type,
+    ownerLabel: extra.ownerLabel || `${storeOwnerPct}%`,
+    ownerNote: extra.ownerNote || '',
+    storeOwnerPct,
+    ownerPct: storeOwnerPct,
+    danianPct,
+    jrPct,
+    storeOwner: r2(profit * storeOwnerPct / 100),
+    danian: r2(profit * danianPct / 100),
+    jr: r2(profit * jrPct / 100),
+  };
+}
 
 function getSplit(person, profit) {
+  const custom = SPECIAL_STORE_SPLITS[person];
+  if (custom) {
+    return buildSplit(custom.type, profit, custom.storeOwnerPct, custom.danianPct, custom.jrPct, custom);
+  }
   if (OWNED_STORES.includes(person)) {
     // J&R own the store: J&R 60%, Danian 40%
-    return { type: 'owned', storeOwner: 0, danian: r2(profit * 0.40), danianPct: 40, jr: r2(profit * 0.60), jrPct: 60 };
+    return buildSplit('owned', profit, 0, 40, 60, { label: 'Owner', className: 'owned', ownerLabel: '— owner', ownerNote: 'J&R own this store' });
   } else if (JACOB_STORES.includes(person)) {
     // J&R get 60% but give Jacob 10% name fee → J&R net 50%, Jacob 10%, Danian 40%
-    return { type: 'jacob', storeOwner: r2(profit * 0.10), danian: r2(profit * 0.40), danianPct: 40, jr: r2(profit * 0.50), jrPct: 50 };
+    return buildSplit('jacob', profit, 10, 40, 50, { label: '50/50', className: 'jacob', ownerLabel: '10% (fee)', ownerNote: 'name fee' });
   } else {
     // Partner stores: owner 50%, Danian 30%, J&R 20%
-    return { type: 'partner', storeOwner: r2(profit * 0.50), danian: r2(profit * 0.30), danianPct: 30, jr: r2(profit * 0.20), jrPct: 20 };
+    return buildSplit('partner', profit, 50, 30, 20, { label: 'Partner', className: 'partner', ownerLabel: '50%' });
   }
+}
+
+function splitTagHtml(split) {
+  return `<span class="split-tag ${split.className || split.type}">${escapeHtml(split.label || split.type)}</span>`;
+}
+
+function splitOwnerLabel(split) {
+  return split.ownerLabel || `${split.storeOwnerPct || split.ownerPct || 0}%`;
 }
 
 // ─── STATE ─────────────────────────────────────────────────────────────────
@@ -201,6 +251,9 @@ function setStatus(type, text) {
 }
 function setProgress(done, total) {
   $('progress-fill').style.width = total > 0 ? (done / total * 100) + '%' : '0%';
+}
+function markSheetStatus(label, state, err = '') {
+  SHEET_STATUS[label] = { state, checkedAt: new Date().toISOString(), err };
 }
 
 function roiPill(r) {
@@ -601,17 +654,50 @@ function checkApiKey() {
 }
 
 // ─── FETCH ─────────────────────────────────────────────────────────────────
-async function apiFetch(url, retry = 4) {
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const GOOGLE_REQUEST_GAP_MS = 1100; // Keeps us under the 60 reads/min/user Sheets quota.
+const GOOGLE_MAX_RETRIES = 6;
+let _googleQueue = Promise.resolve();
+let _googleLastRequestAt = 0;
+
+function makeHttpError(res) {
+  const err = new Error('HTTP ' + res.status);
+  err.status = res.status;
+  return err;
+}
+
+function retryWaitMs(res, attempt) {
+  const retryAfter = Number(res.headers && res.headers.get('retry-after'));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter * 1000;
+  return Math.min(2000 * Math.pow(2, attempt), 30000);
+}
+
+async function fetchJsonWithRetry(url, retry = GOOGLE_MAX_RETRIES, noRetryStatuses = []) {
   for (let attempt = 0; attempt < retry; attempt++) {
     const res = await fetch(url);
     if (res.ok) return res.json();
-    if (res.status === 429 && attempt < retry - 1) {
-      // Rate limited — exponential backoff: 1.5s, 3s, 4.5s, 6s
-      await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+    if (noRetryStatuses.includes(res.status)) throw makeHttpError(res);
+    if ((res.status === 429 || res.status >= 500) && attempt < retry - 1) {
+      await sleep(retryWaitMs(res, attempt));
       continue;
     }
-    throw new Error('HTTP ' + res.status);
+    throw makeHttpError(res);
   }
+}
+
+async function withGoogleThrottle(fn) {
+  const run = _googleQueue.catch(() => {}).then(async () => {
+    const wait = Math.max(0, GOOGLE_REQUEST_GAP_MS - (Date.now() - _googleLastRequestAt));
+    if (wait) await sleep(wait);
+    _googleLastRequestAt = Date.now();
+    return fn();
+  });
+  _googleQueue = run.catch(() => {});
+  return run;
+}
+
+async function apiFetch(url, retry = GOOGLE_MAX_RETRIES) {
+  return fetchJsonWithRetry(url, retry);
 }
 
 // ─── PROXY FETCH ────────────────────────────────────────────────────────────
@@ -625,20 +711,22 @@ async function apiFetch(url, retry = 4) {
 let _proxyOk = null; // null=untested, true=working, false=use direct
 
 async function googleFetch(type, params) {
+  return withGoogleThrottle(() => googleFetchUnthrottled(type, params));
+}
+
+async function googleFetchUnthrottled(type, params) {
   if (_proxyOk === false) return _googleDirect(type, params);
   try {
     const qs = new URLSearchParams({ type, ...params }).toString();
-    const res = await fetch(`/api/sheets?${qs}`);
+    const data = await fetchJsonWithRetry(`/api/sheets?${qs}`, GOOGLE_MAX_RETRIES, [404, 405, 503]);
+    _proxyOk = true;
+    return data;
+  } catch(e) {
     // 404 = proxy not deployed, 503 = env var not set → fall back silently
-    if (res.status === 404 || res.status === 405 || res.status === 503) {
+    if (e.status === 404 || e.status === 405 || e.status === 503) {
       _proxyOk = false;
       return _googleDirect(type, params);
     }
-    if (res.status === 429) throw new Error('HTTP 429');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    _proxyOk = true;
-    return res.json();
-  } catch(e) {
     // Network error or unexpected failure on first attempt → fall back to direct
     if (_proxyOk === null) { _proxyOk = false; return _googleDirect(type, params); }
     throw e;
@@ -781,15 +869,18 @@ function parseAmazonFbmValues(values, person = 'Johna') {
   const norm = h => String(h || '').toUpperCase().replace(/\s+/g, ' ').trim();
   for (let i = 0; i < Math.min(12, values.length); i++) {
     const header = (values[i] || []).map(norm);
-    if (header.includes('DATE') && (header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('PROFIT'))) {
+    const looksLikeAmazonFbm = header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('AMAZON FEE') || header.includes('PROFIT');
+    const hasDateColumn = header.includes('DATE') || header[0] === '';
+    if (hasDateColumn && looksLikeAmazonFbm) {
       headerIdx = i;
       header.forEach((h, idx) => {
-        if (h === 'DATE') colMap.date = idx;
+        if (h === 'DATE' || (idx === 0 && !h && colMap.date === undefined)) colMap.date = idx;
         else if (h === 'SELLER ORDER ID') colMap.orderId = idx;
         else if (h === 'URL') colMap.url = idx;
         else if (h === 'SKU') colMap.sku = idx;
         else if (h === 'PRODUCT NAME') colMap.product = idx;
-        else if (h === 'BUYER ORDER MAIL') colMap.buyerMail = idx;
+        else if (h === 'BUYER ORDER ID') colMap.buyerOrderId = idx;
+        else if (h === 'BUYER ORDER MAIL' || h === 'BUYER ORDER EMAIL') colMap.buyerMail = idx;
         else if (h === 'BUYER ORDER NUMBER') colMap.buyerOrderNumber = idx;
         else if (h === 'TRACKING') colMap.tracking = idx;
         else if (h === 'CARD ENDING') colMap.cardEnding = idx;
@@ -831,6 +922,7 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     const address = String(row[colMap.address] || '').trim();
     const sku = String(row[colMap.sku] || '').trim();
     const product = String(row[colMap.product] || '').trim();
+    const buyerOrderId = String(row[colMap.buyerOrderId] || '').trim();
     const status = String(row[colMap.status] || '').trim();
     const qty = Math.max(1, Math.round(parseMoney(row[colMap.qty])) || 1);
     const price = parseMoney(row[colMap.price]);
@@ -850,7 +942,7 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     if (!hasData) continue;
     if (!dateStr && !orderId && !status && !price && !profit) continue;
     const hasRealUrl = Boolean(url && !/sellercentral\.amazon\.com\/orders-v3\/order\/?$/i.test(url));
-    const hasRowIdentity = Boolean(dateStr || orderId || buyerMail || buyerOrderNumber || hasRealUrl || tracking || cardEnding || shortCode || address || status);
+    const hasRowIdentity = Boolean(dateStr || orderId || buyerOrderId || buyerMail || buyerOrderNumber || hasRealUrl || tracking || cardEnding || shortCode || address || status);
     if (!hasRowIdentity) continue;
 
     rows.push({
@@ -866,6 +958,7 @@ function parseAmazonFbmValues(values, person = 'Johna') {
       product,
       url,
       buyerMail,
+      buyerOrderId,
       buyerOrderNumber,
       tracking,
       cardEnding,
@@ -917,6 +1010,10 @@ const INTRO_BANTER = [
   'Making eBay, TikTok, and FBM shake hands…',
   'Checking the money weather…',
   'Turning tab soup into strategy…',
+  'Welcoming the new stores to the board…',
+  'Finding every new store tab…',
+  'Checking the new client split math…',
+  'Asking _meta who touched what…',
   'Finding stores with main character energy…',
   'Giving the charts a quick pep talk…',
   'Measuring the sauce viscosity…',
@@ -990,6 +1087,60 @@ function _introSetSub(text) {
   if (el) el.textContent = text || '';
 }
 
+function formatRelativeAge(date) {
+  if (!date || Number.isNaN(date.getTime())) return 'unknown';
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 45) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function updateFreshnessDisplay() {
+  const el = $('freshness-pill');
+  if (!el) return;
+  const synced = DASHBOARD_SYNCED_AT ? new Date(DASHBOARD_SYNCED_AT) : null;
+  if (!synced || Number.isNaN(synced.getTime())) {
+    el.textContent = 'Data freshness —';
+    el.title = 'No sync timestamp loaded yet';
+    el.className = 'freshness-pill stale';
+    return;
+  }
+  const ageMs = Date.now() - synced.getTime();
+  el.textContent = `Data synced ${formatRelativeAge(synced)}`;
+  el.title = `Last synced ${synced.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`;
+  el.className = 'freshness-pill' + (ageMs > 2 * 60 * 60 * 1000 ? ' stale' : ageMs > 45 * 60 * 1000 ? ' warn' : '');
+}
+
+function setDashboardSyncTime(value) {
+  DASHBOARD_SYNCED_AT = value || null;
+  updateFreshnessDisplay();
+  if (!_freshnessTimer) _freshnessTimer = setInterval(updateFreshnessDisplay, 60000);
+}
+
+async function playFastCachedIntro(rowCount) {
+  const steps = [
+    ['connect', 'Opening the fast lane…', 'Finding cached brain', 1, 8],
+    ['connect', 'Combobulating money moves…', 'Waking up Seller OS', 2, 8],
+    ['discover', 'Checking freshness…', 'Reading snapshot timestamp', 3, 8],
+    ['discover', 'Asking the tabs what changed…', 'Confirming source health', 4, 8],
+    ['load', 'Pouring rows into the dashboard…', `${(rowCount || 0).toLocaleString()} cached rows`, 5, 8],
+    ['load', 'Turning rows into decisions…', 'Building the command center', 6, 8],
+    ['render', 'Polishing the money mirror…', 'Final dashboard pass', 7, 8],
+    ['render', 'All set. Let’s make money moves.', 'Ready', 8, 8],
+  ];
+  for (const [stage, banter, sub, done, total] of steps) {
+    _introSetStage(stage);
+    _introSetBanter(banter);
+    _introSetSub(sub);
+    _introSetProgress(done, total, sub);
+    await sleep(1180);
+  }
+}
+
 function dismissIntro() {
   if (_introDismissed) return;
   _introDismissed = true;
@@ -1004,10 +1155,14 @@ function dismissIntro() {
   _introSetBanter('All set. Let’s make money moves.');
   _introSetSub('');
   _introSetProgress(1, 1, '');
+  document.body.classList.add('intro-reveal');
   setTimeout(() => {
     ov.classList.add('out');
-    setTimeout(() => { ov.style.display = 'none'; }, 700);
-  }, 420);
+    setTimeout(() => {
+      ov.style.display = 'none';
+      document.body.classList.remove('intro-reveal');
+    }, 1450);
+  }, 260);
 }
 
 function animateChannelSwitch(ch) {
@@ -1020,6 +1175,106 @@ function animateChannelSwitch(ch) {
 
 // Safety fallback — overridden dynamically once tab count is known
 let _introSafetyTimer = setTimeout(() => { if (!_introDismissed) dismissIntro(); }, 90000);
+
+function clearRuntimeData() {
+  RAW = [];
+  doneJobs = 0;
+  Object.keys(EXPENSES).forEach(k => delete EXPENSES[k]);
+  Object.keys(STORE_CREATED).forEach(k => delete STORE_CREATED[k]);
+  Object.keys(SHEET_MODIFIED).forEach(k => delete SHEET_MODIFIED[k]);
+  Object.keys(SHEET_STATUS).forEach(k => delete SHEET_STATUS[k]);
+}
+
+function finishDashboardLoad({ loadAudit = [], fromCache = false, generatedAt = null } = {}) {
+  window._loadAudit = loadAudit;
+  const ri = $('ri');
+  if (ri) { ri.className = ''; ri.textContent = '↻'; }
+  const when = generatedAt ? new Date(generatedAt) : new Date();
+  setDashboardSyncTime(generatedAt || when.toISOString());
+  $('last-upd').textContent = `${fromCache ? 'Cached' : 'Updated'} ${when.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+
+  if (!RAW.length) {
+    setStatus('error', 'No data — check API key / permissions');
+    showToast('No data found', 'error', '⚠️');
+    dismissIntro();
+    return false;
+  }
+
+  _introSetStage('render');
+  _introSetSub('');
+  _introSetProgress(1, 1, '');
+  setStatus('live', fromCache ? '● CACHED' : '● LIVE');
+  populateFilters();
+  renderAllTimeBanner();
+  try { applyFilters(); } catch(e) { console.error('applyFilters error:', e); }
+  updateChannelSwitcherVisibility();
+  setTimeout(updateChannelSwitcherVisibility, 1000);
+  $('audit-btn').style.display = '';
+  try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
+  maybeOpenClientFromUrl();
+  setTimeout(() => { if (window._initBreadcrumbObs) { window._initBreadcrumbObs(); window._initBreadcrumbObs = null; } }, 500);
+  renderLoadBanner(loadAudit);
+  if (firstLoad) { showToast(`${fromCache ? 'Loaded cached' : 'Loaded'} ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
+  else showToast(fromCache ? 'Cached data refreshed' : 'Data refreshed', 'info', '🔄');
+  setTimeout(() => dismissIntro(), 400);
+  return true;
+}
+
+async function loadDashboardSnapshot() {
+  if (location.protocol === 'file:') return false;
+  try {
+    _introSetStage('connect');
+    _introSetBanter('Opening the fast lane…');
+    _introSetSub('Loading cached Seller OS data');
+    _introSetProgress(1, 3, 'cache');
+    const res = await fetch('/api/dashboard-data');
+    if (!res.ok) return false;
+    const data = await res.json();
+    const payload = data.payload || {};
+    if (!payload.raw || !payload.raw.length) return false;
+
+    clearRuntimeData();
+    RAW = payload.raw || [];
+    Object.assign(EXPENSES, payload.expenses || {});
+    Object.assign(STORE_CREATED, payload.storeCreated || {});
+    Object.assign(SHEET_MODIFIED, payload.sheetModified || {});
+    Object.assign(SHEET_STATUS, payload.sheetStatus || {});
+    await playFastCachedIntro(RAW.length);
+    return finishDashboardLoad({
+      loadAudit: payload.loadAudit || [],
+      fromCache: true,
+      generatedAt: payload.generatedAt || data.generatedAt,
+    });
+  } catch (e) {
+    console.warn('Cached dashboard unavailable; falling back to live sheets:', e.message);
+    return false;
+  }
+}
+
+async function refreshDashboard() {
+  if (location.protocol !== 'file:') {
+    try {
+      setStatus('loading', 'Syncing…');
+      const ri = $('ri'); if (ri) { ri.className = 'spin'; ri.textContent = '↻'; }
+      _introDismissed = false;
+      const ov = $('intro-overlay');
+      if (ov) { ov.style.display = ''; ov.classList.remove('out'); }
+      _introStartBanter();
+      _introSetStage('load');
+      _introSetBanter('Syncing the warehouse…');
+      _introSetSub('Refreshing server-side sheet cache');
+      _introSetProgress(1, 2, 'server sync');
+      const res = await fetch('/api/sync-dashboard', { method: 'POST' });
+      if (res.ok) {
+        await loadDashboardSnapshot();
+        return;
+      }
+    } catch (e) {
+      console.warn('Server sync unavailable; falling back to live sheets:', e.message);
+    }
+  }
+  loadAll(true);
+}
 
 // ─── LOAD FAILURE BANNER ────────────────────────────────────────────────────
 function renderLoadBanner(audit) {
@@ -1053,23 +1308,83 @@ function renderLoadBanner(audit) {
   kpiGrid.parentNode.insertBefore(banner, kpiGrid);
 }
 
+function prioritizeLoadSources(sources) {
+  const priority = src => {
+    if (CHANNEL_FILTER === 'amazon_fbm') return src.sourceType === 'amazon_fbm' ? 0 : src.sourceType === 'tiktok' ? 1 : 2;
+    if (CHANNEL_FILTER === 'tiktok') return src.sourceType === 'tiktok' ? 0 : src.sourceType === 'amazon_fbm' ? 1 : 2;
+    if (CHANNEL_FILTER === 'ebay') return src.sourceType ? 1 : 0;
+    return src.sourceType === 'amazon_fbm' ? 0 : src.sourceType === 'tiktok' ? 1 : 2;
+  };
+  return sources.slice().sort((a,b) => priority(a) - priority(b));
+}
+
+async function refreshSheetTimestamps(ids) {
+  const sources = [
+    ...ids.map(id => ({ id, label: SHEETS[id], type: 'ebay' })),
+    ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM', type: 'amazon_fbm' })),
+    ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}`, type: 'tiktok' })),
+  ];
+
+  sources.forEach(src => {
+    if (!SHEET_MODIFIED[src.label]) {
+      SHEET_STATUS[src.label] = { state: 'pending', checkedAt: Date.now(), type: src.type };
+    }
+  });
+  renderSheetActivity();
+
+  for (let i = 0; i < sources.length; i++) {
+    const src = sources[i];
+    let hasMeta = false;
+    let hasTimestamp = false;
+
+    try {
+      const meta = await googleFetch('meta', { id: src.id });
+      const val = meta.values && meta.values[0] && meta.values[0][0];
+      if (val) {
+        SHEET_MODIFIED[src.label] = val;
+        hasMeta = true;
+        hasTimestamp = true;
+      }
+    } catch(e) { /* _meta is optional */ }
+
+    try {
+      const data = await googleFetch('drive', { id: src.id });
+      if (src.type === 'ebay' && data.createdTime) STORE_CREATED[src.label] = data.createdTime.substring(0, 10);
+      if (!hasMeta && data.modifiedTime) {
+        SHEET_MODIFIED[src.label] = data.modifiedTime;
+        hasTimestamp = true;
+      }
+    } catch(e) { /* Drive timestamps are status-only, never block sales data */ }
+
+    SHEET_STATUS[src.label] = {
+      state: hasTimestamp ? 'ok' : 'missing',
+      checkedAt: Date.now(),
+      type: src.type,
+    };
+
+    if (i % 3 === 2) {
+      renderSheetActivity();
+      if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
+    }
+  }
+
+  renderSheetActivity();
+  if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
+}
+
 // ─── MAIN LOAD ─────────────────────────────────────────────────────────────
-async function loadAll() {
+async function loadAll(forceLive = false) {
   if (!API_KEY) { checkApiKey(); return; }
+  if (!forceLive && await loadDashboardSnapshot()) return;
   setStatus('loading', 'Loading…');
   const ri = $('ri'); ri.className = 'spin'; ri.textContent = '↻';
-  RAW = []; doneJobs = 0;
+  clearRuntimeData();
 
   // Stage 1: Connect
   _introStartBanter();
   _introSetStage('connect');
   _introSetSub('');
   _introSetProgress(0, 1, '');
-
-  // Clear accumulated state so refreshes don't double-count
-  Object.keys(EXPENSES).forEach(k => delete EXPENSES[k]);
-  Object.keys(STORE_CREATED).forEach(k => delete STORE_CREATED[k]);
-  Object.keys(SHEET_MODIFIED).forEach(k => delete SHEET_MODIFIED[k]);
 
   const ids = Object.keys(SHEETS);
   let allSources = [], tabErrors = [];
@@ -1082,7 +1397,7 @@ async function loadAll() {
   const delay = ms => new Promise(r => setTimeout(r, ms));
   const tabLists = [];
   for (let i = 0; i < ids.length; i++) {
-    if (i > 0) await delay(400);
+    if (i > 0) await delay(50);
     const list = await getDataTabs(ids[i]).catch(e => { tabErrors.push({id: ids[i], e: e.message}); return []; });
     tabLists.push(list);
     _introSetProgress(i + 1, ids.length + TIKTOK_SOURCES.length, `${i + 1} / ${ids.length} eBay stores`);
@@ -1090,7 +1405,7 @@ async function loadAll() {
   ids.forEach((id,i)=>tabLists[i].forEach(tab=>allSources.push({id,person:SHEETS[id],tab})));
   for (let i = 0; i < TIKTOK_SOURCES.length; i++) {
     const src = TIKTOK_SOURCES[i];
-    if (ids.length || i > 0) await delay(400);
+    if (ids.length || i > 0) await delay(50);
     const list = await getDataTabs(src.id).catch(e => { tabErrors.push({ id: src.id, e: e.message, sourceType: 'tiktok' }); return []; });
     list
       .filter(tab => /tik.?tok/i.test(tab))
@@ -1098,60 +1413,14 @@ async function loadAll() {
     _introSetProgress(ids.length + i + 1, ids.length + TIKTOK_SOURCES.length, `${ids.length} eBay stores · ${i + 1} TikTok source${i ? 's' : ''}`);
   }
   AMAZON_FBM_SOURCES.forEach(src => allSources.push({ ...src, sourceType: 'amazon_fbm' }));
-
-  // Fetch sheet creation + last-modified dates from Drive API (fire and forget — non-blocking)
-  Promise.all(ids.map(async id => {
-    try {
-      const data = await googleFetch('drive', { id });
-      if (data.createdTime)  STORE_CREATED[SHEETS[id]]  = data.createdTime.substring(0, 10);
-      if (data.modifiedTime) SHEET_MODIFIED[SHEETS[id]] = data.modifiedTime;
-    } catch(e) { /* ignore */ }
-  }));
-  Promise.all([
-    ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM' })),
-    ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}` })),
-  ].map(async src => {
-    try {
-      const data = await googleFetch('drive', { id: src.id });
-      if (data.modifiedTime) SHEET_MODIFIED[src.label] = data.modifiedTime;
-    } catch(e) { /* ignore */ }
-  })).then(() => {
-    renderSheetActivity();
-    if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
-  }).catch(() => {});
-
-  // Fetch last-edit timestamps from _meta!A1 — staggered to avoid 429
-  (async () => {
-    for (let i = 0; i < ids.length; i++) {
-      if (i > 0) await delay(400);
-      try {
-        const data = await googleFetch('meta', { id: ids[i] });
-        const val = data.values && data.values[0] && data.values[0][0];
-        if (val) SHEET_MODIFIED[SHEETS[ids[i]]] = val;
-      } catch(e) { /* _meta tab not yet created */ }
-    }
-    const externalMeta = [
-      ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM' })),
-      ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}` })),
-    ];
-    for (let i = 0; i < externalMeta.length; i++) {
-      if (ids.length || i > 0) await delay(400);
-      try {
-        const data = await googleFetch('meta', { id: externalMeta[i].id });
-        const val = data.values && data.values[0] && data.values[0][0];
-        if (val) SHEET_MODIFIED[externalMeta[i].label] = val;
-      } catch(e) { /* _meta tab not yet created */ }
-    }
-    renderSheetActivity();
-    if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
-  })();
+  allSources = prioritizeLoadSources(allSources);
 
   loadListingTracker();
 
   if (!allSources.length) {
     const msg = tabErrors.length ? 'API error: '+tabErrors[0].e : 'No tabs — check sheet sharing';
     setStatus('error', msg);
-    $('tbody').innerHTML = `<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--rose)">❌ ${msg}</td></tr>`;
+    $('tbody').innerHTML = `<tr><td colspan="12" style="text-align:center;padding:28px;color:var(--rose)">❌ ${msg}</td></tr>`;
     ri.className='';
     dismissIntro();
     return;
@@ -1165,13 +1434,13 @@ async function loadAll() {
   _introSetSub('');
   _introSetProgress(0, totalJobs, `0 / ${totalJobs} tabs`);
 
-  // Reset safety timer now that we know tab count — give 1s per tab + 15s buffer
+  // Reset safety timer now that we know tab count — throttled loads need a little room.
   clearTimeout(_introSafetyTimer);
-  _introSafetyTimer = setTimeout(() => { if (!_introDismissed) dismissIntro(); }, totalJobs * 1000 + 15000);
+  _introSafetyTimer = setTimeout(() => { if (!_introDismissed) dismissIntro(); }, totalJobs * 1600 + 30000);
 
   const loadAudit = [];
 
-  const BATCH = 3;
+  const BATCH = 1;
   for (let i = 0; i < allSources.length; i += BATCH) {
     const batch = allSources.slice(i, i + BATCH);
     await Promise.all(batch.map(async src => {
@@ -1235,45 +1504,16 @@ async function loadAll() {
         if (doneJobs === Math.floor(totalJobs / 2)) _introSetSub('');
       }
     }));
-    if (i + BATCH < allSources.length) await delay(500);
+    if (i + BATCH < allSources.length) await delay(100);
   }
-  window._loadAudit = loadAudit;
-
-  ri.className=''; ri.textContent='↻';
-  const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-  $('last-upd').textContent = 'Updated ' + now;
-
-  if (RAW.length) {
-    // Stage 4: Render
-    _introSetStage('render');
-    _introSetSub('');
-    _introSetProgress(1, 1, '');
-
-    setStatus('live', '● LIVE');
-    populateFilters();
-    renderAllTimeBanner();
-    try { applyFilters(); } catch(e) { console.error('applyFilters error:', e); }
-    updateChannelSwitcherVisibility();
-    setTimeout(updateChannelSwitcherVisibility, 1000);
-    $('audit-btn').style.display = '';
-    try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }
-    maybeOpenClientFromUrl();
-    setTimeout(() => { if (window._initBreadcrumbObs) { window._initBreadcrumbObs(); window._initBreadcrumbObs = null; } }, 500);
-    renderLoadBanner(loadAudit);
-    if (firstLoad) { showToast(`Loaded ${RAW.length.toLocaleString()} records`, 'success', '✅'); firstLoad = false; }
-    else showToast('Data refreshed', 'info', '🔄');
-    // Give Chart.js and the DOM 400ms to finish painting before pulling the overlay.
-    setTimeout(() => dismissIntro(), 400);
-  } else {
-    setStatus('error', 'No data — check API key / permissions');
-    showToast('No data found', 'error', '⚠️');
-    dismissIntro();
+  if (finishDashboardLoad({ loadAudit })) {
+    refreshSheetTimestamps(ids).catch(e => console.warn('Timestamp refresh failed:', e));
   }
 }
 
 // ─── FILTERS ───────────────────────────────────────────────────────────────
 function populateFilters() {
-  const persons = [...new Set(RAW.map(r=>r.person))].sort();
+  const persons = [...new Set([...Object.values(SHEETS), ...RAW.map(r=>r.person)])].sort();
   const months  = [...new Set(RAW.map(r=>r.month))].filter(m => monthIndex(m) < 999999).sort((a,b)=>monthIndex(a)-monthIndex(b));
   const pSel = $('filter-person'), mSel = $('filter-month');
   const pv = pSel.value, mv = mSel.value;
@@ -1391,16 +1631,14 @@ function renderSplitSummary(data) {
         <span class="split-proj-val" style="color:${color}">${fmt$(val)}</span>
        </div>` : '';
 
-  const tagLabel = { owned: 'Owner', jacob: '50/50', partner: 'Partner' };
-  const tagClass = { owned: 'owned', jacob: 'jacob', partner: 'partner' };
-  const ownerPctLabel = x => x.split.type === 'jacob' ? '10% (fee)' : '50%';
+  const ownerPctLabel = x => splitOwnerLabel(x.split);
 
   const jrRows = byPerson
     .filter(x => x.split.jr > 0).sort((a, b) => b.split.jr - a.split.jr)
     .map(x => `<div class="split-row">
       <span class="split-row-lbl">${x.p}</span>
       <span class="split-row-right">
-        <span class="split-tag ${tagClass[x.split.type]}">${tagLabel[x.split.type]}</span>
+        ${splitTagHtml(x.split)}
         <span class="split-row-v" style="color:var(--emerald)">${fmt$(x.split.jr)}</span>
         <span style="font-size:10px;color:var(--muted)">${x.split.jrPct}%</span>
       </span></div>`).join('');
@@ -1410,7 +1648,7 @@ function renderSplitSummary(data) {
     .map(x => `<div class="split-row">
       <span class="split-row-lbl">${x.p}</span>
       <span class="split-row-right">
-        <span class="split-tag ${tagClass[x.split.type]}">${tagLabel[x.split.type]}</span>
+        ${splitTagHtml(x.split)}
         <span class="split-row-v" style="color:#818cf8">${fmt$(x.split.danian)}</span>
         <span style="font-size:10px;color:var(--muted)">${x.split.danianPct}%</span>
       </span></div>`).join('');
@@ -1419,7 +1657,7 @@ function renderSplitSummary(data) {
     .filter(x => x.split.storeOwner > 0).sort((a, b) => b.split.storeOwner - a.split.storeOwner)
     .map(x => {
       return `<div class="split-row">
-        <span class="split-row-lbl">${x.p}${x.split.type === 'jacob' ? ' <span style="color:var(--muted);font-size:10px">(name fee)</span>' : ''}</span>
+        <span class="split-row-lbl">${x.p}${x.split.ownerNote ? ` <span style="color:var(--muted);font-size:10px">(${escapeHtml(x.split.ownerNote)})</span>` : ''}</span>
         <span class="split-row-right">
           <span class="split-row-v" style="color:var(--yellow)">${fmt$(x.split.storeOwner)}</span>
           <span style="font-size:10px;color:var(--muted)">${ownerPctLabel(x)}</span>
@@ -1472,8 +1710,10 @@ function renderKPIs(data) {
   const amazonUnit = r2(data.reduce((s,r)=>s+(r.unitCostTotal || 0), 0));
   const amazonTax = r2(data.reduce((s,r)=>s+(r.tax || 0), 0));
   const amazonOpsCost = r2(amazonUnit + amazonLabel + amazonPrep + amazonShip);
-  const feeCardLabel = isAmazonMode ? '📦 Amazon Costs' : CHANNEL_FILTER === 'tiktok' ? '🏷️ TikTok Fees' : CHANNEL_FILTER === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
-  const feeCardValue = isAmazonMode ? r2(amazonFee + amazonOpsCost + amazonTax) : fee;
+  const ebayItemCost = r2(data.filter(r=>r.channel === 'ebay').reduce((s,r)=>s+(r.cost || 0), 0));
+  const showEbayItemCost = !isAmazonMode && (CHANNEL_FILTER === 'ebay' || CHANNEL_FILTER === 'all');
+  const feeCardLabel = isAmazonMode ? '📦 Amazon Costs' : showEbayItemCost ? '🛒 Amazon Item Cost' : CHANNEL_FILTER === 'tiktok' ? '🏷️ TikTok Fees' : '🏷️ Platform Fees';
+  const feeCardValue = isAmazonMode ? r2(amazonFee + amazonOpsCost + amazonTax) : showEbayItemCost ? ebayItemCost : fee;
   const feeCardPct = rev > 0 ? feeCardValue / rev * 100 : 0;
   const showAmazonPayout = isAmazonMode && profit === 0 && amazonPayout > 0;
   const primaryValue = showAmazonPayout ? amazonPayout : profit;
@@ -1519,6 +1759,11 @@ function renderKPIs(data) {
         const dayRows = data.filter(r => r.date === d.date);
         return r2(dayRows.reduce((s,r)=>s+(r.amazonFee||r.fee||0)+(r.cost||0)+(r.tax||0),0));
       })
+    : showEbayItemCost
+      ? last30.map(d => {
+          const dayRows = data.filter(r => r.date === d.date && r.channel === 'ebay');
+          return r2(dayRows.reduce((s,r)=>s+(r.cost || 0),0));
+        })
     : null;
   const feeSpark    = feeCardSpark || last30.map(d=>d.fee);
   const roiSpark    = last30.map(d=>d.revenue>0?(d.profit/d.revenue*100):0);
@@ -1593,6 +1838,7 @@ function renderKPIs(data) {
           <div class="kpi-val" id="kv-fee">${fmt$(feeCardValue)}</div>
           <div class="kpi-sub">${fmtP(feeCardPct)} of revenue</div>
           ${isAmazonMode ? `<div class="kpi-sub" style="font-size:10px;line-height:1.45;margin-top:2px">Amazon fees ${fmt$(amazonFee)} · unit/prep ${fmt$(r2(amazonUnit+amazonPrep))} · label/ship ${fmt$(r2(amazonLabel+amazonShip))}${amazonTax?` · tax ${fmt$(amazonTax)}`:''}</div>` : ''}
+          ${showEbayItemCost ? `<div class="kpi-sub" style="font-size:10px;line-height:1.45;margin-top:2px">From eBay sheet COST column · eBay fees ${fmt$(fee)} · combined ${fmt$(r2(ebayItemCost+fee))}</div>` : ''}
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-fee" width="80" height="32"></canvas>
       </div>
@@ -1640,14 +1886,12 @@ function renderKPIs(data) {
       .map(([person, pProfit]) => ({ person, profit: pProfit, split: getSplit(person, pProfit) }))
       .sort((a, b) => b.profit - a.profit);
 
-    const tagLabel = { owned: 'Owner', jacob: '50/50', partner: 'Partner' };
-    const tagClass = { owned: 'owned', jacob: 'jacob', partner: 'partner' };
     const mkRows = (getValue, getPct) => personSplits
       .filter(x => getValue(x) > 0)
       .sort((a, b) => getValue(b) - getValue(a))
       .map(x => `<div class="take-row">
-        <span class="take-row-name">${x.person}${x.split.type === 'jacob' ? ' <span style="color:var(--muted);font-size:10px">(name fee)</span>' : ''}</span>
-        <span class="split-tag ${tagClass[x.split.type]}">${tagLabel[x.split.type]}</span>
+        <span class="take-row-name">${x.person}${x.split.ownerNote ? ` <span style="color:var(--muted);font-size:10px">(${escapeHtml(x.split.ownerNote)})</span>` : ''}</span>
+        ${splitTagHtml(x.split)}
         <span class="take-row-val">${fmt$(getValue(x))}</span>
         <span class="take-row-pct">${getPct(x)}</span>
       </div>`).join('');
@@ -1672,7 +1916,7 @@ function renderKPIs(data) {
         <div class="take-label">🟡 Owner Take</div>
         <div class="take-val" style="color:#f59e0b">${fmt$(dayOwner)}</div>
         <div class="take-who">${ownerCount} store owner${ownerCount !== 1 ? 's' : ''} · ${dayLabel}</div>
-        <div class="take-rows">${mkRows(x => x.split.storeOwner, x => x.split.type === 'jacob' ? '10% (fee)' : '50%')}</div>
+        <div class="take-rows">${mkRows(x => x.split.storeOwner, x => splitOwnerLabel(x.split))}</div>
       </div>` : ''}
       <div class="take-card">
         <div class="take-label">📦 Total Profit</div>
@@ -1977,6 +2221,7 @@ function accountSummaryTableMarkup() {
         <th onclick="sortBy('rank')">#</th>
         <th onclick="sortBy('person')">Account <span id="sh-person"></span></th>
         <th onclick="sortBy('profit')">Profit <span id="sh-profit"></span></th>
+        <th onclick="sortBy('item_cost')" title="Amazon supplier/item cost from the eBay COST column">Amazon Cost <span id="sh-item_cost"></span></th>
         <th onclick="sortBy('fee')">Fees <span id="sh-fee"></span></th>
         <th onclick="sortBy('sales')">Sales <span id="sh-sales"></span></th>
         <th onclick="sortBy('avg_sale')">Avg Sale <span id="sh-avg_sale"></span></th>
@@ -2174,12 +2419,13 @@ function renderTable(data) {
     const rev    = r2(pr.reduce((s,r)=>s+r.price,0));
     const profit = r2(pr.reduce((s,r)=>s+r.profit,0));
     const cost   = r2(pr.reduce((s,r)=>s+r.cost,0));
+    const itemCost = r2(pr.filter(r=>r.channel === 'ebay').reduce((s,r)=>s+(r.cost || 0),0));
     const fee    = r2(pr.reduce((s,r)=>s+r.fee,0));
     const sales  = pr.length;
     const roi    = cost > 0 ? r2(profit/cost*100) : 0;
     const split  = getSplit(p, profit);
     const inactive = getInactiveDays(pr);
-    return { person:p, revenue:rev, profit, cost, fee, sales, roi,
+    return { person:p, revenue:rev, profit, cost, item_cost: itemCost, fee, sales, roi,
       avg_sale:   sales>0?r2(rev/sales):0,
       avg_profit: sales>0?r2(profit/sales):0,
       owner_take: split.storeOwner, danian_take: split.danian, jr_take: split.jr,
@@ -2195,7 +2441,7 @@ function renderTable(data) {
   rows.forEach((r,i)=>r.rank=i+1);
 
   // Update sort indicators
-  ['person','revenue','profit','roi','fee','sales','avg_sale','avg_profit','owner_take','danian_take','jr_take'].forEach(col => {
+  ['person','revenue','profit','item_cost','roi','fee','sales','avg_sale','avg_profit','owner_take','danian_take','jr_take'].forEach(col => {
     const el = $('sh-'+col);
     if (!el) return;
     el.textContent = sortCol===col ? (sortDir==='asc'?' ↑':' ↓') : '';
@@ -2205,7 +2451,7 @@ function renderTable(data) {
 
   const tb = $('tbody');
   if (!rows.length) {
-    tb.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--muted)">No data for selected filters</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:28px;color:var(--muted)">No data for selected filters</td></tr>`;
     return;
   }
   tb.innerHTML = rows.map(r => {
@@ -2218,6 +2464,7 @@ function renderTable(data) {
       <td>${rankHtml}</td>
       <td><button class="pin-btn ${PINNED.has(r.person)?'pinned':''}" onclick="togglePin('${r.person.replace(/'/g,"\\'")}',event)" title="Pin to top">${PINNED.has(r.person)?'★':'☆'}</button><strong>${r.person}</strong>${r.inactive !== null && r.inactive >= 5 ? `<span style="color:var(--rose);font-size:9px;margin-left:5px;font-weight:700">⚠️${r.inactive}d</span>` : ''}</td>
       <td><strong style="color:${r.profit>=0?'var(--emerald)':'var(--rose)'}">${fmt$(r.profit)}</strong></td>
+      <td style="color:var(--amber);font-weight:800">${fmt$(r.item_cost)}</td>
       <td style="color:var(--muted)">${fmt$(r.fee)}</td>
       <td>${fmtN(r.sales)}</td>
       <td>${fmt$(r.avg_sale)}</td>
@@ -2319,17 +2566,19 @@ function openPayoutCalc() {
 function updateCalc() {
   const profit = parseFloat($('calc-profit-input').value) || 0;
   const type   = $('calc-type').value;
-  let jr, jrPct, danian, danianPct, owner, ownerPct, ownerLbl;
-  if (type === 'owned')  { jr=r2(profit*.60);jrPct=60;danian=r2(profit*.40);danianPct=40;owner=0;ownerPct=0;ownerLbl='J&R own this store'; }
-  else if (type==='jacob'){ jr=r2(profit*.50);jrPct=50;danian=r2(profit*.40);danianPct=40;owner=r2(profit*.10);ownerPct=10;ownerLbl='Jacob (name fee)'; }
-  else                   { jr=r2(profit*.20);jrPct=20;danian=r2(profit*.30);danianPct=30;owner=r2(profit*.50);ownerPct=50;ownerLbl='Store Owner'; }
+  const sampleName = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : type === 'premium_partner' ? 'Levi' : '__partner__';
+  const split = getSplit(sampleName, profit);
+  const ownerLbl = split.type === 'owned' ? 'J&R own this store'
+    : split.type === 'jacob' ? 'Jacob (name fee)'
+    : split.type === 'premium_partner' ? 'Store Owner'
+    : 'Store Owner';
   const row = (lbl, val, color) => `<div class="calc-row"><span class="calc-lbl">${lbl}</span><span style="color:${color};font-weight:700">${fmtFull$(val)}</span></div>`;
   $('calc-result').innerHTML = `
     ${row('Total Profit', profit, 'var(--text)')}
-    ${row(`J&R Take (${jrPct}%)`, jr, 'var(--emerald)')}
-    ${row(`Danian (${danianPct}%)`, danian, '#818cf8')}
-    ${owner > 0 ? row(`${ownerLbl} (${ownerPct}%)`, owner, 'var(--yellow)') : `<div class="calc-row"><span class="calc-lbl">${ownerLbl}</span><span style="color:var(--muted)">—</span></div>`}
-    ${row('J&R + Danian Total', r2(jr+danian), 'var(--cyan)')}
+    ${row(`J&R Take (${split.jrPct}%)`, split.jr, 'var(--emerald)')}
+    ${row(`Danian (${split.danianPct}%)`, split.danian, '#818cf8')}
+    ${split.storeOwner > 0 ? row(`${ownerLbl} (${splitOwnerLabel(split)})`, split.storeOwner, 'var(--yellow)') : `<div class="calc-row"><span class="calc-lbl">${ownerLbl}</span><span style="color:var(--muted)">—</span></div>`}
+    ${row('J&R + Danian Total', r2(split.jr+split.danian), 'var(--cyan)')}
   `;
 }
 
@@ -2361,7 +2610,7 @@ function openPayoutReport() {
       ${rows.filter(x=>x.split.danian>0).map(x=>`<div class="report-row"><span>${x.p} <span style="color:var(--muted);font-size:10px">(${x.split.danianPct}%)</span></span><span style="color:#818cf8;font-weight:700">${fmtFull$(x.split.danian)}</span></div>`).join('')}
       <div class="report-total"><span>Total Danian Take</span><span style="color:#818cf8">${fmtFull$(allDanian)}</span></div></div>
     ${ownerRows.length?`<div class="report-sec"><h4>🏪 Store Owners</h4>
-      ${ownerRows.map(x=>`<div class="report-row"><span>${x.p} <span style="color:var(--muted);font-size:10px">(${x.split.type==='jacob'?'10% name fee':'50%'})</span></span><span style="color:var(--yellow);font-weight:700">${fmtFull$(x.split.storeOwner)}</span></div>`).join('')}
+      ${ownerRows.map(x=>`<div class="report-row"><span>${x.p} <span style="color:var(--muted);font-size:10px">(${splitOwnerLabel(x.split)})</span></span><span style="color:var(--yellow);font-weight:700">${fmtFull$(x.split.storeOwner)}</span></div>`).join('')}
       <div class="report-total"><span>Total Owner Payouts</span><span style="color:var(--yellow)">${fmtFull$(allOwners)}</span></div></div>`:''}
     <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-top:8px">
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px"><span style="color:var(--muted)">Total Gross Profit</span><span style="font-weight:800">${fmtFull$(r2(allJR+allDanian+allOwners))}</span></div>
@@ -2710,6 +2959,8 @@ function renderAllTimeBanner() {
   const allProfit=r2(data.reduce((s,r)=>s+r.profit,0));
   const allDates=[...new Set(data.filter(r=>r.date).map(r=>r.date))];
   const months=[...new Set(data.map(r=>r.month))];
+  const ebayItemCost=r2(data.filter(r=>r.channel === 'ebay').reduce((s,r)=>s+(r.cost || 0),0));
+  const showEbayItemCost = CHANNEL_FILTER === 'ebay' || CHANNEL_FILTER === 'all';
   let allJR=0;
   const persons=[...new Set(data.map(r=>r.person))];
   persons.forEach(p=>{
@@ -2724,7 +2975,10 @@ function renderAllTimeBanner() {
   $('alltime-val').textContent   = fmt$(allProfit);
   window._ALLTIME_PROFIT = allProfit;
   $('alltime-sales').textContent = fmtN(data.length);
-  $('alltime-days').textContent  = fmtN(allDates.length);
+  const extraLabel = $('alltime-extra-label');
+  if (extraLabel) extraLabel.textContent = showEbayItemCost ? 'Amazon Item Cost' : 'Active Days';
+  $('alltime-days').textContent  = showEbayItemCost ? fmt$(ebayItemCost) : fmtN(allDates.length);
+  $('alltime-days').style.color = showEbayItemCost ? 'var(--amber)' : 'var(--violet)';
   $('alltime-jr').textContent    = fmt$(allJR);
   $('alltime-meta').textContent  = `${months.length} months tracked`;
   countUp($('alltime-val'), allProfit, 1200);
@@ -2900,15 +3154,34 @@ function renderSheetActivity() {
     section.style.display = 'none';
     return;
   }
-  const entries = Object.keys(SHEET_MODIFIED);
+  let entries;
+  if (CHANNEL_FILTER === 'tiktok') {
+    entries = TIKTOK_SOURCES.map(src => `TikTok ${src.person}`);
+  } else if (CHANNEL_FILTER === 'all') {
+    entries = [...Object.values(SHEETS), ...TIKTOK_SOURCES.map(src => `TikTok ${src.person}`)];
+  } else {
+    entries = Object.values(SHEETS);
+  }
+  entries = [...new Set(entries)];
   if (!entries.length) { section.style.display = 'none'; return; }
 
   const now = Date.now();
   const cards = entries.map(person => {
-    const modTime = new Date(SHEET_MODIFIED[person]).getTime();
-    const hoursAgo = (now - modTime) / 3600000;
+    const modRaw = SHEET_MODIFIED[person];
+    const modTime = modRaw ? new Date(modRaw).getTime() : NaN;
+    const hasTimestamp = isFinite(modTime);
+    const hoursAgo = hasTimestamp ? (now - modTime) / 3600000 : Infinity;
+    const status = SHEET_STATUS[person]?.state || 'pending';
     let color, dot, label;
-    if (hoursAgo < 12) {
+    if (!hasTimestamp) {
+      if (status === 'pending') {
+        color = 'var(--cyan)'; dot = '⏳';
+        label = 'Checking…';
+      } else {
+        color = 'var(--muted)'; dot = '⚪';
+        label = 'No _meta yet';
+      }
+    } else if (hoursAgo < 12) {
       color = 'var(--green)'; dot = '🟢';
       label = hoursAgo < 1 ? 'Just now' : `${Math.floor(hoursAgo)}h ago`;
     } else if (hoursAgo < 24) {
@@ -2919,21 +3192,34 @@ function renderSheetActivity() {
       const days = Math.floor(hoursAgo / 24);
       label = `${days}d ago`;
     }
-    return { person, hoursAgo, color, dot, label };
-  }).sort((a, b) => b.hoursAgo - a.hoursAgo); // worst first
+    const pending = !hasTimestamp && status === 'pending';
+    const labelHtml = pending
+      ? `<span class="sheet-checking-label">Checking<span class="sheet-checking-dots"><i></i><i></i><i></i></span></span>`
+      : label;
+    const dotHtml = pending ? '<span class="sheet-check-orbit"><i></i></span>' : dot;
+    return { person, hoursAgo, color, dot, label, labelHtml, dotHtml, pending, missing: !hasTimestamp && status !== 'pending' };
+  }).sort((a, b) => {
+    if (a.pending !== b.pending) return a.pending ? -1 : 1;
+    return b.hoursAgo - a.hoursAgo;
+  }); // checking first, then worst first
 
-  const overdue = cards.filter(c => c.hoursAgo >= 12).length;
-  $('sheet-activity-sub').textContent = overdue > 0 ? `${overdue} account${overdue>1?'s':''} overdue` : 'All sheets up to date';
+  const overdue = cards.filter(c => isFinite(c.hoursAgo) && c.hoursAgo >= 12).length;
+  const pending = cards.filter(c => c.pending).length;
+  const missing = cards.filter(c => c.missing).length;
+  $('sheet-activity-sub').textContent = pending > 0
+    ? `${pending} timestamp${pending>1?'s':''} checking`
+    : missing > 0 ? `${missing} _meta timestamp${missing>1?'s':''} missing`
+    : overdue > 0 ? `${overdue} account${overdue>1?'s':''} overdue` : 'All sheets up to date';
 
   grid.innerHTML = cards.map(c => `
-    <div class="card" style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
+    <div class="card sheet-activity-card ${c.pending ? 'is-checking' : ''}">
       <div>
         <div style="font-weight:700;font-size:13px">${c.person}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">Last updated</div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:15px;font-weight:800;color:${c.color}">${c.label}</div>
-        <div style="font-size:13px">${c.dot}</div>
+        <div class="sheet-activity-time" style="color:${c.color}">${c.labelHtml}</div>
+        <div class="sheet-activity-dot">${c.dotHtml}</div>
       </div>
     </div>`).join('');
 
@@ -4265,12 +4551,44 @@ const WAR_MOVE_TO_LEVER = {
 };
 
 function warSplitForType(type, profit) {
-  const key = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : '__partner__';
+  const key = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : type === 'premium_partner' ? 'Levi' : '__partner__';
   return getSplit(key, profit);
 }
 
+function warSplitTypeLabel(type) {
+  if (type === 'owned') return 'owned';
+  if (type === 'jacob') return 'name-fee';
+  if (type === 'premium_partner') return 'premium client';
+  return 'partner';
+}
+
+function warBuildRawFallbackAccounts(existingAccounts = []) {
+  const existing = new Set(existingAccounts.map(p => p.dashName || p.store));
+  return [...new Set(RAW.filter(channelMatches).map(r => r.person))]
+    .filter(person => person && !existing.has(person))
+    .map(person => {
+      const recs = RAW.filter(r => r.person === person && channelMatches(r));
+      if (!recs.length) return null;
+      const latestDate = recs.map(r => r.date).filter(Boolean).sort().pop() || '';
+      return {
+        store: person,
+        dashName: person,
+        current: 1,
+        target: 5000,
+        dailyGoal: 0,
+        recs,
+        latestDate,
+        profitPerListMo: 0,
+        recentMoLabel: 'sales run-rate',
+        source: 'sales',
+      };
+    })
+    .filter(Boolean);
+}
+
 function warGetAccounts() {
-  const baseAccounts = Object.values(_growthPersonData || {}).filter(p => p && p.store && p.current > 0);
+  const trackerAccounts = Object.values(_growthPersonData || {}).filter(p => p && p.store && p.current > 0);
+  const baseAccounts = [...trackerAccounts, ...warBuildRawFallbackAccounts(trackerAccounts)];
   const windowDays = Math.max(1, Math.floor(warReadNumber('war-recent-window', 14)));
   const latestTs = baseAccounts.reduce((max, p) => {
     (p.recs || []).forEach(r => {
@@ -4282,7 +4600,7 @@ function warGetAccounts() {
   }, 0);
   const cutoffTs = latestTs ? latestTs - ((windowDays - 1) * 86400000) : 0;
   return baseAccounts
-    .filter(p => p && p.store && p.current > 0)
+    .filter(p => p && p.store)
     .map(p => {
       const recentRows = latestTs
         ? (p.recs || []).filter(r => r.date && new Date(r.date + 'T00:00:00').getTime() >= cutoffTs)
@@ -4290,11 +4608,11 @@ function warGetAccounts() {
       const recentProfit = r2(recentRows.reduce((s, r) => s + (r.profit || 0), 0));
       const recentRevenue = r2(recentRows.reduce((s, r) => s + (r.price || 0), 0));
       const monthlyProfit = r2(recentProfit / windowDays * 30);
-  const split = getSplit(p.dashName || p.store, monthlyProfit);
-  return {
-    ...p,
-    monthlyProfit,
-    monthlyRate: 0,
+      const split = getSplit(p.dashName || p.store, monthlyProfit);
+      return {
+        ...p,
+        monthlyProfit,
+        monthlyRate: 0,
         split,
         recentRows: recentRows.length,
         recentProfit,
@@ -4377,7 +4695,7 @@ function warDraftToMove() {
 
 function warMoveLabel(move) {
   if (!move) return 'Move';
-  if (move.type === 'add') return `Add ${move.count || 0} ${move.split || 'partner'} store${Number(move.count) === 1 ? '' : 's'}`;
+  if (move.type === 'add') return `Add ${move.count || 0} ${warSplitTypeLabel(move.split || 'partner')} store${Number(move.count) === 1 ? '' : 's'}`;
   if (move.type === 'improve') return `${move.target || 'Store'} toward ${move.benchmark || 'benchmark'}`;
   if (move.type === 'lift') return `${move.pct || 0}% portfolio lift`;
   return move.note || 'Logged growth move';
@@ -4415,7 +4733,7 @@ function warMoveToLever(move, accounts, baseline) {
     const profitEach = Math.max(0, Number(move.profit) || 0);
     const profit = r2(count * profitEach);
     const split = warSplitForType(move.split || 'partner', profit);
-    return { id: move.id, key: 'clients', name: `${count} new ${move.split || 'partner'} store${count === 1 ? '' : 's'} at ${fmt$(profitEach)}/mo`, profit, split, move };
+    return { id: move.id, key: 'clients', name: `${count} new ${warSplitTypeLabel(move.split || 'partner')} store${count === 1 ? '' : 's'} at ${fmt$(profitEach)}/mo`, profit, split, move };
   }
   if (move.type === 'improve') {
     const target = accounts.find(p => p.store === move.target) || accounts[accounts.length - 1];
@@ -4511,6 +4829,7 @@ function renderWarMoveBuilder(data) {
       <label class="war-builder-field">What kind?
         <select id="war-builder-split" onchange="warMoveChanged()">
           <option value="partner" ${draft.split === 'partner' ? 'selected' : ''}>Partner/client store</option>
+          <option value="premium_partner" ${draft.split === 'premium_partner' ? 'selected' : ''}>Premium client store (60/40)</option>
           <option value="owned" ${draft.split === 'owned' ? 'selected' : ''}>Owned store</option>
           <option value="jacob" ${draft.split === 'jacob' ? 'selected' : ''}>Name-fee store</option>
         </select>
@@ -4526,7 +4845,7 @@ function renderWarMoveBuilder(data) {
       </label>
       <button type="button" class="war-builder-pill" onclick="warUseSelectedRate()">Use chosen store's current rate</button>
       <button type="button" class="war-builder-pill primary" onclick="addWarScenarioMove()">Add to scenario stack</button>`;
-    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${draft.split} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
+    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${warSplitTypeLabel(draft.split)} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
     return;
   }
 
@@ -4581,6 +4900,7 @@ function renderWarMoveBuilder(data) {
     <label class="war-builder-field">Who gets paid like?
       <select id="war-builder-log-split" onchange="warMoveChanged()">
         <option value="partner" ${draft.split === 'partner' ? 'selected' : ''}>Partner/client split</option>
+        <option value="premium_partner" ${draft.split === 'premium_partner' ? 'selected' : ''}>Premium client split (60/40)</option>
         <option value="owned" ${draft.split === 'owned' ? 'selected' : ''}>Owned split</option>
         <option value="jacob" ${draft.split === 'jacob' ? 'selected' : ''}>Name-fee split</option>
       </select>
@@ -4601,7 +4921,7 @@ function renderWarMoveNote(data) {
   const weakest = [...accounts].sort((a, b) => a.monthlyProfit - b.monthlyProfit)[0];
   if (_warMoveMode === 'add') {
     const draft = _warBuilderDraft.add;
-    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${draft.split} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
+    note.innerHTML = `${draft.count ? `Adding ${draft.count} ${warSplitTypeLabel(draft.split)} store${draft.count === 1 ? '' : 's'} at ${fmt$(draft.profit)}/mo each.` : `No new stores modeled yet.`} This is about current output, not listing count.`;
     return;
   }
   if (_warMoveMode === 'improve') {
@@ -5032,7 +5352,7 @@ function renderWarAccountBank(accounts) {
     return `<button class="war-account-card ${rankTone}" draggable="true" ondragstart="warDragAccount(event, ${JSON.stringify(p.store).replace(/"/g, '&quot;')})">
       <span>${escapeHtml(p.store)}</span>
       <strong>${fmt$(p.monthlyProfit)}/mo</strong>
-      <em>${p.split.type} split · ${p.recentBasisLabel} run-rate</em>
+      <em>${escapeHtml(p.split.label || p.split.type)} split · ${p.recentBasisLabel} run-rate</em>
       <small>${fmt$(p.recentProfit)} profit · ${p.recentRows} sales in ${p.recentBasisLabel}</small>
     </button>`;
   }).join('');
@@ -5189,11 +5509,11 @@ function openAudit() {
              <div style="font-size:24px;font-weight:800;color:${cached.length?'var(--amber)':'var(--muted)'}">${cached.length}</div></div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;border-top:1px solid rgba(99,102,241,.2);padding-top:12px">
-        <button onclick="closeModal('audit-modal'); _tabDataCache={}; _expDataCache={}; loadAll(); showToast('Cache cleared — reloading all data fresh','success','🗑️')"
+        <button onclick="closeModal('audit-modal'); _tabDataCache={}; _expDataCache={}; loadAll(true); showToast('Cache cleared — reloading all data fresh','success','🗑️')"
           style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:var(--rose);padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
           🗑️ Clear Cache &amp; Force Reload
         </button>
-        <button onclick="closeModal('audit-modal'); loadAll(); showToast('Reloading (using valid cache)','info','↻')"
+        <button onclick="closeModal('audit-modal'); refreshDashboard(); showToast('Reloading dashboard cache','info','↻')"
           style="background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);color:var(--indigo);padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
           ↻ Reload (keep cache)
         </button>
@@ -5341,11 +5661,11 @@ function openClientView() {
   const _cvChFilter = r => channelMatches(r);
   const _cvEarnLabel = CHANNEL_FILTER === 'all' ? 'All-time earnings' : `${channelTitle()} earnings`;
   listEl.innerHTML = clientStores.map(name => {
-    const isJacob  = JACOB_STORES.includes(name);
-    const pct      = isJacob ? '10%' : '50%';
     const recs     = RAW.filter(r => r.person === name && _cvChFilter(r));
     const profit   = r2(recs.reduce((s,r) => s + r.profit, 0));
-    const myShare  = isJacob ? r2(profit * 0.10) : r2(profit * 0.50);
+    const split    = getSplit(name, profit);
+    const pct      = splitOwnerLabel(split);
+    const myShare  = split.storeOwner;
     const displayName = name === 'John Slop' ? 'Sloop' : name;
     const link = getClientLink(name);
     return `<div style="display:flex;flex-direction:column;gap:8px;padding:12px;background:var(--card);border:1px solid var(--card-border);border-radius:12px">
@@ -5368,9 +5688,9 @@ function openClientView() {
 }
 
 function renderClientView(personName, opts = {}) {
-  const isJacob   = JACOB_STORES.includes(personName);
-  const ownerPct  = isJacob ? 0.10 : 0.50;
-  const ownerPctLabel = isJacob ? '10%' : '50%';
+  const previewSplit = getSplit(personName, 1);
+  const ownerPct  = (previewSplit.storeOwnerPct || previewSplit.ownerPct || 0) / 100;
+  const ownerPctLabel = splitOwnerLabel(previewSplit);
   const displayName   = personName === 'John Slop' ? 'Sloop' : personName;
   const isTikTokMode  = CHANNEL_FILTER === 'tiktok';
   const isAltStoreMode = CHANNEL_FILTER === 'tiktok' || CHANNEL_FILTER === 'amazon_fbm';
@@ -5721,6 +6041,7 @@ const SECTION_RENAMES = {
 };
 const NICKNAMES = {
   'Austin':'Big Austin 💪','Armando':'Mando 🤙','Russell':'Russ Money 💰',
+  'Russ LLC':'Russ LLC 💼','BANOS':'BANOS Bank 🏦',
   'Johna':'Johna Bucks 💸','Jacob':'Jake 🎯','John Slop':'Slop Dogg 🐕',
   'Jack R':'Jumpin Jack 🎸','Dolo LLC':'Dolo Empire 🏢','Mariel':'Mari 🌺',
   'Johna & Russ':'J&R 🤑','Danian':'Dan the Man 😎',

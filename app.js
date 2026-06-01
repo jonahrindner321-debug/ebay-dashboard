@@ -183,15 +183,9 @@ function r2(v)   { return Math.round((v + Number.EPSILON) * 100) / 100; }
 function monthIndex(m) {
   const label = String(m || '').trim();
   if (!label) return 999999;
-  const specialIdx = MONTH_ORDER.indexOf(label);
-  if (specialIdx >= 0) {
-    const special = {
-      'Nov 2025': 2025 * 12 + 11,
-      'Dec 2025': 2025 * 12 + 12,
-      'Dec/Jan 2026': 2026 * 12 + 0.5,
-    };
-    return special[label] || specialIdx;
-  }
+  // Special cross-month label — sits between Dec 2025 and Jan 2026
+  if (label === 'Dec/Jan 2026') return 2025 * 12 + 12.5;
+  // Always use formula (yr*12+mo) so all months sort chronologically
   const match = label.replace(/[_-]/g, ' ').match(/^([A-Za-z]+)\s+(\d{2,4})$/);
   if (!match) return 999999;
   const mo = MONTH_NAME_MAP[match[1].toLowerCase()];
@@ -1280,7 +1274,7 @@ async function loadAll() {
 // ─── FILTERS ───────────────────────────────────────────────────────────────
 function populateFilters() {
   const persons = [...new Set(RAW.map(r=>r.person))].sort();
-  const months  = [...new Set(RAW.map(r=>r.month))].filter(m => monthIndex(m) < 900).sort((a,b)=>monthIndex(a)-monthIndex(b));
+  const months  = [...new Set(RAW.map(r=>r.month))].filter(m => monthIndex(m) < 999999).sort((a,b)=>monthIndex(a)-monthIndex(b));
   const pSel = $('filter-person'), mSel = $('filter-month');
   const pv = pSel.value, mv = mSel.value;
   pSel.innerHTML = '<option value="all">All Accounts</option>' + persons.map(p=>`<option value="${p}">${p}</option>`).join('');
@@ -1508,7 +1502,7 @@ function renderKPIs(data) {
   const latestLabel = latestDate ? fmtDayLabel(latestDate) : null;
 
   // Month-over-month delta for profit — exclude non-standard labels like "Dec/Jan 2025" (index 999)
-  const months = [...new Set(data.map(r=>r.month))].filter(m => monthIndex(m) < 900).sort((a,b)=>monthIndex(a)-monthIndex(b));
+  const months = [...new Set(data.map(r=>r.month))].filter(m => monthIndex(m) < 999999).sort((a,b)=>monthIndex(a)-monthIndex(b));
   let momDelta = null;
   if (months.length >= 2) {
     const curP  = r2(data.filter(r=>r.month===months[months.length-1]).reduce((s,r)=>s+r.profit,0));
@@ -2834,7 +2828,7 @@ function renderSuggestions(data) {
   }
 
   // Month over month — exclude non-standard labels (index 999) so "Dec/Jan 2025" doesn't poison last/prev
-  const months = [...new Set(data.map(r => r.month))].filter(m => monthIndex(m) < 900).sort((a,b) => monthIndex(a)-monthIndex(b));
+  const months = [...new Set(data.map(r => r.month))].filter(m => monthIndex(m) < 999999).sort((a,b) => monthIndex(a)-monthIndex(b));
   if (months.length >= 2) {
     const lastM  = months[months.length-1], prevM = months[months.length-2];
     const lastMp = r2(data.filter(r=>r.month===lastM).reduce((s,r)=>s+r.profit,0));
@@ -3304,7 +3298,7 @@ function renderGrowthPage() {
     // Monthly breakdown
     const byMonth = {};
     recs.forEach(r => { if (r.month) byMonth[r.month] = r2((byMonth[r.month]||0) + r.profit); });
-    const mKeys = Object.keys(byMonth).filter(m => monthIndex(m) < 900).sort((a,b) => monthIndex(a) - monthIndex(b));
+    const mKeys = Object.keys(byMonth).filter(m => monthIndex(m) < 999999).sort((a,b) => monthIndex(a) - monthIndex(b));
     const lastMo = mKeys[mKeys.length-1], prevMo = mKeys[mKeys.length-2];
     const lastMoP = lastMo ? byMonth[lastMo] : 0;
     const prevMoP = prevMo ? byMonth[prevMo] : 0;
@@ -3413,7 +3407,7 @@ function renderGrowthPage() {
   const all        = Object.values(pd);
 
   // Global MoM: pin ALL stores to the same two comparison months (exclude non-standard month labels)
-  const _allMoArr = [...new Set(all.flatMap(p => p.mKeys))].filter(m => m && monthIndex(m) < 900).sort((a,b) => monthIndex(a) - monthIndex(b));
+  const _allMoArr = [...new Set(all.flatMap(p => p.mKeys))].filter(m => m && monthIndex(m) < 999999).sort((a,b) => monthIndex(a) - monthIndex(b));
   const gLastMo = _allMoArr[_allMoArr.length-1] || null;
   const gPrevMo = _allMoArr[_allMoArr.length-2] || null;
   all.forEach(p => {
@@ -5388,8 +5382,8 @@ function renderClientView(personName, opts = {}) {
 
   // Monthly breakdown (my share)
   const byMonth = {};
-  recs.forEach(r => { if (r.month && monthIndex(r.month) < 900) byMonth[r.month] = r2((byMonth[r.month]||0) + r.profit); });
-  const mKeys = Object.keys(byMonth).filter(m => monthIndex(m) < 900).sort((a,b) => monthIndex(a)-monthIndex(b));
+  recs.forEach(r => { if (r.month && monthIndex(r.month) < 999999) byMonth[r.month] = r2((byMonth[r.month]||0) + r.profit); });
+  const mKeys = Object.keys(byMonth).filter(m => monthIndex(m) < 999999).sort((a,b) => monthIndex(a)-monthIndex(b));
   const latestMo     = mKeys[mKeys.length-1] || null;
   const latestProfit = latestMo ? byMonth[latestMo] : 0;
   const myLatest     = r2(latestProfit * ownerPct);

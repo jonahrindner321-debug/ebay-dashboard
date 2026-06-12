@@ -13,6 +13,7 @@ const SHEETS = {
   '1UHUjPqORhDMX9McbJueVhpRkP7fc3FeOXOiaOWZwhuQ': 'Mariel',
   '1QOVD_ggFSuNxm4-s15wIIcZ-d31alQcVEvJPvBZpbnY': 'Levi',
   '14yqVyVqwAfHdSN2KGI6piacNaK5EhwtS8xPvCI_EVVE': 'Elle',
+  '1Izvdk9QA4zADd3j1IzMzGWzSqAUefBg1CuLUwaK6Ego': 'Kevin',
 };
 
 const TIKTOK_SOURCES = [

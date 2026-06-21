@@ -39,18 +39,33 @@ async function googleBatchValues(id, tabs) {
 
 async function safeMeta(src, storeCreated, sheetModified, sheetStatus) {
   let hasTimestamp = false;
+  let lastError = null;
   try {
-    const meta = await googleFetch('meta', { id: src.id });
+    let meta = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        meta = await googleFetch('meta', { id: src.id });
+        lastError = null;
+        break;
+      } catch (e) {
+        lastError = e;
+        if (attempt < 2) await sleep(REQUEST_GAP_MS * (attempt + 1));
+      }
+    }
+    if (!meta) throw lastError || new Error('No _meta response');
     const val = meta.values && meta.values[0] && meta.values[0][0];
     if (val) {
       sheetModified[src.label] = val;
       hasTimestamp = true;
     }
-  } catch (_) {}
+  } catch (e) {
+    lastError = e;
+  }
   sheetStatus[src.label] = {
     state: hasTimestamp ? 'ok' : 'missing',
     checkedAt: Date.now(),
     type: src.type,
+    error: hasTimestamp ? undefined : lastError?.message,
   };
 }
 

@@ -12,9 +12,9 @@ const SHEETS = {
   '1rrATZ5UBihrfmt0fQF55hVaaq-Ku-C6fYFm6C8kymHA': 'Jack R',
   '1ZoNmwDq6FK-R209uTsra2sPv33vAuc1pFD3NQPAGK2c': 'Delmor',
   '1UHUjPqORhDMX9McbJueVhpRkP7fc3FeOXOiaOWZwhuQ': 'Mariel',
-  '1QOVD_ggFSuNxm4-s15wIIcZ-d31alQcVEvJPvBZpbnY': 'Levi',
   '14yqVyVqwAfHdSN2KGI6piacNaK5EhwtS8xPvCI_EVVE': 'Elle',
   '1Izvdk9QA4zADd3j1IzMzGWzSqAUefBg1CuLUwaK6Ego': 'Kevin',
+  '1vErWSypjyWms11NL3SfOm24lr52Lp_XS1KfJxchrwik': 'Rachel',
 };
 
 const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i;
@@ -44,7 +44,7 @@ const CHANNEL_STYLE = {
 };
 
 // Stores that have been offboarded/banned — excluded from all data and displays
-const BANNED_STORES = new Set(['Paul']);
+const BANNED_STORES = new Set(['Paul', 'Levi']);
 
 // ─── LISTING TRACKER ───────────────────────────────────────────────────────
 const LISTING_TRACKER_ID   = '1P1k92F_RsQxSE_2qZloA99OiOBEDazch';
@@ -68,9 +68,9 @@ const LISTING_NAME_MAP = {
   'Mariel':       'Mariel',
   'Huny (delmor)':'Delmor',
   'Jack':         'Jack R',
-  'Levi':         'Levi',
   'Elle':         'Elle',
   'Kevin':        'Kevin',
+  'Rachel':       'Rachel',
 };
 let LISTING_DATA = { summary: [], todayRow: null, dailyColNames: [] };
 let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok' | 'amazon_fbm'
@@ -148,10 +148,10 @@ const COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06
 // ─── PROFIT SPLIT CONFIG ───────────────────────────────────────────────────
 // Owned stores → J&R keep 60% of profit
 const OWNED_STORES = ['Russell', 'Russ LLC', 'BANOS', 'Johna', 'Dolo LLC'];
-// Jacob → clean 50/50 split, no Danian cut
-const JACOB_STORES = ['Jacob'];
+// Name-fee owned stores → J&R 50%, Danian 40%, store name fee 10%
+const JACOB_STORES = ['Jacob', 'Rachel'];
 const SPECIAL_STORE_SPLITS = {
-  Levi: {
+  __premium_partner__: {
     type: 'premium_partner',
     label: '60/40',
     className: 'premium',
@@ -2568,10 +2568,10 @@ function openPayoutCalc() {
 function updateCalc() {
   const profit = parseFloat($('calc-profit-input').value) || 0;
   const type   = $('calc-type').value;
-  const sampleName = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : type === 'premium_partner' ? 'Levi' : '__partner__';
+  const sampleName = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : type === 'premium_partner' ? '__premium_partner__' : '__partner__';
   const split = getSplit(sampleName, profit);
   const ownerLbl = split.type === 'owned' ? 'J&R own this store'
-    : split.type === 'jacob' ? 'Jacob (name fee)'
+    : split.type === 'jacob' ? 'Name fee'
     : split.type === 'premium_partner' ? 'Store Owner'
     : 'Store Owner';
   const row = (lbl, val, color) => `<div class="calc-row"><span class="calc-lbl">${lbl}</span><span style="color:${color};font-weight:700">${fmtFull$(val)}</span></div>`;
@@ -4553,7 +4553,7 @@ const WAR_MOVE_TO_LEVER = {
 };
 
 function warSplitForType(type, profit) {
-  const key = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : type === 'premium_partner' ? 'Levi' : '__partner__';
+  const key = type === 'owned' ? 'Russell' : type === 'jacob' ? 'Jacob' : type === 'premium_partner' ? '__premium_partner__' : '__partner__';
   return getSplit(key, profit);
 }
 

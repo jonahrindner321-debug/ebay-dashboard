@@ -1571,10 +1571,139 @@ function applyFilters() {
 
   renderSuggestions(d);
   renderTable(d);
+  renderPaceProjection(d);
   checkMilestones(r2(d.reduce((s,r)=>s+r.profit,0)));
   // Re-render Growth tab so month filter affects efficiency/profit views there too
   if (LISTING_DATA.summary && LISTING_DATA.summary.length) { try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); } }
   if ($('war-room-page')?.style.display === 'block') { try { renderWarRoom(); } catch(e) { console.error('renderWarRoom error:', e); } }
+}
+
+// ─── 30-DAY CURRENT PACE ──────────────────────────────────────────────────
+function renderPaceProjection(data) {
+  const section = $('pace-section');
+  const card = $('pace-card');
+  const label = $('pace-window-label');
+  if (!section || !card) return;
+
+  const datedRows = data.filter(r => r.date);
+  const dates = [...new Set(datedRows.map(r => r.date))].sort();
+  if (!dates.length) {
+    section.style.display = 'none';
+    return;
+  }
+
+  const activeDates = dates.slice(-7);
+  const windowRows = datedRows.filter(r => activeDates.includes(r.date));
+  if (!windowRows.length) {
+    section.style.display = 'none';
+    return;
+  }
+
+  const daysUsed = Math.max(1, activeDates.length);
+  const factor = 30 / daysUsed;
+  const windowProfit = r2(windowRows.reduce((s, r) => s + r.profit, 0));
+  const projectedProfit = r2(windowProfit * factor);
+  const windowSales = windowRows.reduce((s, r) => s + (r.sales || 1), 0);
+  const projectedSales = Math.round(windowSales * factor);
+  const windowRevenue = r2(windowRows.reduce((s, r) => s + r.price, 0));
+  const projectedRevenue = r2(windowRevenue * factor);
+
+  const byPerson = [...new Set(windowRows.map(r => r.person))].map(person => {
+    const rows = windowRows.filter(r => r.person === person);
+    const profit = r2(rows.reduce((s, r) => s + r.profit, 0));
+    const revenue = r2(rows.reduce((s, r) => s + r.price, 0));
+    const sales = rows.reduce((s, r) => s + (r.sales || 1), 0);
+    const split = getSplit(person, profit);
+    return {
+      person,
+      profit,
+      projectedProfit: r2(profit * factor),
+      revenue,
+      sales,
+      split,
+      projectedSplit: {
+        jr: r2(split.jr * factor),
+        danian: r2(split.danian * factor),
+        storeOwner: r2(split.storeOwner * factor),
+      },
+    };
+  }).sort((a, b) => b.projectedProfit - a.projectedProfit);
+
+  const projectedJR = r2(byPerson.reduce((s, p) => s + p.projectedSplit.jr, 0));
+  const projectedDanian = r2(byPerson.reduce((s, p) => s + p.projectedSplit.danian, 0));
+  const projectedOwners = r2(byPerson.reduce((s, p) => s + p.projectedSplit.storeOwner, 0));
+  const dailyAvgProfit = r2(windowProfit / daysUsed);
+  const dailyAvgSales = r2(windowSales / daysUsed);
+
+  const positivePeople = byPerson.filter(p => p.projectedProfit > 0);
+  const positiveTotal = r2(positivePeople.reduce((s, p) => s + p.projectedProfit, 0));
+  const top = positivePeople[0] || byPerson[0];
+  const second = positivePeople[1] || byPerson[1];
+  const confidence = daysUsed >= 7 ? 'good signal' : `${daysUsed}-day signal`;
+  const rangeText = `${fmtDayLabel(activeDates[0])} → ${fmtDayLabel(activeDates[activeDates.length - 1])}`;
+  const trendTone = projectedProfit > 0 ? 'pace-good' : projectedProfit < 0 ? 'pace-risk' : 'pace-neutral';
+  const insight = projectedProfit > 0 && top
+    ? `${top.person} is carrying ${fmtP(positiveTotal ? top.projectedProfit / positiveTotal * 100 : 0)} of the positive projected pace${second ? `, with ${second.person} next.` : '.'}`
+    : 'Current pace is not profitable yet, so this view is more useful for spotting what needs fixing than celebrating scale.';
+
+  const rowHtml = byPerson.slice(0, 6).map((p, i) => {
+    const pct = positiveTotal ? Math.max(0, Math.min(100, p.projectedProfit / positiveTotal * 100)) : 0;
+    return `<div class="pace-account-row">
+      <div class="pace-account-rank">${i + 1}</div>
+      <div class="pace-account-main">
+        <div class="pace-account-name">${escapeHtml(p.person)} ${splitTagHtml(p.split)}</div>
+        <div class="pace-account-bar"><span style="width:${pct}%"></span></div>
+      </div>
+      <div class="pace-account-money">${fmt$(p.projectedProfit)}</div>
+    </div>`;
+  }).join('');
+
+  section.style.display = 'block';
+  if (label) label.textContent = `${confidence} · ${rangeText}`;
+  card.innerHTML = `
+    <div class="pace-hero ${trendTone}">
+      <div>
+        <div class="pace-eyebrow">If this last-week pace runs for 30 days</div>
+        <div class="pace-big">${fmt$(projectedProfit)}</div>
+        <div class="pace-sub">${fmt$(dailyAvgProfit)}/day · ${fmtN(projectedSales)} projected sales · ${fmt$(projectedRevenue)} projected revenue</div>
+      </div>
+      <div class="pace-orb">
+        <div class="pace-water" style="height:${Math.max(18, Math.min(92, projectedProfit > 0 ? 42 + Math.log10(projectedProfit + 10) * 14 : 22))}%"></div>
+        <span>${projectedProfit >= 0 ? '↗' : '↘'}</span>
+      </div>
+    </div>
+
+    <div class="pace-split-grid">
+      <div class="pace-mini">
+        <span>J&amp;R pace</span>
+        <strong style="color:var(--emerald)">${fmt$(projectedJR)}</strong>
+      </div>
+      <div class="pace-mini">
+        <span>Danian pace</span>
+        <strong style="color:var(--violet-soft)">${fmt$(projectedDanian)}</strong>
+      </div>
+      <div class="pace-mini">
+        <span>Owners / name fees</span>
+        <strong style="color:var(--yellow)">${fmt$(projectedOwners)}</strong>
+      </div>
+      <div class="pace-mini">
+        <span>Sales rhythm</span>
+        <strong style="color:var(--cyan)">${dailyAvgSales.toFixed(1)}/day</strong>
+      </div>
+    </div>
+
+    <div class="pace-lower">
+      <div class="pace-accounts">
+        <div class="pace-block-title">Accounts carrying the current wave</div>
+        ${rowHtml || '<div class="pace-empty">No ranked accounts yet.</div>'}
+      </div>
+      <div class="pace-note">
+        <div class="pace-block-title">Operator read</div>
+        <p>${escapeHtml(insight)}</p>
+        <p>This ignores old monthly averages and only uses the active days currently visible in your filters.</p>
+      </div>
+    </div>
+  `;
 }
 
 // ─── PROFIT SPLIT SUMMARY ─────────────────────────────────────────────────
@@ -6108,9 +6237,9 @@ function emojiStackSwap() {
 }
 
 // ── Theme Switcher ──────────────────────────────────────────────────────────
-const THEMES = ['dark','light','pastel'];
-const THEME_ICONS = { dark:'🌙', light:'☀️', pastel:'🎨' };
-const THEME_LABELS = { dark:'Dark', light:'Light', pastel:'Pastel' };
+const THEMES = ['dark','light','pastel','clay'];
+const THEME_ICONS = { clay:'🫧', dark:'🌙', light:'☀️', pastel:'🎨' };
+const THEME_LABELS = { clay:'Clay', dark:'Dark', light:'Light', pastel:'Pastel' };
 
 function cycleTheme() {
   const cur = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -6125,12 +6254,17 @@ function applyTheme(theme) {
   if (btn) btn.textContent = THEME_ICONS[theme] + ' ' + THEME_LABELS[theme];
   // Update orb visibility for light/pastel
   document.querySelectorAll('.orb').forEach(o => {
-    o.style.opacity = theme === 'dark' ? '' : (theme === 'pastel' ? '.08' : '.04');
+    o.style.opacity = theme === 'dark' ? '' : (theme === 'pastel' || theme === 'clay' ? '.08' : '.04');
   });
 }
 
 (function initTheme() {
-  const saved = localStorage.getItem('ebay-dash-theme') || 'dark';
+  const themeBuild = 'dark-main-20260626';
+  const seenThemeBuild = localStorage.getItem('seller-os-theme-build');
+  const saved = seenThemeBuild === themeBuild
+    ? (localStorage.getItem('ebay-dash-theme') || 'dark')
+    : 'dark';
+  localStorage.setItem('seller-os-theme-build', themeBuild);
   applyTheme(saved);
 })();
 

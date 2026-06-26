@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1"
     integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
     crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="./styles.css?v=source-fix-20260509b" />
+  <link rel="stylesheet" href="./styles.css?v=dark-main-20260626" />
 </head>
 <body>
 
@@ -49,7 +49,7 @@
     <div id="intro-prog-bar"><div id="intro-prog-fill"></div></div>
     <div id="intro-prog-label"></div>
   </div>
-    <div id="intro-version">v2026.06.25-SRC</div>
+    <div id="intro-version">v2026.06.26-DARK</div>
   </div>
   <div id="intro-dots">
     <div class="intro-dot"></div>
@@ -334,6 +334,15 @@
   <!-- Projection -->
   <div class="proj-wrap" id="proj-wrap" style="display:none"></div>
 
+  <!-- 30-Day Pace -->
+  <div class="pace-section" id="pace-section" style="display:none">
+    <div class="section-hdr">
+      <span class="section-title">🌊 30-Day Pace</span>
+      <span id="pace-window-label" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="card pace-card" id="pace-card"></div>
+  </div>
+
   <!-- Period Comparison -->
   <div class="comp-strip" id="comp-strip" style="display:none"></div>
 
@@ -425,7 +434,6 @@
       </table>
     </div>
   </div>
-
 
   <!-- ── Suggestions ── -->
   <div class="suggest-section" id="suggest-section" style="display:none">
@@ -823,6 +831,6 @@
 <!-- Mr. Six (party mode) -->
 <div class="mr-six" id="mr-six">👴</div>
 
-<script src="./app.js?v=sources-20260625"></script>
+<script src="./app.js?v=dark-main-20260626"></script>
 </body>
 </html>

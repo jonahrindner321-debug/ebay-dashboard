@@ -1571,7 +1571,7 @@ function applyFilters() {
 
   renderSuggestions(d);
   renderTable(d);
-  renderPaceProjection(d);
+  renderPaceProjection();
   checkMilestones(r2(d.reduce((s,r)=>s+r.profit,0)));
   // Re-render Growth tab so month filter affects efficiency/profit views there too
   if (LISTING_DATA.summary && LISTING_DATA.summary.length) { try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); } }
@@ -1579,27 +1579,46 @@ function applyFilters() {
 }
 
 // ─── 30-DAY CURRENT PACE ──────────────────────────────────────────────────
-function renderPaceProjection(data) {
+function addDaysIso(dateStr, days) {
+  const dt = new Date(dateStr + 'T00:00:00');
+  dt.setDate(dt.getDate() + days);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function paceEligibleRows() {
+  const person = $('filter-person')?.value || 'all';
+  return RAW.filter(r =>
+    r.date &&
+    (person === 'all' || r.person === person) &&
+    channelMatches(r)
+  );
+}
+
+function renderPaceProjection() {
   const section = $('pace-section');
   const card = $('pace-card');
   const label = $('pace-window-label');
   if (!section || !card) return;
 
-  const datedRows = data.filter(r => r.date);
+  const datedRows = paceEligibleRows();
   const dates = [...new Set(datedRows.map(r => r.date))].sort();
   if (!dates.length) {
     section.style.display = 'none';
     return;
   }
 
-  const activeDates = dates.slice(-7);
-  const windowRows = datedRows.filter(r => activeDates.includes(r.date));
+  const windowEnd = dates[dates.length - 1];
+  const windowStart = addDaysIso(windowEnd, -6);
+  const windowRows = datedRows.filter(r => r.date >= windowStart && r.date <= windowEnd);
   if (!windowRows.length) {
     section.style.display = 'none';
     return;
   }
 
-  const daysUsed = Math.max(1, activeDates.length);
+  const daysUsed = 7;
   const factor = 30 / daysUsed;
   const windowProfit = r2(windowRows.reduce((s, r) => s + r.profit, 0));
   const projectedProfit = r2(windowProfit * factor);
@@ -1639,8 +1658,8 @@ function renderPaceProjection(data) {
   const positiveTotal = r2(positivePeople.reduce((s, p) => s + p.projectedProfit, 0));
   const top = positivePeople[0] || byPerson[0];
   const second = positivePeople[1] || byPerson[1];
-  const confidence = daysUsed >= 7 ? 'good signal' : `${daysUsed}-day signal`;
-  const rangeText = `${fmtDayLabel(activeDates[0])} → ${fmtDayLabel(activeDates[activeDates.length - 1])}`;
+  const confidence = 'rolling 7 calendar days';
+  const rangeText = `${fmtDayLabel(windowStart)} → ${fmtDayLabel(windowEnd)}`;
   const trendTone = projectedProfit > 0 ? 'pace-good' : projectedProfit < 0 ? 'pace-risk' : 'pace-neutral';
   const insight = projectedProfit > 0 && top
     ? `${top.person} is carrying ${fmtP(positiveTotal ? top.projectedProfit / positiveTotal * 100 : 0)} of the positive projected pace${second ? `, with ${second.person} next.` : '.'}`
@@ -1700,7 +1719,7 @@ function renderPaceProjection(data) {
       <div class="pace-note">
         <div class="pace-block-title">Operator read</div>
         <p>${escapeHtml(insight)}</p>
-        <p>This ignores old monthly averages and only uses the active days currently visible in your filters.</p>
+        <p>This ignores the month dropdown and uses the latest 7 calendar days for the selected account and channel.</p>
       </div>
     </div>
   `;

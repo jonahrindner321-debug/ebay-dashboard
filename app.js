@@ -86,6 +86,34 @@ let _freshnessTimer = null;
 // Structure: { person: { 'YYYY-MM': totalAmount, ... } }
 const EXPENSES = {};
 
+// Store sheets can be maintained in local marketplace currency, but dashboard
+// totals are normalized to USD before rollups, splits, and projections.
+const STORE_CURRENCY = {
+  Elle: 'AUD',
+};
+
+// Monthly 1 local currency -> USD rates. Update as new AUS months come online.
+const FX_RATES_TO_USD = {
+  USD: { default: 1 },
+  AUD: {
+    '2026-02': 0.705615,
+    '2026-03': 0.701377,
+    '2026-04': 0.708577,
+    '2026-05': 0.718668,
+    '2026-06': 0.701726,
+    '2026-07': 0.690015,
+    default: 0.690015,
+  },
+};
+
+function currencyOptionsFor(person) {
+  const sourceCurrency = STORE_CURRENCY[person] || 'USD';
+  return {
+    sourceCurrency,
+    fxRatesToUsd: FX_RATES_TO_USD[sourceCurrency] || FX_RATES_TO_USD.USD,
+  };
+}
+
 // Convert month label "Mar 2026" → "2026-03"
 function monthLabelToKey(label) {
   const MN = {Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
@@ -93,6 +121,57 @@ function monthLabelToKey(label) {
   if (!m) return null;
   const mo = MN[m[1]]; if (!mo) return null;
   return `${m[2]}-${mo}`;
+}
+
+function fxMonthKeyForRecord(record) {
+  if (record.date && /^\d{4}-\d{2}-\d{2}$/.test(record.date)) return record.date.slice(0, 7);
+  return monthLabelToKey(record.month);
+}
+
+function resolveFxRate(options, record) {
+  const sourceCurrency = options.sourceCurrency || options.currency || 'USD';
+  if (sourceCurrency === 'USD') return { sourceCurrency, fxRate: 1, fxMonthKey: null };
+  const rates = options.fxRatesToUsd || options.monthlyRates || {};
+  const fxMonthKey = fxMonthKeyForRecord(record);
+  const fxRate = Number(
+    rates[fxMonthKey] ??
+    rates.default ??
+    options.fxRate ??
+    1
+  );
+  return { sourceCurrency, fxRate: Number.isFinite(fxRate) ? fxRate : 1, fxMonthKey };
+}
+
+function normalizeMoneyRecord(record, options = {}) {
+  const { sourceCurrency, fxRate, fxMonthKey } = resolveFxRate(options, record);
+  record.currency = 'USD';
+  record.sourceCurrency = sourceCurrency;
+  if (sourceCurrency === 'USD' || !Number.isFinite(fxRate) || fxRate === 1) return record;
+
+  ['price', 'cost', 'fee', 'profit'].forEach(field => {
+    const nativeValue = Number(record[field] || 0);
+    record[`${field}Native`] = r2(nativeValue);
+    record[field] = r2(nativeValue * fxRate);
+  });
+  record.fxRate = fxRate;
+  record.fxMonthKey = fxMonthKey;
+  return record;
+}
+
+function normalizeExpenseRecord(record, options = {}) {
+  const { sourceCurrency, fxRate, fxMonthKey } = resolveFxRate(options, {
+    date: record.monthKey ? `${record.monthKey}-01` : record.date,
+    month: record.month,
+  });
+  record.currency = 'USD';
+  record.sourceCurrency = sourceCurrency;
+  if (sourceCurrency === 'USD' || !Number.isFinite(fxRate) || fxRate === 1) return record;
+
+  record.amountNative = r2(record.amount);
+  record.amount = r2(record.amount * fxRate);
+  record.fxRate = fxRate;
+  record.fxMonthKey = fxMonthKey || record.monthKey || null;
+  return record;
 }
 
 // Get total expenses for a person across given month keys (or all if none given)
@@ -103,22 +182,21 @@ function getExpenses(person, monthKeys) {
 }
 
 // Parse an expense tab — returns array of { person, monthKey, label, amount }
-function parseExpenseTab(values, person) {
+function parseExpenseTab(values, person, options = {}) {
   const MO = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
   const result = [];
   for (const row of values) {
     if (!row || row.length < 2) continue;
     const label    = String(row[0] || '').trim();
-    const amtRaw   = String(row[1] || '').trim();
     const monthRaw = String(row[2] || '').toLowerCase().trim().substring(0, 3);
     // Credential rows have no valid month in col C — they're automatically skipped here
     if (!label || !MO[monthRaw]) continue;
     if (label.toLowerCase().includes('total')) continue; // skip total/summary rows
-    const amt = parseFloat(amtRaw.replace(/[$,\s]/g, ''));
+    const amt = Math.abs(parseMoney(row[1]));
     if (!isFinite(amt) || amt <= 0) continue;
     const mo = MO[monthRaw];
     const yr = (mo === 11 || mo === 12) ? 2025 : 2026;
-    result.push({ person, monthKey: `${yr}-${String(mo).padStart(2,'0')}`, label, amount: r2(amt) });
+    result.push(normalizeExpenseRecord({ person, monthKey: `${yr}-${String(mo).padStart(2,'0')}`, label, amount: r2(amt) }, options));
   }
   return result;
 }
@@ -810,7 +888,7 @@ async function connectTikTokShop() {
 }
 
 // ─── PARSE VALUES ──────────────────────────────────────────────────────────
-function parseValues(values, person, monthLabel, channel = 'ebay') {
+function parseValues(values, person, monthLabel, channel = 'ebay', options = {}) {
   const rows = [];
   if (!values || values.length < 2) return rows;
   let headerIdx = -1, colMap = {};
@@ -832,23 +910,22 @@ function parseValues(values, person, monthLabel, channel = 'ebay') {
   }
   // Skip tab only if we couldn't find any recognizable header at all
   if (headerIdx < 0 || (colMap.price === undefined && colMap.profit === undefined)) return rows;
-  const n = v => { const f = parseFloat(v); return isFinite(f) ? f : 0; };
   for (let i = headerIdx+1; i < values.length; i++) {
     const row = values[i];
-    const price  = n(row[colMap.price]);
-    const profit = n(row[colMap.profit]);
-    const cost_check = n(row[colMap.cost]);
-    const fee_check  = n(row[colMap.fee]);
+    const price  = parseMoney(row[colMap.price]);
+    const profit = parseMoney(row[colMap.profit]);
+    const cost_check = parseMoney(row[colMap.cost]);
+    const fee_check  = parseMoney(row[colMap.fee]);
     // only skip rows that have absolutely no numeric data at all
     if (!price && !profit && !cost_check && !fee_check) continue;
-    const cost   = n(row[colMap.cost]);
-    const fee    = n(row[colMap.fee]);
-    let roi      = n(row[colMap.roi]);
+    const cost   = parseMoney(row[colMap.cost]);
+    const fee    = parseMoney(row[colMap.fee]);
+    let roi      = parseMoney(row[colMap.roi]);
     if (roi !== 0 && Math.abs(roi) <= 2) roi = roi * 100;
     const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
     const dateStr = parseDate(dateRaw);
-    rows.push({ person, month: monthLabel, channel, date: dateStr, _dateRaw: dateRaw,
-      price: r2(price), cost: r2(cost), fee: r2(Math.abs(fee)), profit: r2(profit), roi: r2(roi) });
+    rows.push(normalizeMoneyRecord({ person, month: monthLabel, channel, date: dateStr, _dateRaw: dateRaw,
+      price: r2(price), cost: r2(cost), fee: r2(Math.abs(fee)), profit: r2(profit), roi: r2(roi) }, options));
   }
   return rows;
 }
@@ -857,8 +934,8 @@ function parseMoney(v) {
   if (v === null || v === undefined) return 0;
   const s = String(v).trim();
   if (!s || s === '-' || s === '—') return 0;
-  const negative = /^\(.*\)$/.test(s) || /^-/.test(s);
-  const f = parseFloat(s.replace(/[,$%\s()]/g, '').replace(/^[-+]/, ''));
+  const negative = /^\(.*\)$/.test(s) || /^-/.test(s) || /-\s*[^\d]*\d/.test(s);
+  const f = parseFloat(s.replace(/[^\d.]/g, ''));
   if (!isFinite(f)) return 0;
   return negative ? -f : f;
 }
@@ -1458,13 +1535,13 @@ async function loadAll(forceLive = false) {
           const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
           loadAudit.push({ person: src.person, tab: 'Amazon FBM / ' + src.tab, rows: parsed.length, profit: tabProfit, status: parsed.length > 0 ? 'ok' : 'skipped', channel: 'amazon_fbm' });
         } else if (src.sourceType === 'tiktok') {
-          const parsed = parseValues(values, src.person, normSpecial(src.tab), 'tiktok');
+          const parsed = parseValues(values, src.person, normSpecial(src.tab), 'tiktok', currencyOptionsFor(src.person));
           _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
           RAW.push(...parsed);
           const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
           loadAudit.push({ person: src.person, tab: 'TikTok / ' + src.tab, rows: parsed.length, profit: tabProfit, status: parsed.length > 0 ? 'ok' : 'skipped', channel: 'tiktok' });
         } else if (isExp) {
-          const expRows = parseExpenseTab(values, src.person);
+          const expRows = parseExpenseTab(values, src.person, currencyOptionsFor(src.person));
           _expDataCache[cacheKey] = { records: expRows, ts: Date.now() };
           expRows.forEach(e => {
             if (!EXPENSES[e.person]) EXPENSES[e.person] = {};
@@ -1473,7 +1550,7 @@ async function loadAll(forceLive = false) {
           loadAudit.push({ person: src.person, tab: src.tab, rows: expRows.length, profit: 0, status: expRows.length > 0 ? 'ok' : 'skipped' });
         } else {
           const channel = /tik.?tok/i.test(src.tab) ? 'tiktok' : 'ebay';
-          const parsed = parseValues(values, src.person, normSpecial(src.tab), channel);
+          const parsed = parseValues(values, src.person, normSpecial(src.tab), channel, currencyOptionsFor(src.person));
           _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
           RAW.push(...parsed);
           const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);

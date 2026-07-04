@@ -1,5 +1,5 @@
 const { getSql, hasDb } = require('./_lib/db');
-const { AMAZON_FBM_SOURCES, SHEETS, TIKTOK_SOURCES } = require('./_lib/seller-config');
+const { AMAZON_FBM_SOURCES, SHEETS, TIKTOK_SOURCES, currencyOptionsFor } = require('./_lib/seller-config');
 const { normSpecial, parseAmazonFbmValues, parseExpenseTab, parseValues, r2 } = require('./_lib/seller-parse');
 
 const SNAPSHOT_KEY = 'seller-os-main';
@@ -95,7 +95,7 @@ async function buildSnapshot() {
         const isExp = /^expenses?$/i.test(String(tab || '').trim());
         try {
           if (isExp) {
-            const expRows = parseExpenseTab(values, SHEETS[id]);
+            const expRows = parseExpenseTab(values, SHEETS[id], currencyOptionsFor(SHEETS[id]));
             expRows.forEach(e => {
               if (!expenses[e.person]) expenses[e.person] = {};
               expenses[e.person][e.monthKey] = r2((expenses[e.person][e.monthKey] || 0) + e.amount);
@@ -103,7 +103,7 @@ async function buildSnapshot() {
             loadAudit.push({ person: SHEETS[id], tab, rows: expRows.length, profit: 0, status: expRows.length ? 'ok' : 'skipped' });
           } else {
             const channel = /tik.?tok/i.test(tab) ? 'tiktok' : 'ebay';
-            const parsed = parseValues(values, SHEETS[id], normSpecial(tab), channel);
+            const parsed = parseValues(values, SHEETS[id], normSpecial(tab), channel, currencyOptionsFor(SHEETS[id]));
             raw.push(...parsed);
             loadAudit.push({ person: SHEETS[id], tab, rows: parsed.length, profit: r2(parsed.reduce((s, r) => s + r.profit, 0)), status: parsed.length ? 'ok' : 'skipped', channel });
           }
@@ -127,7 +127,7 @@ async function buildSnapshot() {
       const valueRanges = tabs.length ? await googleBatchValues(src.id, tabs) : [];
       tabs.forEach((tab, idx) => {
         try {
-          const parsed = parseValues(valueRanges[idx]?.values || [], src.person, normSpecial(tab), 'tiktok');
+          const parsed = parseValues(valueRanges[idx]?.values || [], src.person, normSpecial(tab), 'tiktok', currencyOptionsFor(src.person));
           raw.push(...parsed);
           loadAudit.push({ person: src.person, tab: `TikTok / ${tab}`, rows: parsed.length, profit: r2(parsed.reduce((s, r) => s + r.profit, 0)), status: parsed.length ? 'ok' : 'skipped', channel: 'tiktok' });
         } catch (e) {

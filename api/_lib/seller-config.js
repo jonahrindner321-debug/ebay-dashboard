@@ -33,8 +33,39 @@ const AMAZON_FBM_SOURCES = [
   },
 ];
 
+// Store sheets can be maintained in local marketplace currency, but Seller OS
+// rolls the operating dashboard up in USD.
+const STORE_CURRENCY = {
+  Elle: 'AUD',
+};
+
+// AUD monthly rates are 1 AUD -> USD. Update this table as new AUS months are added.
+const FX_RATES_TO_USD = {
+  USD: { default: 1 },
+  AUD: {
+    '2026-02': 0.705615,
+    '2026-03': 0.701377,
+    '2026-04': 0.708577,
+    '2026-05': 0.718668,
+    '2026-06': 0.701726,
+    '2026-07': 0.690015,
+    default: 0.690015,
+  },
+};
+
+function currencyOptionsFor(person) {
+  const sourceCurrency = STORE_CURRENCY[person] || 'USD';
+  return {
+    sourceCurrency,
+    fxRatesToUsd: FX_RATES_TO_USD[sourceCurrency] || FX_RATES_TO_USD.USD,
+  };
+}
+
 module.exports = {
   AMAZON_FBM_SOURCES,
+  FX_RATES_TO_USD,
   SHEETS,
+  STORE_CURRENCY,
   TIKTOK_SOURCES,
+  currencyOptionsFor,
 };

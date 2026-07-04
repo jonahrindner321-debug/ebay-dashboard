@@ -6,10 +6,68 @@ function parseMoney(v) {
   if (v === null || v === undefined) return 0;
   const s = String(v).trim();
   if (!s || s === '-' || s === '—') return 0;
-  const negative = /^\(.*\)$/.test(s) || /^-/.test(s);
-  const f = parseFloat(s.replace(/[,$%\s()]/g, '').replace(/^[-+]/, ''));
+  const negative = /^\(.*\)$/.test(s) || /^-/.test(s) || /-\s*[^\d]*\d/.test(s);
+  const f = parseFloat(s.replace(/[^\d.]/g, ''));
   if (!Number.isFinite(f)) return 0;
   return negative ? -f : f;
+}
+
+function monthKeyFromLabel(label) {
+  const m = String(label || '').match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (!m) return null;
+  const mo = MONTH_NAME_MAP[m[1].toLowerCase().slice(0, 3)];
+  return mo ? `${m[2]}-${String(mo).padStart(2, '0')}` : null;
+}
+
+function monthKeyForRecord(record) {
+  if (record.date && /^\d{4}-\d{2}-\d{2}$/.test(record.date)) return record.date.slice(0, 7);
+  return monthKeyFromLabel(record.month);
+}
+
+function resolveFxRate(options, record) {
+  const sourceCurrency = options.sourceCurrency || options.currency || 'USD';
+  if (sourceCurrency === 'USD') return { sourceCurrency, fxRate: 1, fxMonthKey: null };
+  const rates = options.fxRatesToUsd || options.monthlyRates || {};
+  const fxMonthKey = monthKeyForRecord(record);
+  const fxRate = Number(
+    rates[fxMonthKey] ??
+    rates.default ??
+    options.fxRate ??
+    1
+  );
+  return { sourceCurrency, fxRate: Number.isFinite(fxRate) ? fxRate : 1, fxMonthKey };
+}
+
+function normalizeMoneyRecord(record, options = {}) {
+  const { sourceCurrency, fxRate, fxMonthKey } = resolveFxRate(options, record);
+  record.currency = 'USD';
+  record.sourceCurrency = sourceCurrency;
+  if (sourceCurrency === 'USD' || !Number.isFinite(fxRate) || fxRate === 1) return record;
+
+  ['price', 'cost', 'fee', 'profit'].forEach(field => {
+    const nativeValue = Number(record[field] || 0);
+    record[`${field}Native`] = r2(nativeValue);
+    record[field] = r2(nativeValue * fxRate);
+  });
+  record.fxRate = fxRate;
+  record.fxMonthKey = fxMonthKey;
+  return record;
+}
+
+function normalizeExpenseRecord(record, options = {}) {
+  const { sourceCurrency, fxRate, fxMonthKey } = resolveFxRate(options, {
+    month: record.monthKey ? null : record.month,
+    date: record.monthKey ? `${record.monthKey}-01` : record.date,
+  });
+  record.currency = 'USD';
+  record.sourceCurrency = sourceCurrency;
+  if (sourceCurrency === 'USD' || !Number.isFinite(fxRate) || fxRate === 1) return record;
+
+  record.amountNative = r2(record.amount);
+  record.amount = r2(record.amount * fxRate);
+  record.fxRate = fxRate;
+  record.fxMonthKey = fxMonthKey || record.monthKey || null;
+  return record;
 }
 
 const MONTH_NAME_MAP = {
@@ -62,7 +120,7 @@ function normSpecial(tab) {
   return `${mo[0].toUpperCase()}${mo.slice(1).toLowerCase()} ${yr}`;
 }
 
-function parseValues(values, person, monthLabel, channel = 'ebay') {
+function parseValues(values, person, monthLabel, channel = 'ebay', options = {}) {
   const rows = [];
   if (!values || values.length < 2) return rows;
   let headerIdx = -1;
@@ -94,7 +152,7 @@ function parseValues(values, person, monthLabel, channel = 'ebay') {
     let roi = parseMoney(row[colMap.roi]);
     if (roi !== 0 && Math.abs(roi) <= 2) roi *= 100;
     const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
-    rows.push({
+    rows.push(normalizeMoneyRecord({
       person,
       month: monthLabel,
       channel,
@@ -105,12 +163,12 @@ function parseValues(values, person, monthLabel, channel = 'ebay') {
       fee: r2(Math.abs(fee)),
       profit: r2(profit),
       roi: r2(roi),
-    });
+    }, options));
   }
   return rows;
 }
 
-function parseExpenseTab(values, person) {
+function parseExpenseTab(values, person, options = {}) {
   const result = [];
   for (const row of values || []) {
     if (!row || row.length < 2) continue;
@@ -120,7 +178,7 @@ function parseExpenseTab(values, person) {
     const mo = MONTH_NAME_MAP[monthRaw];
     if (!label || !mo || !amt || label.toLowerCase().includes('total')) continue;
     const yr = (mo === 11 || mo === 12) ? 2025 : 2026;
-    result.push({ person, monthKey: `${yr}-${String(mo).padStart(2, '0')}`, label, amount: r2(Math.abs(amt)) });
+    result.push(normalizeExpenseRecord({ person, monthKey: `${yr}-${String(mo).padStart(2, '0')}`, label, amount: r2(Math.abs(amt)) }, options));
   }
   return result;
 }
@@ -232,6 +290,7 @@ function parseAmazonFbmValues(values, person = 'Johna') {
 
 module.exports = {
   normSpecial,
+  normalizeMoneyRecord,
   parseAmazonFbmValues,
   parseExpenseTab,
   parseValues,

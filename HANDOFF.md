@@ -35,10 +35,10 @@ Main files:
 - `styles.css` - dashboard styling.
 - `app.js` - dashboard data loading, charts, client views, channel filters, and TikTok connect button logic.
 - `api/sheets.js` - Vercel serverless Google Sheets proxy.
-- `api/db/init.js` - database schema initializer.
-- `api/_lib/db.js` - Neon/Postgres helper functions.
+- `api/db/init.js` - disabled database initializer endpoint.
+- `api/_lib/db.js` - disabled no-op database helper. Neon/Postgres must not be re-enabled.
 - `api/tiktok/*` - TikTok Shop OAuth/status/placeholders.
-- `db/schema.sql` - database schema.
+- `db/schema.sql` - legacy database schema, retained for reference only.
 - `legal/*` - public Privacy, Security, Data Deletion, Terms, and contact pages.
 
 Local preview:
@@ -88,7 +88,7 @@ The TikTok status endpoint returned configured/read-only/database-backed with ze
 
 Zero connected accounts is expected until TikTok approves/publishes the app and a seller completes OAuth.
 
-Database schema has already been initialized in production through `POST /api/db/init`.
+Database storage is intentionally disabled. Do not add Neon/Postgres env vars back to Seller OS.
 
 ## TikTok Shop Work Completed
 
@@ -111,8 +111,6 @@ Important: do not commit or expose the app secret. It is stored in Vercel env va
 Production Vercel env vars were configured for:
 
 ```text
-DATABASE_URL
-DB_ADMIN_SECRET
 TIKTOK_CLIENT_KEY
 TIKTOK_CLIENT_SECRET
 TIKTOK_TOKEN_SECRET

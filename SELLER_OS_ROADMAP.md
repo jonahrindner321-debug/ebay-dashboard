@@ -107,9 +107,8 @@ Everything should flow into normalized entities instead of platform-specific das
   - Header button: `⟡ Link TikTok`
   - OAuth routes: `api/tiktok/connect` and `api/tiktok/callback`
   - Connection status route: `api/tiktok/status`
-  - Neon Postgres schema for clients, stores, platform connections, encrypted tokens, and sync runs
-  - TikTok connections can be attached to the selected dashboard store/client during OAuth
-  - Encrypted HttpOnly cookie remains only as a prototype fallback if `DATABASE_URL` is missing
+  - Database storage is disabled; do not re-add Neon/Postgres to Seller OS
+  - TikTok connections use the encrypted HttpOnly cookie fallback
   - Placeholder read-only data routes: `api/tiktok/orders` and `api/tiktok/products`
   - No posting, account control, scraping, or write scopes
 - ✅ TikTok Shop Partner Center setup progress

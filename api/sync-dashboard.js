@@ -1,4 +1,3 @@
-const { getSql, hasDb } = require('./_lib/db');
 const { AMAZON_FBM_SOURCES, SHEETS, TIKTOK_SOURCES, WALMART_SOURCES, currencyOptionsFor } = require('./_lib/seller-config');
 const { normSpecial, parseAmazonFbmValues, parseExpenseTab, parseValues, r2 } = require('./_lib/seller-parse');
 
@@ -225,33 +224,8 @@ module.exports = async function handler(req, res) {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
-  if (!hasDb()) {
-    res.status(503).json({ error: 'DATABASE_URL is not configured' });
-    return;
-  }
-  if (!googleKey()) {
-    res.status(503).json({ error: 'GOOGLE_API_KEY is not configured' });
-    return;
-  }
-
-  try {
-    const snapshot = await buildSnapshot();
-    const sql = getSql();
-    await ensureSnapshotTable(sql);
-    await sql`
-      insert into dashboard_snapshots (key, payload, generated_at, source_count, row_count, error_count, updated_at)
-      values (${SNAPSHOT_KEY}, ${snapshot}, ${snapshot.generatedAt}, ${snapshot.sourceCount}, ${snapshot.rowCount}, ${snapshot.errorCount}, now())
-      on conflict (key) do update set
-        payload = excluded.payload,
-        generated_at = excluded.generated_at,
-        source_count = excluded.source_count,
-        row_count = excluded.row_count,
-        error_count = excluded.error_count,
-        updated_at = now()
-    `;
-    res.setHeader('Cache-Control', 'no-store');
-    res.status(200).json({ ok: true, key: SNAPSHOT_KEY, generatedAt: snapshot.generatedAt, rowCount: snapshot.rowCount, sourceCount: snapshot.sourceCount, errorCount: snapshot.errorCount });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(410).json({
+    error: 'Server database cache is disabled. Refresh loads live Google Sheets data directly.',
+  });
 };

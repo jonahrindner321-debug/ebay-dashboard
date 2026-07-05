@@ -1,5 +1,6 @@
 -- Seller OS database foundation.
--- Designed for Neon Postgres on Vercel.
+-- Legacy database schema retained for reference only.
+-- Seller OS database storage is disabled; do not re-enable Neon/Postgres.
 
 create extension if not exists pgcrypto;
 

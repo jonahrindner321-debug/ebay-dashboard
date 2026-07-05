@@ -1307,58 +1307,10 @@ function finishDashboardLoad({ loadAudit = [], fromCache = false, generatedAt = 
 }
 
 async function loadDashboardSnapshot() {
-  if (location.protocol === 'file:') return false;
-  try {
-    _introSetStage('connect');
-    _introSetBanter('Opening the fast lane…');
-    _introSetSub('Loading cached Seller OS data');
-    _introSetProgress(1, 3, 'cache');
-    const res = await fetch('/api/dashboard-data');
-    if (!res.ok) return false;
-    const data = await res.json();
-    const payload = data.payload || {};
-    if (!payload.raw || !payload.raw.length) return false;
-
-    clearRuntimeData();
-    RAW = payload.raw || [];
-    Object.assign(EXPENSES, payload.expenses || {});
-    Object.assign(STORE_CREATED, payload.storeCreated || {});
-    Object.assign(SHEET_MODIFIED, payload.sheetModified || {});
-    Object.assign(SHEET_STATUS, payload.sheetStatus || {});
-    await playFastCachedIntro(RAW.length);
-    return finishDashboardLoad({
-      loadAudit: payload.loadAudit || [],
-      fromCache: true,
-      generatedAt: payload.generatedAt || data.generatedAt,
-    });
-  } catch (e) {
-    console.warn('Cached dashboard unavailable; falling back to live sheets:', e.message);
-    return false;
-  }
+  return false;
 }
 
 async function refreshDashboard() {
-  if (location.protocol !== 'file:') {
-    try {
-      setStatus('loading', 'Syncing…');
-      const ri = $('ri'); if (ri) { ri.className = 'spin'; ri.textContent = '↻'; }
-      _introDismissed = false;
-      const ov = $('intro-overlay');
-      if (ov) { ov.style.display = ''; ov.classList.remove('out'); }
-      _introStartBanter();
-      _introSetStage('load');
-      _introSetBanter('Syncing the warehouse…');
-      _introSetSub('Refreshing server-side sheet cache');
-      _introSetProgress(1, 2, 'server sync');
-      const res = await fetch('/api/sync-dashboard', { method: 'POST' });
-      if (res.ok) {
-        await loadDashboardSnapshot();
-        return;
-      }
-    } catch (e) {
-      console.warn('Server sync unavailable; falling back to live sheets:', e.message);
-    }
-  }
   loadAll(true);
 }
 
@@ -1463,7 +1415,7 @@ async function refreshSheetTimestamps(ids) {
 // ─── MAIN LOAD ─────────────────────────────────────────────────────────────
 async function loadAll(forceLive = false) {
   if (!API_KEY) { checkApiKey(); return; }
-  if (!forceLive && await loadDashboardSnapshot()) return;
+  await loadDashboardSnapshot();
   setStatus('loading', 'Loading…');
   const ri = $('ri'); ri.className = 'spin'; ri.textContent = '↻';
   clearRuntimeData();
@@ -5777,7 +5729,7 @@ function openAudit() {
           style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:var(--rose);padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
           🗑️ Clear Cache &amp; Force Reload
         </button>
-        <button onclick="closeModal('audit-modal'); refreshDashboard(); showToast('Reloading dashboard cache','info','↻')"
+        <button onclick="closeModal('audit-modal'); refreshDashboard(); showToast('Reloading dashboard','info','↻')"
           style="background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);color:var(--indigo);padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
           ↻ Reload (keep cache)
         </button>

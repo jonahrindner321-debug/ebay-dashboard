@@ -1,4 +1,4 @@
-name: Sync Seller OS Dashboard
+name: Sync Seller OS Snapshot
 
 on:
   schedule:
@@ -6,23 +6,24 @@ on:
   workflow_dispatch:
 
 jobs:
-  sync-dashboard:
+  sync-snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
+    permissions:
+      contents: read
     steps:
-      - name: Refresh dashboard snapshot
-        run: |
-          set -euo pipefail
-          response="$(curl -fsS -X POST https://ebay-dashboard-gamma.vercel.app/api/sync-dashboard)"
-          echo "$response" | node -e '
-            let body = "";
-            process.stdin.on("data", chunk => body += chunk);
-            process.stdin.on("end", () => {
-              const data = JSON.parse(body);
-              if (!data.ok || data.errorCount > 0) {
-                console.error(JSON.stringify(data, null, 2));
-                process.exit(1);
-              }
-              console.log(`Synced ${data.rowCount} rows from ${data.sourceCount} sources at ${data.generatedAt}`);
-            });
-          '
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build and publish Sheets snapshot
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          SELLER_OS_SNAPSHOT_SPREADSHEET_ID: ${{ secrets.SELLER_OS_SNAPSHOT_SPREADSHEET_ID }}
+          SELLER_OS_SNAPSHOT_TAB: ${{ vars.SELLER_OS_SNAPSHOT_TAB }}
+        run: npm run sync:snapshot

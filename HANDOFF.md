@@ -1,6 +1,6 @@
 # Seller OS Developer Handoff
 
-Last updated: April 25, 2026
+Last updated: July 5, 2026
 
 ## Project Summary
 
@@ -12,7 +12,8 @@ The current production app is a static Vercel dashboard with serverless API rout
 - Admin dashboard views for operations and growth.
 - Client-only deep links through `#client=<slug>`.
 - TikTok-styled channel views in the UI.
-- Database-backed TikTok Shop OAuth connection foundation.
+- Read-only TikTok Shop OAuth connection foundation.
+- Free Google Sheets snapshot worker for faster dashboard loads.
 - Public legal/security policy pages for app review.
 
 Production URL:
@@ -35,9 +36,13 @@ Main files:
 - `styles.css` - dashboard styling.
 - `app.js` - dashboard data loading, charts, client views, channel filters, and TikTok connect button logic.
 - `api/sheets.js` - Vercel serverless Google Sheets proxy.
+- `api/snapshot.js` - Vercel serverless snapshot reader.
+- `api/_lib/snapshot-builder.js` - shared worker snapshot builder.
+- `api/_lib/google-sheets.js` - Google Sheets/service-account helper.
 - `api/db/init.js` - disabled database initializer endpoint.
 - `api/_lib/db.js` - disabled no-op database helper. Neon/Postgres must not be re-enabled.
 - `api/tiktok/*` - TikTok Shop OAuth/status/placeholders.
+- `scripts/sync-seller-os-snapshot.cjs` - scheduled worker entrypoint.
 - `db/schema.sql` - legacy database schema, retained for reference only.
 - `legal/*` - public Privacy, Security, Data Deletion, Terms, and contact pages.
 
@@ -72,7 +77,7 @@ Production was verified after the latest changes. The legal pages returned HTTP 
 - `/legal/terms.html`
 - `/legal/contact.html`
 
-The TikTok status endpoint returned configured/read-only/database-backed with zero connected accounts:
+The TikTok status endpoint should return configured/read-only when env vars are present. Database storage is disabled, so connected accounts are not persisted until a non-Neon storage decision is made:
 
 ```json
 {
@@ -80,8 +85,8 @@ The TikTok status endpoint returned configured/read-only/database-backed with ze
   "missing": [],
   "connected": false,
   "readOnly": true,
-  "storage": "database",
-  "databaseConfigured": true,
+  "storage": "encrypted_http_only_cookie",
+  "databaseConfigured": false,
   "connections": []
 }
 ```
@@ -119,6 +124,8 @@ TIKTOK_TOKEN_URL
 TIKTOK_TOKEN_STYLE
 TIKTOK_SCOPES
 GOOGLE_API_KEY
+SELLER_OS_SNAPSHOT_SPREADSHEET_ID
+GOOGLE_SERVICE_ACCOUNT_JSON
 ```
 
 TikTok Shop OAuth mode:
@@ -164,7 +171,41 @@ GET /api/tiktok/orders
 GET /api/tiktok/products
 ```
 
-The `shop_v2` flow builds an authorization URL using `app_key`, `state`, and `redirect_uri`, then exchanges the returned auth code with TikTok Shop's token endpoint. Tokens are encrypted before database storage.
+The `shop_v2` flow builds an authorization URL using `app_key`, `state`, and `redirect_uri`, then exchanges the returned auth code with TikTok Shop's token endpoint. Database storage is disabled right now, so tokens are not being persisted until a non-Neon storage decision is made.
+
+## Free Snapshot Worker
+
+Neon/Postgres has been intentionally removed from Seller OS. Do not re-add database cache env vars or a paid DB integration.
+
+The replacement fast path is:
+
+```text
+workflow-templates/sync-seller-os-snapshot.yml
+  -> npm run sync:snapshot
+  -> scripts/sync-seller-os-snapshot.cjs
+  -> Google Sheet tab _seller_os_snapshot
+  -> GET /api/snapshot
+  -> app.js loadDashboardSnapshot()
+```
+
+The dashboard still falls back to live Sheets if `/api/snapshot` returns 404/502 or the snapshot is empty.
+
+Important: GitHub rejects workflow edits unless the pushing token has `workflow` scope. If that happens, keep `workflow-templates/sync-seller-os-snapshot.yml` committed and have a user/token with workflow scope copy it into `.github/workflows/sync-dashboard.yml`. The current `/api/sync-dashboard` endpoint is intentionally a no-op success response so the legacy cron does not hit Neon or fail loudly.
+
+Secrets needed to turn the worker on:
+
+```text
+GitHub:
+SELLER_OS_SNAPSHOT_SPREADSHEET_ID
+GOOGLE_SERVICE_ACCOUNT_JSON
+GOOGLE_API_KEY
+
+Vercel:
+SELLER_OS_SNAPSHOT_SPREADSHEET_ID
+GOOGLE_SERVICE_ACCOUNT_JSON
+```
+
+The service account should be shared onto the snapshot Sheet as Editor and source store Sheets as Viewer. This avoids Google OAuth consent/review because no public user-facing Google app is being authorized.
 
 ## TikTok Partner Center Review Status
 
@@ -229,7 +270,7 @@ Still needed:
 - Determine exact TikTok Shop Open API request signing requirements for approved endpoints.
 - Implement signed read-only calls in `api/tiktok/orders.js` and `api/tiktok/products.js`.
 - Normalize TikTok results into the same model used by Google Sheets/eBay rows.
-- Add sync runs and error logs to the database.
+- Add sync-run/error visibility from the snapshot worker logs.
 - Show real TikTok data in the dashboard instead of only the existing visual TikTok mode.
 - Build the Amazon/Sellerboard import bridge before considering any direct Amazon SP-API work.
 
@@ -275,7 +316,7 @@ Keep Seller OS:
 - Read-only by default.
 - OAuth/API-based, not login scraping.
 - Multi-store and multi-client safe.
-- Database-backed for platform connections.
+- Free snapshot-backed for dashboard speed; no Neon/Postgres.
 - Honest about client views: frontend-only link hiding is not true security.
 - Practical and fast-moving, but careful with tokens, client data, and platform permissions.
 

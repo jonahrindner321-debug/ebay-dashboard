@@ -1307,7 +1307,30 @@ function finishDashboardLoad({ loadAudit = [], fromCache = false, generatedAt = 
 }
 
 async function loadDashboardSnapshot() {
-  return false;
+  try {
+    setStatus('loading', 'Checking snapshot…');
+    const res = await fetch('/api/snapshot', { cache: 'no-store' });
+    if (!res.ok) return false;
+    const data = await res.json();
+    const snapshot = data.snapshot || data;
+    if (!snapshot || !Array.isArray(snapshot.raw) || !snapshot.raw.length) return false;
+
+    clearRuntimeData();
+    RAW = snapshot.raw || [];
+    Object.assign(EXPENSES, snapshot.expenses || {});
+    Object.assign(STORE_CREATED, snapshot.storeCreated || {});
+    Object.assign(SHEET_MODIFIED, snapshot.sheetModified || {});
+    Object.assign(SHEET_STATUS, snapshot.sheetStatus || {});
+
+    return finishDashboardLoad({
+      loadAudit: snapshot.loadAudit || [],
+      fromCache: true,
+      generatedAt: snapshot.generatedAt || data.generatedAt,
+    });
+  } catch(e) {
+    console.warn('Snapshot load failed, falling back to live Sheets:', e);
+    return false;
+  }
 }
 
 async function refreshDashboard() {
@@ -1415,7 +1438,7 @@ async function refreshSheetTimestamps(ids) {
 // ─── MAIN LOAD ─────────────────────────────────────────────────────────────
 async function loadAll(forceLive = false) {
   if (!API_KEY) { checkApiKey(); return; }
-  await loadDashboardSnapshot();
+  if (!forceLive && await loadDashboardSnapshot()) return;
   setStatus('loading', 'Loading…');
   const ri = $('ri'); ri.className = 'spin'; ri.textContent = '↻';
   clearRuntimeData();

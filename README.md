@@ -8,6 +8,8 @@ Static Vercel dashboard prototype for multi-store ecommerce operations.
 - `styles.css` - dashboard styling and responsive UI
 - `app.js` - data loading, calculations, charts, filters, and interactions
 - `api/sheets.js` - server-side Google Sheets proxy for Vercel
+- `api/snapshot.js` - reads the free Seller OS snapshot sheet when configured
+- `scripts/sync-seller-os-snapshot.cjs` - GitHub Actions worker that builds the snapshot
 - `api/tiktok/*` - read-only TikTok Shop connector foundation
 - `SELLER_OS_ROADMAP.md` - product and technical roadmap
 - `HANDOFF.md` - current status, TikTok setup, review state, and next developer checklist
@@ -32,6 +34,44 @@ The live Google Sheets API key may reject localhost if it is restricted to produ
 Push changes to GitHub `main`; Vercel deploys the static site automatically.
 
 For the latest working state and next-developer checklist, read [`HANDOFF.md`](./HANDOFF.md).
+
+## Free Snapshot Worker
+
+Seller OS does **not** use Neon/Postgres. The fast path is now a free Google Sheets snapshot:
+
+```text
+GitHub Actions cron -> scripts/sync-seller-os-snapshot.cjs -> snapshot Google Sheet
+Seller OS -> /api/snapshot -> snapshot Google Sheet -> dashboard
+```
+
+If the snapshot is missing or misconfigured, the dashboard falls back to live Google Sheets loading.
+
+GitHub requires a token with `workflow` scope to edit `.github/workflows/*`. If an agent cannot push workflow changes, copy `workflow-templates/sync-seller-os-snapshot.yml` into `.github/workflows/sync-dashboard.yml` manually after secrets are configured. Until then, the existing `/api/sync-dashboard` route is a no-op success response so the old cron does not touch Neon or spam failures.
+
+One-time setup:
+
+1. Create a Google Cloud service account and enable Google Sheets API.
+2. Create a blank Google Sheet named something like `Seller OS Snapshot`.
+3. Share that snapshot Sheet with the service account email as Editor.
+4. Share each source store Sheet with the service account email as Viewer.
+5. Add GitHub repository secrets:
+
+```text
+SELLER_OS_SNAPSHOT_SPREADSHEET_ID
+GOOGLE_SERVICE_ACCOUNT_JSON
+GOOGLE_API_KEY
+```
+
+`GOOGLE_SERVICE_ACCOUNT_JSON` can be the full service account JSON, or use `GOOGLE_SERVICE_ACCOUNT_EMAIL` plus `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`.
+
+6. Add matching Vercel env vars so `/api/snapshot` can read the private snapshot Sheet:
+
+```text
+SELLER_OS_SNAPSHOT_SPREADSHEET_ID
+GOOGLE_SERVICE_ACCOUNT_JSON
+```
+
+This avoids Google OAuth consent/app verification because no user is authorizing a public app. The service account is just a machine identity that the Sheets are explicitly shared with.
 
 ## TikTok Shop Connector
 

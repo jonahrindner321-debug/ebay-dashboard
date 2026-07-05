@@ -1,0 +1,29 @@
+name: Sync Seller OS Snapshot
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sync-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build and publish Sheets snapshot
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          SELLER_OS_SNAPSHOT_SPREADSHEET_ID: ${{ secrets.SELLER_OS_SNAPSHOT_SPREADSHEET_ID }}
+          SELLER_OS_SNAPSHOT_TAB: ${{ vars.SELLER_OS_SNAPSHOT_TAB }}
+        run: npm run sync:snapshot

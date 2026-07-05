@@ -1,9 +1,11 @@
 const { getSql, hasDb } = require('./_lib/db');
-const { AMAZON_FBM_SOURCES, SHEETS, TIKTOK_SOURCES, currencyOptionsFor } = require('./_lib/seller-config');
+const { AMAZON_FBM_SOURCES, SHEETS, TIKTOK_SOURCES, WALMART_SOURCES, currencyOptionsFor } = require('./_lib/seller-config');
 const { normSpecial, parseAmazonFbmValues, parseExpenseTab, parseValues, r2 } = require('./_lib/seller-parse');
 
 const SNAPSHOT_KEY = 'seller-os-main';
 const REQUEST_GAP_MS = 350;
+const SKIP_SOURCE_TABS = /^(?:_meta)$/i;
+const SKIP_DATA_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -139,6 +141,31 @@ async function buildSnapshot() {
     }
   }
 
+  for (const src of WALMART_SOURCES) {
+    await sleep(REQUEST_GAP_MS);
+    try {
+      const tabs = src.tab
+        ? [src.tab]
+        : ((await googleFetch('tabs', { id: src.id })).sheets || [])
+            .filter(s => s.properties.sheetType === 'GRID')
+            .map(s => s.properties.title)
+            .filter(tab => !SKIP_SOURCE_TABS.test(tab) && !SKIP_DATA_TABS.test(tab));
+      sourceCount += tabs.length;
+      const valueRanges = tabs.length ? await googleBatchValues(src.id, tabs) : [];
+      tabs.forEach((tab, idx) => {
+        try {
+          const parsed = parseValues(valueRanges[idx]?.values || [], src.person, normSpecial(tab), 'walmart', currencyOptionsFor(src.person));
+          raw.push(...parsed);
+          loadAudit.push({ person: src.person, tab: `Walmart / ${tab}`, rows: parsed.length, profit: r2(parsed.reduce((s, r) => s + r.profit, 0)), status: parsed.length ? 'ok' : 'skipped', channel: 'walmart' });
+        } catch (e) {
+          loadAudit.push({ person: src.person, tab: `Walmart / ${tab}`, rows: 0, profit: 0, status: 'error', err: e.message, channel: 'walmart' });
+        }
+      });
+    } catch (e) {
+      tabErrors.push({ id: src.id, person: src.person, sourceType: 'walmart', error: e.message });
+    }
+  }
+
   for (const src of AMAZON_FBM_SOURCES) {
     await sleep(REQUEST_GAP_MS);
     sourceCount += 1;
@@ -156,6 +183,7 @@ async function buildSnapshot() {
     ...ids.map(id => ({ id, label: SHEETS[id], type: 'ebay' })),
     ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM', type: 'amazon_fbm' })),
     ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}`, type: 'tiktok' })),
+    ...WALMART_SOURCES.map(src => ({ id: src.id, label: `Walmart ${src.person}`, type: 'walmart' })),
   ];
   for (const src of timestampSources) {
     await sleep(REQUEST_GAP_MS);

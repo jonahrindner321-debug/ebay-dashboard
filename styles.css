@@ -292,6 +292,20 @@
       background: linear-gradient(135deg, #ff2d55, #ff6b9d) !important;
       box-shadow: 0 0 16px rgba(255,45,85,.5) !important;
     }
+    .walmart-mode {
+      --indigo: #0071ce;
+      --violet: #f9a825;
+      --cyan:   #4db3ff;
+      --green:  #f9a825;
+      --emerald:#0ea5e9;
+      --header-bg: rgba(6,18,36,.92);
+      --bg:  #07111f;
+      --bg2: #0d1b2d;
+    }
+    .walmart-mode .logo-icon {
+      background: linear-gradient(135deg, #0071ce, #f9a825) !important;
+      box-shadow: 0 0 16px rgba(0,113,206,.44) !important;
+    }
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;

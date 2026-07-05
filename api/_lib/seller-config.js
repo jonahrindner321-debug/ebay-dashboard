@@ -33,6 +33,11 @@ const AMAZON_FBM_SOURCES = [
   },
 ];
 
+const WALMART_SOURCES = [
+  // Plug future Walmart sheets in here:
+  // { id: 'GOOGLE_SHEET_ID', person: 'Store Name', channel: 'walmart' },
+];
+
 // Store sheets can be maintained in local marketplace currency, but Seller OS
 // rolls the operating dashboard up in USD.
 const STORE_CURRENCY = {
@@ -67,5 +72,6 @@ module.exports = {
   SHEETS,
   STORE_CURRENCY,
   TIKTOK_SOURCES,
+  WALMART_SOURCES,
   currencyOptionsFor,
 };

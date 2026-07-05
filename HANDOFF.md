@@ -205,7 +205,7 @@ SELLER_OS_SNAPSHOT_SPREADSHEET_ID
 GOOGLE_SERVICE_ACCOUNT_JSON
 ```
 
-The service account should be shared onto the snapshot Sheet as Editor and source store Sheets as Viewer. This avoids Google OAuth consent/review because no public user-facing Google app is being authorized.
+The service account should be shared onto the snapshot Sheet as Editor. Source store Sheets do not need to be shared with the service account because the worker reads them through the existing Google API key path. This avoids Google OAuth consent/review because no public user-facing Google app is being authorized.
 
 ## TikTok Partner Center Review Status
 

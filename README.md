@@ -53,8 +53,7 @@ One-time setup:
 1. Create a Google Cloud service account and enable Google Sheets API.
 2. Create a blank Google Sheet named something like `Seller OS Snapshot`.
 3. Share that snapshot Sheet with the service account email as Editor.
-4. Share each source store Sheet with the service account email as Viewer.
-5. Add GitHub repository secrets:
+4. Add GitHub repository secrets:
 
 ```text
 SELLER_OS_SNAPSHOT_SPREADSHEET_ID
@@ -64,14 +63,14 @@ GOOGLE_API_KEY
 
 `GOOGLE_SERVICE_ACCOUNT_JSON` can be the full service account JSON, or use `GOOGLE_SERVICE_ACCOUNT_EMAIL` plus `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`.
 
-6. Add matching Vercel env vars so `/api/snapshot` can read the private snapshot Sheet:
+5. Add matching Vercel env vars so `/api/snapshot` can read the private snapshot Sheet:
 
 ```text
 SELLER_OS_SNAPSHOT_SPREADSHEET_ID
 GOOGLE_SERVICE_ACCOUNT_JSON
 ```
 
-This avoids Google OAuth consent/app verification because no user is authorizing a public app. The service account is just a machine identity that the Sheets are explicitly shared with.
+This avoids Google OAuth consent/app verification because no user is authorizing a public app. The service account only needs access to the private snapshot Sheet; source store Sheets are read through the existing Google API key path.
 
 ## TikTok Shop Connector
 

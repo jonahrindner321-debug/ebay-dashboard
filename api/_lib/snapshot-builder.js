@@ -8,6 +8,18 @@ const SKIP_DATA_TABS = /expense|gift|giftcard|template|summary|overview|instruct
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+function sourceReadEnv(env = process.env) {
+  return {
+    ...env,
+    GOOGLE_SERVICE_ACCOUNT_JSON: '',
+    SELLER_OS_GOOGLE_SERVICE_ACCOUNT_JSON: '',
+    GOOGLE_SERVICE_ACCOUNT_EMAIL: '',
+    GOOGLE_CLIENT_EMAIL: '',
+    GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: '',
+    GOOGLE_PRIVATE_KEY: '',
+  };
+}
+
 async function getTabs(id, env) {
   const data = await getSpreadsheetSheets(id, { env });
   return (data.sheets || [])
@@ -203,6 +215,7 @@ async function buildTimestampStatus({ sheetModified, sheetStatus, env }) {
 }
 
 async function buildSnapshot({ env = process.env } = {}) {
+  const readEnv = sourceReadEnv(env);
   const raw = [];
   const expenses = {};
   const loadAudit = [];
@@ -212,11 +225,11 @@ async function buildSnapshot({ env = process.env } = {}) {
   const tabErrors = [];
 
   let sourceCount = 0;
-  sourceCount += await buildEbaySources({ raw, expenses, loadAudit, tabErrors, env });
-  sourceCount += await buildTikTokSources({ raw, loadAudit, tabErrors, env });
-  sourceCount += await buildWalmartSources({ raw, loadAudit, tabErrors, env });
-  sourceCount += await buildAmazonFbmSources({ raw, loadAudit, env });
-  await buildTimestampStatus({ sheetModified, sheetStatus, env });
+  sourceCount += await buildEbaySources({ raw, expenses, loadAudit, tabErrors, env: readEnv });
+  sourceCount += await buildTikTokSources({ raw, loadAudit, tabErrors, env: readEnv });
+  sourceCount += await buildWalmartSources({ raw, loadAudit, tabErrors, env: readEnv });
+  sourceCount += await buildAmazonFbmSources({ raw, loadAudit, env: readEnv });
+  await buildTimestampStatus({ sheetModified, sheetStatus, env: readEnv });
 
   return {
     version: 'seller-os-cache-v1',
@@ -236,4 +249,5 @@ async function buildSnapshot({ env = process.env } = {}) {
 
 module.exports = {
   buildSnapshot,
+  sourceReadEnv,
 };

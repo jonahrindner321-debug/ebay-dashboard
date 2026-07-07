@@ -27,15 +27,22 @@ const TIKTOK_SOURCES = [
 const AMAZON_FBM_SOURCES = [
   {
     id: '1IKET6AiIc5sWHEQG8yAuDOxVGxldC9uqzNm0hX_3LhQ',
-    tab: '2 step DS',
-    person: 'Johna',
+    tab: '2 Step Amazon Paul Shop',
+    person: 'Paul',
     channel: 'amazon_fbm',
+    activityLabel: 'Amazon Paul',
   },
 ];
 
 const WALMART_SOURCES = [
-  // Plug future Walmart sheets in here:
-  // { id: 'GOOGLE_SHEET_ID', person: 'Store Name', channel: 'walmart' },
+  {
+    id: '1IKET6AiIc5sWHEQG8yAuDOxVGxldC9uqzNm0hX_3LhQ',
+    tab: '2 Step Walmart DT Seller ',
+    person: 'Johna',
+    channel: 'walmart',
+    parser: 'order_sheet',
+    activityLabel: 'Walmart Johna',
+  },
 ];
 
 // Store sheets can be maintained in local marketplace currency, but Seller OS

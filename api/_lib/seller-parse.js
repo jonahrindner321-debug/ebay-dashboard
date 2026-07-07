@@ -183,21 +183,27 @@ function parseExpenseTab(values, person, options = {}) {
   return result;
 }
 
-function parseAmazonFbmValues(values, person = 'Johna') {
+function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
   const rows = [];
   if (!values || values.length < 2) return rows;
   let headerIdx = -1;
   const colMap = {};
+  const channel = options.channel || 'amazon_fbm';
+  const platform = options.platform || (channel === 'walmart' ? 'walmart' : 'amazon');
+  const source = options.source || (platform === 'walmart' ? 'Walmart Seller Order Sheet' : 'Amazon Seller Central Order Sheet');
+  const fallbackMonth = options.fallbackMonthLabel || monthLabelFromDate(new Date().toISOString().substring(0, 10), 'Unknown');
+  const feeDisplayName = platform === 'walmart' ? 'walmartFee' : 'amazonFee';
   const norm = h => String(h || '').toUpperCase().replace(/\s+/g, ' ').trim();
   for (let i = 0; i < Math.min(12, values.length); i++) {
     const header = (values[i] || []).map(norm);
-    const looksLikeAmazonFbm = header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('AMAZON FEE') || header.includes('PROFIT');
+    const looksLikeOrderSheet = header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('AMAZON FEE') || header.includes('WALMART FEE') || header.includes('PROFIT');
     const hasDateColumn = header.includes('DATE') || header[0] === '';
-    if (hasDateColumn && looksLikeAmazonFbm) {
+    if (hasDateColumn && looksLikeOrderSheet) {
       headerIdx = i;
       header.forEach((h, idx) => {
         if (h === 'DATE' || (idx === 0 && !h && colMap.date === undefined)) colMap.date = idx;
         else if (h === 'SELLER ORDER ID') colMap.orderId = idx;
+        else if (h === 'PO NUMBER') colMap.poNumber = idx;
         else if (h === 'URL') colMap.url = idx;
         else if (h === 'SKU') colMap.sku = idx;
         else if (h === 'PRODUCT NAME') colMap.product = idx;
@@ -205,13 +211,14 @@ function parseAmazonFbmValues(values, person = 'Johna') {
         else if (h === 'BUYER ORDER MAIL' || h === 'BUYER ORDER EMAIL') colMap.buyerMail = idx;
         else if (h === 'BUYER ORDER NUMBER') colMap.buyerOrderNumber = idx;
         else if (h === 'TRACKING') colMap.tracking = idx;
+        else if (h === 'CARRIER') colMap.carrier = idx;
         else if (h === 'CARD ENDING') colMap.cardEnding = idx;
         else if (h === 'SHORT CODE') colMap.shortCode = idx;
         else if (h === 'STATUS') colMap.status = idx;
-        else if (h === 'ADDRESS') colMap.address = idx;
+        else if (h === 'ADDRESS' || h === 'TO (ADDRESS 1)' || h === 'TO ADDRESS 1') colMap.address = idx;
         else if (h === 'QTY') colMap.qty = idx;
         else if (h === 'SALE PRICE') colMap.price = idx;
-        else if (h === 'AMAZON FEE') colMap.amazonFee = idx;
+        else if (h === 'AMAZON FEE' || h === 'WALMART FEE' || h === 'PLATFORM FEE') colMap.platformFee = idx;
         else if (h === 'TOTAL RATE') colMap.payout = idx;
         else if (h.includes('LABEL')) colMap.label = idx;
         else if (h.includes('PREP')) colMap.prep = idx;
@@ -231,8 +238,9 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
     const dateStr = parseDate(dateRaw);
     const orderId = String(row[colMap.orderId] || '').trim();
+    const poNumber = String(row[colMap.poNumber] || '').trim();
     const price = parseMoney(row[colMap.price]);
-    const amazonFee = Math.abs(parseMoney(row[colMap.amazonFee]));
+    const platformFee = Math.abs(parseMoney(row[colMap.platformFee]));
     const qty = Math.max(1, Math.round(parseMoney(row[colMap.qty])) || 1);
     const label = Math.abs(parseMoney(row[colMap.label]));
     const prep = Math.abs(parseMoney(row[colMap.prep]));
@@ -244,38 +252,50 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     const url = String(row[colMap.url] || '').trim();
     const trackingRaw = String(row[colMap.tracking] || '').trim();
     const tracking = /^tracking\s*#?$/i.test(trackingRaw) ? '' : trackingRaw;
-    const hasData = Boolean(dateStr || orderId || status || price || amazonFee || totalCost || profit);
-    if (!hasData || (!dateStr && !orderId && !status && !price && !profit)) continue;
+    const carrier = String(row[colMap.carrier] || '').trim();
+    const buyerMail = String(row[colMap.buyerMail] || '').trim();
+    const buyerOrderId = String(row[colMap.buyerOrderId] || '').trim();
+    const buyerOrderNumber = String(row[colMap.buyerOrderNumber] || '').trim();
+    const cardEnding = String(row[colMap.cardEnding] || '').trim();
+    const shortCode = String(row[colMap.shortCode] || '').trim();
+    const address = String(row[colMap.address] || '').trim();
+    const hasData = Boolean(dateStr || orderId || poNumber || status || price || platformFee || totalCost || profit);
+    if (!hasData || (!dateStr && !orderId && !poNumber && !status && !price && !profit)) continue;
+    const hasRealUrl = Boolean(url && !/sellercentral\.amazon\.com\/orders-v3\/order\/?$/i.test(url));
+    const hasRowIdentity = Boolean(dateStr || orderId || poNumber || buyerOrderId || buyerMail || buyerOrderNumber || hasRealUrl || tracking || carrier || cardEnding || shortCode || address || status);
+    if (!hasRowIdentity) continue;
     let roi = parseMoney(row[colMap.roi]);
     if (roi !== 0 && Math.abs(roi) <= 2) roi *= 100;
-    rows.push({
+    const payout = parseMoney(row[colMap.payout]);
+    const record = {
       person,
-      month: monthLabelFromDate(dateStr, normSpecial('May_2026')),
-      channel: 'amazon_fbm',
-      platform: 'amazon',
-      source: 'JER Seller Order Sheet',
+      month: monthLabelFromDate(dateStr, fallbackMonth),
+      channel,
+      platform,
+      source,
       date: dateStr,
       _dateRaw: dateRaw,
       orderId,
+      poNumber,
       sku: String(row[colMap.sku] || '').trim(),
       product: String(row[colMap.product] || '').trim(),
       url,
-      buyerMail: String(row[colMap.buyerMail] || '').trim(),
-      buyerOrderId: String(row[colMap.buyerOrderId] || '').trim(),
-      buyerOrderNumber: String(row[colMap.buyerOrderNumber] || '').trim(),
+      buyerMail,
+      buyerOrderId,
+      buyerOrderNumber,
       tracking,
-      cardEnding: String(row[colMap.cardEnding] || '').trim(),
-      shortCode: String(row[colMap.shortCode] || '').trim(),
-      address: String(row[colMap.address] || '').trim(),
+      carrier,
+      cardEnding,
+      shortCode,
+      address,
       status,
       sales: qty,
       price: r2(price),
       cost: r2(totalCost),
-      fee: r2(amazonFee),
-      amazonFee: r2(amazonFee),
+      fee: r2(platformFee),
       tax: r2(Math.abs(parseMoney(row[colMap.tax]))),
-      payout: r2(parseMoney(row[colMap.payout])),
-      amazonPayout: r2(parseMoney(row[colMap.payout]) || Math.max(0, price - amazonFee)),
+      payout: r2(payout),
+      platformPayout: r2(payout || Math.max(0, price - platformFee)),
       label: r2(label),
       prep: r2(prep),
       ship: r2(ship),
@@ -283,7 +303,11 @@ function parseAmazonFbmValues(values, person = 'Johna') {
       unitCostTotal: r2(unitCost * qty),
       profit: r2(profit),
       roi: r2(roi),
-    });
+    };
+    record[feeDisplayName] = r2(platformFee);
+    if (platform === 'amazon') record.amazonPayout = record.platformPayout;
+    if (platform === 'walmart') record.walmartPayout = record.platformPayout;
+    rows.push(record);
   }
   return rows;
 }

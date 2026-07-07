@@ -8,6 +8,10 @@ const SKIP_DATA_TABS = /expense|gift|giftcard|template|summary|overview|instruct
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+function sourceActivityLabel(src, prefix) {
+  return src.activityLabel || `${prefix} ${src.person}`;
+}
+
 function sourceReadEnv(env = process.env) {
   return {
     ...env,
@@ -29,7 +33,7 @@ async function getTabs(id, env) {
 
 async function batchTabValues(id, tabs, env) {
   if (!tabs.length) return [];
-  const valueRanges = await batchGetValues(id, tabs.map(tab => sheetRange(tab, 'A:Z')), { env });
+  const valueRanges = await batchGetValues(id, tabs.map(tab => sheetRange(tab, 'A:AZ')), { env });
   return valueRanges.valueRanges || [];
 }
 
@@ -139,7 +143,13 @@ async function buildWalmartSources({ raw, loadAudit, tabErrors, env }) {
       const valueRanges = await batchTabValues(src.id, tabs, env);
       tabs.forEach((tab, idx) => {
         try {
-          const parsed = parseValues(valueRanges[idx]?.values || [], src.person, normSpecial(tab), 'walmart', currencyOptionsFor(src.person));
+          const parsed = src.parser === 'order_sheet'
+            ? parseAmazonFbmValues(valueRanges[idx]?.values || [], src.person, {
+                channel: 'walmart',
+                platform: 'walmart',
+                source: 'Walmart Seller Order Sheet',
+              })
+            : parseValues(valueRanges[idx]?.values || [], src.person, normSpecial(tab), 'walmart', currencyOptionsFor(src.person));
           raw.push(...parsed);
           loadAudit.push({
             person: src.person,
@@ -166,19 +176,23 @@ async function buildAmazonFbmSources({ raw, loadAudit, env }) {
     await sleep(REQUEST_GAP_MS);
     sourceCount += 1;
     try {
-      const data = await getValues(src.id, sheetRange(src.tab, 'A:Z'), { env });
-      const parsed = parseAmazonFbmValues(data.values || [], src.person);
+      const data = await getValues(src.id, sheetRange(src.tab, 'A:AZ'), { env });
+      const parsed = parseAmazonFbmValues(data.values || [], src.person, {
+        channel: 'amazon_fbm',
+        platform: 'amazon',
+        source: 'Amazon Seller Central Order Sheet',
+      });
       raw.push(...parsed);
       loadAudit.push({
         person: src.person,
-        tab: `Amazon FBM / ${src.tab}`,
+        tab: `Amazon / ${src.tab}`,
         rows: parsed.length,
         profit: r2(parsed.reduce((sum, record) => sum + record.profit, 0)),
         status: parsed.length ? 'ok' : 'skipped',
         channel: 'amazon_fbm',
       });
     } catch (e) {
-      loadAudit.push({ person: src.person, tab: `Amazon FBM / ${src.tab}`, rows: 0, profit: 0, status: 'error', err: e.message, channel: 'amazon_fbm' });
+      loadAudit.push({ person: src.person, tab: `Amazon / ${src.tab}`, rows: 0, profit: 0, status: 'error', err: e.message, channel: 'amazon_fbm' });
     }
   }
   return sourceCount;
@@ -187,9 +201,9 @@ async function buildAmazonFbmSources({ raw, loadAudit, env }) {
 async function buildTimestampStatus({ sheetModified, sheetStatus, env }) {
   const sources = [
     ...Object.keys(SHEETS).map(id => ({ id, label: SHEETS[id], type: 'ebay' })),
-    ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM', type: 'amazon_fbm' })),
+    ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: sourceActivityLabel(src, 'Amazon'), type: 'amazon_fbm' })),
     ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}`, type: 'tiktok' })),
-    ...WALMART_SOURCES.map(src => ({ id: src.id, label: `Walmart ${src.person}`, type: 'walmart' })),
+    ...WALMART_SOURCES.map(src => ({ id: src.id, label: sourceActivityLabel(src, 'Walmart'), type: 'walmart' })),
   ];
 
   for (const src of sources) {

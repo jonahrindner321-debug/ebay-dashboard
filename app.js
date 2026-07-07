@@ -22,9 +22,10 @@ const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i
 const AMAZON_FBM_SOURCES = [
   {
     id: '1IKET6AiIc5sWHEQG8yAuDOxVGxldC9uqzNm0hX_3LhQ',
-    tab: '2 step DS',
-    person: 'Johna',
+    tab: '2 Step Amazon Paul Shop',
+    person: 'Paul',
     channel: 'amazon_fbm',
+    activityLabel: 'Amazon Paul',
   },
 ];
 
@@ -37,8 +38,14 @@ const TIKTOK_SOURCES = [
 ];
 
 const WALMART_SOURCES = [
-  // Plug future Walmart sheets in here:
-  // { id: 'GOOGLE_SHEET_ID', person: 'Store Name', channel: 'walmart' },
+  {
+    id: '1IKET6AiIc5sWHEQG8yAuDOxVGxldC9uqzNm0hX_3LhQ',
+    tab: '2 Step Walmart DT Seller ',
+    person: 'Johna',
+    channel: 'walmart',
+    parser: 'order_sheet',
+    activityLabel: 'Walmart Johna',
+  },
 ];
 
 const CHANNEL_KEYS = ['all', 'ebay', 'tiktok', 'amazon_fbm', 'walmart'];
@@ -46,12 +53,25 @@ const CHANNEL_STYLE = {
   all:        { label: 'All',        title: 'All-Time',      color: 'var(--indigo)', muted: 'var(--muted)', icon: '📦' },
   ebay:       { label: 'eBay',       title: 'eBay',          color: 'var(--indigo)', muted: 'var(--muted)', icon: '📦' },
   tiktok:     { label: 'TikTok',     title: 'TikTok',        color: '#ff2d55',       muted: '#ff6b9d',     icon: '⟡' },
-  amazon_fbm: { label: 'Amazon FBM', title: 'Amazon FBM',    color: '#f59e0b',       muted: '#fbbf24',     icon: 'A' },
+  amazon_fbm: { label: 'Amazon',     title: 'Amazon',        color: '#f59e0b',       muted: '#fbbf24',     icon: 'A' },
   walmart:    { label: 'Walmart',    title: 'Walmart',       color: '#0071ce',       muted: '#f9a825',     icon: 'W' },
 };
 
 // Stores that have been offboarded/banned — excluded from all data and displays
-const BANNED_STORES = new Set(['Paul', 'Levi']);
+const BANNED_STORES = new Set(['Levi']);
+
+function sourceActivityLabel(src, prefix) {
+  return src.activityLabel || `${prefix} ${src.person}`;
+}
+
+function latestModifiedForSources(sources, prefix) {
+  const times = sources
+    .map(src => SHEET_MODIFIED[sourceActivityLabel(src, prefix)])
+    .filter(Boolean)
+    .map(value => new Date(value).getTime())
+    .filter(Number.isFinite);
+  return times.length ? new Date(Math.max(...times)).toISOString() : null;
+}
 
 // ─── LISTING TRACKER ───────────────────────────────────────────────────────
 const LISTING_TRACKER_ID   = '1P1k92F_RsQxSE_2qZloA99OiOBEDazch';
@@ -234,7 +254,7 @@ const COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06
 // Owned stores → J&R keep 60% of profit
 const OWNED_STORES = ['Russell', 'Russ LLC', 'BANOS', 'Johna', 'Dolo LLC'];
 // Name-fee owned stores → J&R 50%, Danian 40%, store name fee 10%
-const JACOB_STORES = ['Jacob', 'Rachel'];
+const JACOB_STORES = ['Jacob', 'Rachel', 'Paul'];
 const SPECIAL_STORE_SPLITS = {
   __premium_partner__: {
     type: 'premium_partner',
@@ -577,7 +597,7 @@ function fmtDayLabel(dateStr) {
   return mos[dt.getMonth()] + ' ' + dt.getDate();
 }
 
-function monthLabelFromDate(dateStr, fallback = 'Amazon FBM') {
+function monthLabelFromDate(dateStr, fallback = 'Amazon') {
   if (!dateStr) return fallback;
   const dt = new Date(dateStr + 'T00:00:00');
   if (isNaN(dt.getTime())) return fallback;
@@ -823,7 +843,7 @@ async function googleFetchUnthrottled(type, params) {
 async function _googleDirect(type, { id, tab }) {
   let url;
   if (type === 'tabs')   url = `https://sheets.googleapis.com/v4/spreadsheets/${id}?key=${API_KEY}&fields=sheets.properties(title,sheetType)`;
-  if (type === 'values') url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(tab)}!A:Z?key=${API_KEY}`;
+  if (type === 'values') url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(tab)}!A:AZ?key=${API_KEY}`;
   if (type === 'drive')  url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime,modifiedTime`;
   if (type === 'meta')   url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/_meta!A1?key=${API_KEY}`;
   return apiFetch(url);
@@ -947,21 +967,26 @@ function parseMoney(v) {
   return negative ? -f : f;
 }
 
-function parseAmazonFbmValues(values, person = 'Johna') {
+function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
   const rows = [];
   if (!values || values.length < 2) return rows;
   let headerIdx = -1;
   let colMap = {};
+  const channel = options.channel || 'amazon_fbm';
+  const platform = options.platform || (channel === 'walmart' ? 'walmart' : 'amazon');
+  const source = options.source || (platform === 'walmart' ? 'Walmart Seller Order Sheet' : 'Amazon Seller Central Order Sheet');
+  const feeDisplayName = platform === 'walmart' ? 'walmartFee' : 'amazonFee';
   const norm = h => String(h || '').toUpperCase().replace(/\s+/g, ' ').trim();
   for (let i = 0; i < Math.min(12, values.length); i++) {
     const header = (values[i] || []).map(norm);
-    const looksLikeAmazonFbm = header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('AMAZON FEE') || header.includes('PROFIT');
+    const looksLikeOrderSheet = header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('AMAZON FEE') || header.includes('WALMART FEE') || header.includes('PROFIT');
     const hasDateColumn = header.includes('DATE') || header[0] === '';
-    if (hasDateColumn && looksLikeAmazonFbm) {
+    if (hasDateColumn && looksLikeOrderSheet) {
       headerIdx = i;
       header.forEach((h, idx) => {
         if (h === 'DATE' || (idx === 0 && !h && colMap.date === undefined)) colMap.date = idx;
         else if (h === 'SELLER ORDER ID') colMap.orderId = idx;
+        else if (h === 'PO NUMBER') colMap.poNumber = idx;
         else if (h === 'URL') colMap.url = idx;
         else if (h === 'SKU') colMap.sku = idx;
         else if (h === 'PRODUCT NAME') colMap.product = idx;
@@ -969,13 +994,14 @@ function parseAmazonFbmValues(values, person = 'Johna') {
         else if (h === 'BUYER ORDER MAIL' || h === 'BUYER ORDER EMAIL') colMap.buyerMail = idx;
         else if (h === 'BUYER ORDER NUMBER') colMap.buyerOrderNumber = idx;
         else if (h === 'TRACKING') colMap.tracking = idx;
+        else if (h === 'CARRIER') colMap.carrier = idx;
         else if (h === 'CARD ENDING') colMap.cardEnding = idx;
         else if (h === 'SHORT CODE') colMap.shortCode = idx;
         else if (h === 'STATUS') colMap.status = idx;
-        else if (h === 'ADDRESS') colMap.address = idx;
+        else if (h === 'ADDRESS' || h === 'TO (ADDRESS 1)' || h === 'TO ADDRESS 1') colMap.address = idx;
         else if (h === 'QTY') colMap.qty = idx;
         else if (h === 'SALE PRICE') colMap.price = idx;
-        else if (h === 'AMAZON FEE') colMap.amazonFee = idx;
+        else if (h === 'AMAZON FEE' || h === 'WALMART FEE' || h === 'PLATFORM FEE') colMap.platformFee = idx;
         else if (h === 'TOTAL RATE') colMap.payout = idx;
         else if (h.includes('LABEL')) colMap.label = idx;
         else if (h.includes('PREP')) colMap.prep = idx;
@@ -998,11 +1024,13 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
     const dateStr = parseDate(dateRaw);
     const orderId = String(row[colMap.orderId] || '').trim();
+    const poNumber = String(row[colMap.poNumber] || '').trim();
     const url = String(row[colMap.url] || '').trim();
     const buyerMail = String(row[colMap.buyerMail] || '').trim();
     const buyerOrderNumber = String(row[colMap.buyerOrderNumber] || '').trim();
     const trackingRaw = String(row[colMap.tracking] || '').trim();
     const tracking = /^tracking\s*#?$/i.test(trackingRaw) ? '' : trackingRaw;
+    const carrier = String(row[colMap.carrier] || '').trim();
     const cardEnding = String(row[colMap.cardEnding] || '').trim();
     const shortCode = String(row[colMap.shortCode] || '').trim();
     const address = String(row[colMap.address] || '').trim();
@@ -1012,7 +1040,7 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     const status = String(row[colMap.status] || '').trim();
     const qty = Math.max(1, Math.round(parseMoney(row[colMap.qty])) || 1);
     const price = parseMoney(row[colMap.price]);
-    const amazonFee = Math.abs(parseMoney(row[colMap.amazonFee]));
+    const platformFee = Math.abs(parseMoney(row[colMap.platformFee]));
     const payout = parseMoney(row[colMap.payout]);
     const label = Math.abs(parseMoney(row[colMap.label]));
     const prep = Math.abs(parseMoney(row[colMap.prep]));
@@ -1024,22 +1052,23 @@ function parseAmazonFbmValues(values, person = 'Johna') {
     const profit = parseMoney(row[colMap.profit]);
     let roi = parseMoney(row[colMap.roi]);
     if (roi !== 0 && Math.abs(roi) <= 2) roi = roi * 100;
-    const hasData = Boolean(dateStr || orderId || status || price || amazonFee || totalCost || profit);
+    const hasData = Boolean(dateStr || orderId || poNumber || status || price || platformFee || totalCost || profit);
     if (!hasData) continue;
-    if (!dateStr && !orderId && !status && !price && !profit) continue;
+    if (!dateStr && !orderId && !poNumber && !status && !price && !profit) continue;
     const hasRealUrl = Boolean(url && !/sellercentral\.amazon\.com\/orders-v3\/order\/?$/i.test(url));
-    const hasRowIdentity = Boolean(dateStr || orderId || buyerOrderId || buyerMail || buyerOrderNumber || hasRealUrl || tracking || cardEnding || shortCode || address || status);
+    const hasRowIdentity = Boolean(dateStr || orderId || poNumber || buyerOrderId || buyerMail || buyerOrderNumber || hasRealUrl || tracking || carrier || cardEnding || shortCode || address || status);
     if (!hasRowIdentity) continue;
 
-    rows.push({
+    const record = {
       person,
       month: monthLabelFromDate(dateStr, currentMonthLabel()),
-      channel: 'amazon_fbm',
-      platform: 'amazon',
-      source: 'JER Seller Order Sheet',
+      channel,
+      platform,
+      source,
       date: dateStr,
       _dateRaw: dateRaw,
       orderId,
+      poNumber,
       sku,
       product,
       url,
@@ -1047,6 +1076,7 @@ function parseAmazonFbmValues(values, person = 'Johna') {
       buyerOrderId,
       buyerOrderNumber,
       tracking,
+      carrier,
       cardEnding,
       shortCode,
       address,
@@ -1054,11 +1084,10 @@ function parseAmazonFbmValues(values, person = 'Johna') {
       sales: qty,
       price: r2(price),
       cost: r2(totalCost),
-      fee: r2(amazonFee),
-      amazonFee: r2(amazonFee),
+      fee: r2(platformFee),
       tax: r2(tax),
       payout: r2(payout),
-      amazonPayout: r2(payout || Math.max(0, price - amazonFee)),
+      platformPayout: r2(payout || Math.max(0, price - platformFee)),
       label: r2(label),
       prep: r2(prep),
       ship: r2(ship),
@@ -1066,7 +1095,11 @@ function parseAmazonFbmValues(values, person = 'Johna') {
       unitCostTotal,
       profit: r2(profit),
       roi: r2(roi),
-    });
+    };
+    record[feeDisplayName] = r2(platformFee);
+    if (platform === 'amazon') record.amazonPayout = record.platformPayout;
+    if (platform === 'walmart') record.walmartPayout = record.platformPayout;
+    rows.push(record);
   }
   return rows;
 }
@@ -1093,7 +1126,7 @@ const INTRO_BANTER = [
   'Looking for sneaky profit pockets…',
   'Dusting off the dashboard crystal ball…',
   'Stacking the little wins into big ones…',
-  'Making eBay, TikTok, FBM, and Walmart shake hands…',
+  'Making eBay, TikTok, Seller Central, and Walmart shake hands…',
   'Checking the money weather…',
   'Turning tab soup into strategy…',
   'Welcoming the new stores to the board…',
@@ -1383,9 +1416,9 @@ function prioritizeLoadSources(sources) {
 async function refreshSheetTimestamps(ids) {
   const sources = [
     ...ids.map(id => ({ id, label: SHEETS[id], type: 'ebay' })),
-    ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: 'Amazon FBM', type: 'amazon_fbm' })),
+    ...AMAZON_FBM_SOURCES.map(src => ({ id: src.id, label: sourceActivityLabel(src, 'Amazon'), type: 'amazon_fbm' })),
     ...TIKTOK_SOURCES.map(src => ({ id: src.id, label: `TikTok ${src.person}`, type: 'tiktok' })),
-    ...WALMART_SOURCES.map(src => ({ id: src.id, label: `Walmart ${src.person}`, type: 'walmart' })),
+    ...WALMART_SOURCES.map(src => ({ id: src.id, label: sourceActivityLabel(src, 'Walmart'), type: 'walmart' })),
   ];
 
   sources.forEach(src => {
@@ -1455,7 +1488,7 @@ async function loadAll(forceLive = false) {
   // Stage 2: Discover tabs
   _introSetStage('discover');
   _introSetSub('');
-  const discoverJobs = ids.length + TIKTOK_SOURCES.length + WALMART_SOURCES.length;
+  const discoverJobs = ids.length + TIKTOK_SOURCES.length + WALMART_SOURCES.length + AMAZON_FBM_SOURCES.length;
   _introSetProgress(0, discoverJobs, '');
 
   const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -1487,7 +1520,10 @@ async function loadAll(forceLive = false) {
       .forEach(tab => allSources.push({ ...src, tab, sourceType: 'walmart' }));
     _introSetProgress(ids.length + TIKTOK_SOURCES.length + i + 1, discoverJobs, `${ids.length} eBay stores · ${TIKTOK_SOURCES.length} TikTok · ${i + 1} Walmart source${i ? 's' : ''}`);
   }
-  AMAZON_FBM_SOURCES.forEach(src => allSources.push({ ...src, sourceType: 'amazon_fbm' }));
+  AMAZON_FBM_SOURCES.forEach((src, idx) => {
+    allSources.push({ ...src, sourceType: 'amazon_fbm' });
+    _introSetProgress(ids.length + TIKTOK_SOURCES.length + WALMART_SOURCES.length + idx + 1, discoverJobs, `${ids.length} eBay stores · ${TIKTOK_SOURCES.length} TikTok · ${WALMART_SOURCES.length} Walmart · ${idx + 1} Amazon source${idx ? 's' : ''}`);
+  });
   allSources = prioritizeLoadSources(allSources);
 
   loadListingTracker();
@@ -1525,11 +1561,15 @@ async function loadAll(forceLive = false) {
         const values = await getTabValues(src.id, src.tab);
 
         if (src.sourceType === 'amazon_fbm') {
-          const parsed = parseAmazonFbmValues(values, src.person);
+          const parsed = parseAmazonFbmValues(values, src.person, {
+            channel: 'amazon_fbm',
+            platform: 'amazon',
+            source: 'Amazon Seller Central Order Sheet',
+          });
           _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
           RAW.push(...parsed);
           const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
-          loadAudit.push({ person: src.person, tab: 'Amazon FBM / ' + src.tab, rows: parsed.length, profit: tabProfit, status: parsed.length > 0 ? 'ok' : 'skipped', channel: 'amazon_fbm' });
+          loadAudit.push({ person: src.person, tab: 'Amazon / ' + src.tab, rows: parsed.length, profit: tabProfit, status: parsed.length > 0 ? 'ok' : 'skipped', channel: 'amazon_fbm' });
         } else if (src.sourceType === 'tiktok') {
           const parsed = parseValues(values, src.person, normSpecial(src.tab), 'tiktok', currencyOptionsFor(src.person));
           _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
@@ -1537,7 +1577,13 @@ async function loadAll(forceLive = false) {
           const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
           loadAudit.push({ person: src.person, tab: 'TikTok / ' + src.tab, rows: parsed.length, profit: tabProfit, status: parsed.length > 0 ? 'ok' : 'skipped', channel: 'tiktok' });
         } else if (src.sourceType === 'walmart') {
-          const parsed = parseValues(values, src.person, normSpecial(src.tab), 'walmart', currencyOptionsFor(src.person));
+          const parsed = src.parser === 'order_sheet'
+            ? parseAmazonFbmValues(values, src.person, {
+                channel: 'walmart',
+                platform: 'walmart',
+                source: 'Walmart Seller Order Sheet',
+              })
+            : parseValues(values, src.person, normSpecial(src.tab), 'walmart', currencyOptionsFor(src.person));
           _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
           RAW.push(...parsed);
           const tabProfit = parsed.reduce((s,r)=>s+r.profit,0);
@@ -2490,7 +2536,7 @@ function getAmazonWorkflowStats(rows) {
     return !String(r.tracking || '').trim() && (!status || /needs?\s*tracking/i.test(status));
   }).length;
   const latestOrderDate = rows.map(r => r.date).filter(Boolean).sort().pop();
-  const lastEdit = SHEET_MODIFIED['Amazon FBM'];
+  const lastEdit = latestModifiedForSources(AMAZON_FBM_SOURCES, 'Amazon');
   const lastEditLabel = lastEdit ? (() => {
     const hrs = (Date.now() - new Date(lastEdit).getTime()) / 3600000;
     return hrs < 1 ? 'just now' : hrs < 24 ? `${Math.floor(hrs)}h ago` : `${Math.floor(hrs / 24)}d ago`;
@@ -2556,7 +2602,7 @@ function amazonBestSellersMarkup(rows) {
             <span>${fmt$(p.payout)} payout</span>
           </div>
           <div class="amazon-best-foot">${p.tracked}/${p.orders} orders tracking added</div>
-        </div>`).join('') : '<div class="card amazon-best-card"><div class="amazon-best-name">No best sellers yet</div><div class="amazon-best-foot">Once FBM rows load, product winners show here.</div></div>'}
+        </div>`).join('') : '<div class="card amazon-best-card"><div class="amazon-best-name">No best sellers yet</div><div class="amazon-best-foot">Once Amazon rows load, product winners show here.</div></div>'}
     </div>`;
 }
 
@@ -2570,10 +2616,13 @@ function renderAmazonWorkflow(data) {
   const search = ($('tbl-search')?.value || '').toLowerCase();
   const rows = getAmazonWorkflowRows(data, search);
   const s = getAmazonWorkflowStats(rows);
+  const sourceSubtitle = AMAZON_FBM_SOURCES.length === 1
+    ? AMAZON_FBM_SOURCES[0].tab.trim()
+    : `${AMAZON_FBM_SOURCES.length} Amazon sheets`;
   section.innerHTML = `
     <div class="section-hdr">
-      <span class="section-title">📦 Amazon FBM Sheet Mirror</span>
-      <span style="font-size:11px;color:var(--muted)">2 step DS · ${s.latestOrderDate ? `latest order ${fmtDayLabel(s.latestOrderDate)}` : 'waiting on rows'}</span>
+      <span class="section-title">📦 Amazon Seller Central Mirror</span>
+      <span style="font-size:11px;color:var(--muted)">${escHtml(sourceSubtitle)} · ${s.latestOrderDate ? `latest order ${fmtDayLabel(s.latestOrderDate)}` : 'waiting on rows'}</span>
     </div>
     <div class="card amazon-workflow-card">
     <div class="amazon-mirror-head">
@@ -3379,20 +3428,19 @@ function renderExpenses() {}
 // ─── SHEET ACTIVITY ───────────────────────────────────────────────────────────
 function renderSheetActivity() {
   const section = $('sheet-activity-section'), grid = $('sheet-activity-grid');
-  if (CHANNEL_FILTER === 'amazon_fbm') {
-    section.style.display = 'none';
-    return;
-  }
   let entries;
-  if (CHANNEL_FILTER === 'tiktok') {
+  if (CHANNEL_FILTER === 'amazon_fbm') {
+    entries = AMAZON_FBM_SOURCES.map(src => sourceActivityLabel(src, 'Amazon'));
+  } else if (CHANNEL_FILTER === 'tiktok') {
     entries = TIKTOK_SOURCES.map(src => `TikTok ${src.person}`);
   } else if (CHANNEL_FILTER === 'walmart') {
-    entries = WALMART_SOURCES.map(src => `Walmart ${src.person}`);
+    entries = WALMART_SOURCES.map(src => sourceActivityLabel(src, 'Walmart'));
   } else if (CHANNEL_FILTER === 'all') {
     entries = [
       ...Object.values(SHEETS),
+      ...AMAZON_FBM_SOURCES.map(src => sourceActivityLabel(src, 'Amazon')),
       ...TIKTOK_SOURCES.map(src => `TikTok ${src.person}`),
-      ...WALMART_SOURCES.map(src => `Walmart ${src.person}`),
+      ...WALMART_SOURCES.map(src => sourceActivityLabel(src, 'Walmart')),
     ];
   } else {
     entries = Object.values(SHEETS);
@@ -4029,7 +4077,7 @@ function renderGrowthPage() {
     ${(totalTiktok30d > 0 || totalAmazonFbm30d > 0 || totalWalmart30d > 0) ? `<div class="growth-kpi-card" style="border-color:rgba(0,113,206,.32)">
       <div class="growth-kpi-label" style="color:var(--amber)">Platform Profit (30d)</div>
       <div class="growth-kpi-val" style="color:var(--amber)">${fmt$(r2(totalTiktok30d + totalAmazonFbm30d + totalWalmart30d))}</div>
-      <div class="growth-kpi-sub">eBay: ${fmt$(totalEbay30d)} · TikTok: ${fmt$(totalTiktok30d)} · Amazon FBM: ${fmt$(totalAmazonFbm30d)} · Walmart: ${fmt$(totalWalmart30d)} · combined: ${fmt$(r2(totalTiktok30d+totalEbay30d+totalAmazonFbm30d+totalWalmart30d))}</div>
+      <div class="growth-kpi-sub">eBay: ${fmt$(totalEbay30d)} · TikTok: ${fmt$(totalTiktok30d)} · Amazon: ${fmt$(totalAmazonFbm30d)} · Walmart: ${fmt$(totalWalmart30d)} · combined: ${fmt$(r2(totalTiktok30d+totalEbay30d+totalAmazonFbm30d+totalWalmart30d))}</div>
     </div>` : ''}`;
 
   // Show/hide channel toggle based on whether non-eBay data exists in RAW
@@ -4177,7 +4225,7 @@ function renderGrowthPage() {
       <div style="font-size:10px;margin-bottom:4px"><span style="color:${paceColor}">${paceNote}</span></div>
       ${hasMonthly ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px;line-height:1.7">
         <strong style="color:var(--text2)">${p.recentMoLabel} profit:</strong> ${fmt$(p.recentMoProfit)} ÷ ${p.current.toLocaleString()} listings = <strong style="color:var(--indigo)">${fmt$(p.profitPerListMo)}/listing/mo</strong>
-        ${CHANNEL_FILTER === 'all' && (p.rolling30Tiktok > 0 || p.rolling30AmazonFbm > 0 || p.rolling30Walmart > 0) ? `<br><span style="color:var(--cyan)">eBay</span> <strong style="color:var(--cyan)">${fmt$(p.rolling30Ebay)}</strong> · <span style="color:#ff6b9d">⟡ TikTok</span> <strong style="color:#ff6b9d">${fmt$(p.rolling30Tiktok)}</strong> · <span style="color:var(--amber)">Amazon FBM</span> <strong style="color:var(--amber)">${fmt$(p.rolling30AmazonFbm)}</strong> · <span style="color:#f9a825">Walmart</span> <strong style="color:#f9a825">${fmt$(p.rolling30Walmart)}</strong> <span style="opacity:.5">(last 30d)</span>` : ''}
+        ${CHANNEL_FILTER === 'all' && (p.rolling30Tiktok > 0 || p.rolling30AmazonFbm > 0 || p.rolling30Walmart > 0) ? `<br><span style="color:var(--cyan)">eBay</span> <strong style="color:var(--cyan)">${fmt$(p.rolling30Ebay)}</strong> · <span style="color:#ff6b9d">⟡ TikTok</span> <strong style="color:#ff6b9d">${fmt$(p.rolling30Tiktok)}</strong> · <span style="color:var(--amber)">Amazon</span> <strong style="color:var(--amber)">${fmt$(p.rolling30AmazonFbm)}</strong> · <span style="color:#f9a825">Walmart</span> <strong style="color:#f9a825">${fmt$(p.rolling30Walmart)}</strong> <span style="opacity:.5">(last 30d)</span>` : ''}
       </div>` : (!hasAllTime ? `<div style="font-size:9px;color:var(--muted);margin-bottom:6px;padding:5px 7px;background:var(--glass);border-radius:5px">No profit data yet — projections unavailable</div>` : '')}
       ${intelBits.length ? `<div style="font-size:9px;color:var(--muted);margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px">${intelBits.join('<span style="opacity:.4">·</span>')}</div>` : ''}
       <div style="font-size:9px;color:var(--muted);margin-bottom:2px;opacity:.6">if you keep listing at current pace →</div>
@@ -5817,6 +5865,7 @@ let _clientOnlyMode = false; // true when opened via #client= deep link — bloc
 function getClientStoreNames() {
   const names = [
     ...Object.values(SHEETS),
+    ...AMAZON_FBM_SOURCES.map(src => src.person),
     ...TIKTOK_SOURCES.map(src => src.person),
     ...WALMART_SOURCES.map(src => src.person),
   ];

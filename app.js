@@ -597,6 +597,13 @@ function fmtDayLabel(dateStr) {
   return mos[dt.getMonth()] + ' ' + dt.getDate();
 }
 
+function todayIsoLocal(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function monthLabelFromDate(dateStr, fallback = 'Amazon') {
   if (!dateStr) return fallback;
   const dt = new Date(dateStr + 'T00:00:00');
@@ -1728,14 +1735,15 @@ function renderPaceProjection() {
   const label = $('pace-window-label');
   if (!section || !card) return;
 
-  const datedRows = paceEligibleRows();
+  const todayIso = todayIsoLocal();
+  const datedRows = paceEligibleRows().filter(r => r.date <= todayIso);
   const dates = [...new Set(datedRows.map(r => r.date))].sort();
   if (!dates.length) {
     section.style.display = 'none';
     return;
   }
 
-  const windowEnd = dates[dates.length - 1];
+  const windowEnd = todayIso;
   const windowStart = addDaysIso(windowEnd, -6);
   const windowRows = datedRows.filter(r => r.date >= windowStart && r.date <= windowEnd);
   if (!windowRows.length) {
@@ -1844,7 +1852,7 @@ function renderPaceProjection() {
       <div class="pace-note">
         <div class="pace-block-title">Operator read</div>
         <p>${escapeHtml(insight)}</p>
-        <p>This ignores the month dropdown and uses the latest 7 calendar days for the selected account and channel.</p>
+        <p>This ignores the month dropdown and uses the last 7 calendar days through today for the selected account and channel.</p>
       </div>
     </div>
   `;

@@ -26,8 +26,8 @@ const TIKTOK_SOURCES = [
 
 const AMAZON_FBM_SOURCES = [
   {
-    id: '1IKET6AiIc5sWHEQG8yAuDOxVGxldC9uqzNm0hX_3LhQ',
-    tab: '2 Step Amazon Paul Shop',
+    id: '1cbwmBhLOOHygZ5dfCN1i_JHOLRLtbgaDvaOKtAp1580',
+    tab: '2 Step Amazon Proda Products.',
     person: 'Paul',
     channel: 'amazon_fbm',
     activityLabel: 'Amazon Paul',

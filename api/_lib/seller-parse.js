@@ -196,7 +196,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
   const norm = h => String(h || '').toUpperCase().replace(/\s+/g, ' ').trim();
   for (let i = 0; i < Math.min(12, values.length); i++) {
     const header = (values[i] || []).map(norm);
-    const looksLikeOrderSheet = header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('AMAZON FEE') || header.includes('WALMART FEE') || header.includes('PROFIT');
+    const looksLikeOrderSheet = header.includes('SELLER ORDER ID') || header.includes('SALE PRICE') || header.includes('AMAZON FEE') || header.includes('AMAZONFEE') || header.includes('WALMART FEE') || header.includes('PROFIT');
     const hasDateColumn = header.includes('DATE') || header[0] === '';
     if (hasDateColumn && looksLikeOrderSheet) {
       headerIdx = i;
@@ -208,8 +208,9 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
         else if (h === 'SKU') colMap.sku = idx;
         else if (h === 'PRODUCT NAME') colMap.product = idx;
         else if (h === 'BUYER ORDER ID') colMap.buyerOrderId = idx;
+        else if (h === 'BUYING ORDER ID') colMap.buyerMail = idx;
         else if (h === 'BUYER ORDER MAIL' || h === 'BUYER ORDER EMAIL') colMap.buyerMail = idx;
-        else if (h === 'BUYER ORDER NUMBER') colMap.buyerOrderNumber = idx;
+        else if (h === 'BUYER ORDER NUMBER' || h === 'BUYING ORDER NUMBER') colMap.buyerOrderNumber = idx;
         else if (h === 'TRACKING') colMap.tracking = idx;
         else if (h === 'CARRIER') colMap.carrier = idx;
         else if (h === 'CARD ENDING') colMap.cardEnding = idx;
@@ -218,7 +219,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
         else if (h === 'ADDRESS' || h === 'TO (ADDRESS 1)' || h === 'TO ADDRESS 1') colMap.address = idx;
         else if (h === 'QTY') colMap.qty = idx;
         else if (h === 'SALE PRICE') colMap.price = idx;
-        else if (h === 'AMAZON FEE' || h === 'WALMART FEE' || h === 'PLATFORM FEE') colMap.platformFee = idx;
+        else if (h === 'AMAZON FEE' || h === 'AMAZONFEE' || h === 'WALMART FEE' || h === 'PLATFORM FEE') colMap.platformFee = idx;
         else if (h === 'TOTAL RATE') colMap.payout = idx;
         else if (h.includes('LABEL')) colMap.label = idx;
         else if (h.includes('PREP')) colMap.prep = idx;

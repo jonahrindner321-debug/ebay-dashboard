@@ -1009,6 +1009,10 @@
       overflow:hidden; border-color:rgba(245,158,11,.2);
       background:linear-gradient(135deg,rgba(245,158,11,.08),rgba(6,182,212,.04)),var(--card);
     }
+    .walmart-mode .amazon-workflow-card {
+      border-color:rgba(0,113,206,.26);
+      background:linear-gradient(135deg,rgba(0,113,206,.12),rgba(249,168,37,.06)),var(--card);
+    }
     .amazon-best-hdr { margin-top:var(--gap); }
     .amazon-best-grid {
       display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:var(--gap);
@@ -1018,15 +1022,22 @@
       border-color:rgba(245,158,11,.16);
       background:linear-gradient(145deg,rgba(255,255,255,.06),rgba(255,255,255,.025));
     }
+    .walmart-mode .amazon-best-card { border-color:rgba(0,113,206,.18); }
     .amazon-best-card::after {
       content:""; position:absolute; inset:auto -20% -35% 25%; height:70px;
       background:radial-gradient(circle,rgba(245,158,11,.18),transparent 65%);
       pointer-events:none;
     }
+    .walmart-mode .amazon-best-card::after {
+      background:radial-gradient(circle,rgba(0,113,206,.20),transparent 65%);
+    }
     .amazon-best-rank {
       width:32px; height:32px; border-radius:12px; display:grid; place-items:center;
       color:#111827; background:linear-gradient(135deg,#fbbf24,#fde68a);
       font-size:12px; font-weight:950; margin-bottom:10px;
+    }
+    .walmart-mode .amazon-best-rank {
+      color:#fff; background:linear-gradient(135deg,#0071ce,#f9a825);
     }
     .amazon-best-name {
       font-size:13px; font-weight:850; color:var(--text); line-height:1.3;

@@ -634,6 +634,44 @@ function channelTitle(ch = CHANNEL_FILTER) {
   return channelMeta(ch).title;
 }
 
+function isOrderSheetChannel(ch = CHANNEL_FILTER) {
+  return ch === 'amazon_fbm' || ch === 'walmart';
+}
+
+function orderSheetMeta(ch = CHANNEL_FILTER) {
+  if (ch === 'walmart') {
+    return {
+      active: true,
+      channel: ch,
+      prefix: 'Walmart',
+      label: 'Walmart',
+      icon: '🛒',
+      title: 'Walmart Seller Center Mirror',
+      sourceName: 'Walmart order sheet',
+      sources: WALMART_SOURCES,
+      feeField: 'walmartFee',
+      payoutField: 'walmartPayout',
+      emptyNoun: 'Walmart orders',
+    };
+  }
+  if (ch === 'amazon_fbm') {
+    return {
+      active: true,
+      channel: ch,
+      prefix: 'Amazon',
+      label: 'Amazon',
+      icon: '📦',
+      title: 'Amazon Seller Central Mirror',
+      sourceName: 'Amazon order sheet',
+      sources: AMAZON_FBM_SOURCES,
+      feeField: 'amazonFee',
+      payoutField: 'amazonPayout',
+      emptyNoun: 'Amazon orders',
+    };
+  }
+  return { active: false, channel: ch, label: channelTitle(ch), sources: [] };
+}
+
 // ─── DAILY AGGREGATION ─────────────────────────────────────────────────────
 function getDailyData(data) {
   const byDate = {};
@@ -642,7 +680,7 @@ function getDailyData(data) {
     const d = byDate[r.date];
     d.revenue = r2(d.revenue + r.price);
     d.profit  = r2(d.profit  + r.profit);
-    d.payout  = r2(d.payout  + (r.amazonPayout || r.payout || 0));
+    d.payout  = r2(d.payout  + (r.amazonPayout || r.walmartPayout || r.platformPayout || r.payout || 0));
     d.cost    = r2(d.cost    + r.cost);
     d.fee     = r2(d.fee     + r.fee);
     d.sales   = r2(d.sales + (r.sales || 1));
@@ -1060,10 +1098,13 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
     const profit = parseMoney(row[colMap.profit]);
     let roi = parseMoney(row[colMap.roi]);
     if (roi !== 0 && Math.abs(roi) <= 2) roi = roi * 100;
+    const rowText = row.map(v => String(v || '').trim()).filter(Boolean).join(' ');
+    const looksLikeHelperTotalRow = !dateStr && !price && !platformFee && !profit && /\b(?:total|subtotal|summary)\b/i.test(rowText);
+    if (looksLikeHelperTotalRow) continue;
     const hasData = Boolean(dateStr || orderId || poNumber || status || price || platformFee || totalCost || profit);
     if (!hasData) continue;
     if (!dateStr && !orderId && !poNumber && !status && !price && !profit) continue;
-    const hasRealUrl = Boolean(url && !/sellercentral\.amazon\.com\/orders-v3\/order\/?$/i.test(url));
+    const hasRealUrl = Boolean(/^https?:\/\//i.test(url) && !/sellercentral\.amazon\.com\/orders-v3\/order\/?$/i.test(url));
     const hasRowIdentity = Boolean(dateStr || orderId || poNumber || buyerOrderId || buyerMail || buyerOrderNumber || hasRealUrl || tracking || carrier || cardEnding || shortCode || address || status);
     if (!hasRowIdentity) continue;
 
@@ -1468,12 +1509,12 @@ async function refreshSheetTimestamps(ids) {
 
     if (i % 3 === 2) {
       renderSheetActivity();
-      if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
+      if (isOrderSheetChannel()) renderAmazonWorkflow(filtered());
     }
   }
 
   renderSheetActivity();
-  if (CHANNEL_FILTER === 'amazon_fbm') renderAmazonWorkflow(filtered());
+  if (isOrderSheetChannel()) renderAmazonWorkflow(filtered());
 }
 
 // ─── MAIN LOAD ─────────────────────────────────────────────────────────────
@@ -1985,9 +2026,10 @@ function renderKPIs(data) {
   const cost   = data.reduce((s,r)=>s+r.cost,   0);
   const roi    = cost > 0 ? profit / cost * 100 : 0;
   const margin = rev  > 0 ? profit / rev  * 100 : 0;
-  const isAmazonMode = CHANNEL_FILTER === 'amazon_fbm';
-  const amazonFee = r2(data.reduce((s,r)=>s+(r.amazonFee || (r.channel === 'amazon_fbm' ? r.fee : 0)), 0));
-  const amazonPayout = r2(data.reduce((s,r)=>s+(r.amazonPayout || r.payout || 0), 0));
+  const isOrderSheetMode = isOrderSheetChannel();
+  const orderMeta = orderSheetMeta();
+  const amazonFee = r2(data.reduce((s,r)=>s+(r[orderMeta.feeField] || (isOrderSheetMode ? r.fee : 0)), 0));
+  const amazonPayout = r2(data.reduce((s,r)=>s+(r[orderMeta.payoutField] || r.platformPayout || r.payout || 0), 0));
   const amazonLabel = r2(data.reduce((s,r)=>s+(r.label || 0), 0));
   const amazonPrep = r2(data.reduce((s,r)=>s+(r.prep || 0), 0));
   const amazonShip = r2(data.reduce((s,r)=>s+(r.ship || 0), 0));
@@ -1995,15 +2037,15 @@ function renderKPIs(data) {
   const amazonTax = r2(data.reduce((s,r)=>s+(r.tax || 0), 0));
   const amazonOpsCost = r2(amazonUnit + amazonLabel + amazonPrep + amazonShip);
   const ebayItemCost = r2(data.filter(r=>r.channel === 'ebay').reduce((s,r)=>s+(r.cost || 0), 0));
-  const showEbayItemCost = !isAmazonMode && (CHANNEL_FILTER === 'ebay' || CHANNEL_FILTER === 'all');
-  const feeCardLabel = isAmazonMode ? '📦 Amazon Costs' : showEbayItemCost ? '🛒 Amazon Item Cost' : CHANNEL_FILTER === 'tiktok' ? '🏷️ TikTok Fees' : CHANNEL_FILTER === 'walmart' ? '🏷️ Walmart Fees' : '🏷️ Platform Fees';
-  const feeCardValue = isAmazonMode ? r2(amazonFee + amazonOpsCost + amazonTax) : showEbayItemCost ? ebayItemCost : fee;
+  const showEbayItemCost = !isOrderSheetMode && (CHANNEL_FILTER === 'ebay' || CHANNEL_FILTER === 'all');
+  const feeCardLabel = isOrderSheetMode ? `📦 ${orderMeta.label} Costs` : showEbayItemCost ? '🛒 Amazon Item Cost' : CHANNEL_FILTER === 'tiktok' ? '🏷️ TikTok Fees' : '🏷️ Platform Fees';
+  const feeCardValue = isOrderSheetMode ? r2(amazonFee + amazonOpsCost + amazonTax) : showEbayItemCost ? ebayItemCost : fee;
   const feeCardPct = rev > 0 ? feeCardValue / rev * 100 : 0;
-  const showAmazonPayout = isAmazonMode && profit === 0 && amazonPayout > 0;
+  const showAmazonPayout = isOrderSheetMode && profit === 0 && amazonPayout > 0;
   const primaryValue = showAmazonPayout ? amazonPayout : profit;
   const primaryLabel = showAmazonPayout ? '💸 Estimated Payout' : '💰 Total Profit';
   const primarySub = showAmazonPayout
-    ? `${fmtP(rev > 0 ? amazonPayout / rev * 100 : 0)} after Amazon fees · ${fmtN(data.length)} orders`
+    ? `${fmtP(rev > 0 ? amazonPayout / rev * 100 : 0)} after ${orderMeta.label} fees · ${fmtN(data.length)} orders`
     : `${fmtP(margin)} margin · ${fmtN(data.length)} sales`;
 
   const dd = getDailyData(data);
@@ -2020,7 +2062,7 @@ function renderKPIs(data) {
   const isInProgress = !completedDates.length && hasTodayData;
   const latestRows  = latestDate ? data.filter(r=>r.date===latestDate) : [];
   const todayProfit = r2(latestRows.reduce((s,r)=>s+r.profit,0));
-  const todayPayout = r2(latestRows.reduce((s,r)=>s+(r.amazonPayout || r.payout || 0),0));
+  const todayPayout = r2(latestRows.reduce((s,r)=>s+(r[orderMeta.payoutField] || r.platformPayout || r.payout || 0),0));
   const latestPrimary = showAmazonPayout ? todayPayout : todayProfit;
   const todayRev    = r2(latestRows.reduce((s,r)=>s+r.price,0));
   const latestLabel = latestDate ? fmtDayLabel(latestDate) : null;
@@ -2038,10 +2080,10 @@ function renderKPIs(data) {
   const profitSpark = profitSeries.slice(-30);
   const revSpark    = last30.map(d=>d.revenue);
   const salesSpark  = last30.map(d=>d.sales);
-  const feeCardSpark = isAmazonMode
+  const feeCardSpark = isOrderSheetMode
     ? last30.map(d => {
         const dayRows = data.filter(r => r.date === d.date);
-        return r2(dayRows.reduce((s,r)=>s+(r.amazonFee||r.fee||0)+(r.cost||0)+(r.tax||0),0));
+        return r2(dayRows.reduce((s,r)=>s+(r[orderMeta.feeField]||r.fee||0)+(r.cost||0)+(r.tax||0),0));
       })
     : showEbayItemCost
       ? last30.map(d => {
@@ -2057,7 +2099,7 @@ function renderKPIs(data) {
 
   const latestSalesCount = r2(latestRows.reduce((s,r)=>s+(r.sales || 1),0));
   const kpiSub = latestRows.length > 0
-    ? (isInProgress ? `${latestLabel} · in progress · ${fmt$(todayRev)}` : `${latestLabel} · ${fmtN(latestSalesCount)} ${isAmazonMode?'units':'sales'} · ${fmt$(todayRev)}`)
+    ? (isInProgress ? `${latestLabel} · in progress · ${fmt$(todayRev)}` : `${latestLabel} · ${fmtN(latestSalesCount)} ${isOrderSheetMode?'units':'sales'} · ${fmt$(todayRev)}`)
     : 'No data yet';
 
   const deltaHtml = momDelta !== null
@@ -2121,7 +2163,7 @@ function renderKPIs(data) {
         <div class="kpi-left">
           <div class="kpi-val" id="kv-fee">${fmt$(feeCardValue)}</div>
           <div class="kpi-sub">${fmtP(feeCardPct)} of revenue</div>
-          ${isAmazonMode ? `<div class="kpi-sub" style="font-size:10px;line-height:1.45;margin-top:2px">Amazon fees ${fmt$(amazonFee)} · unit/prep ${fmt$(r2(amazonUnit+amazonPrep))} · label/ship ${fmt$(r2(amazonLabel+amazonShip))}${amazonTax?` · tax ${fmt$(amazonTax)}`:''}</div>` : ''}
+          ${isOrderSheetMode ? `<div class="kpi-sub" style="font-size:10px;line-height:1.45;margin-top:2px">${orderMeta.label} fees ${fmt$(amazonFee)} · unit/prep ${fmt$(r2(amazonUnit+amazonPrep))} · label/ship ${fmt$(r2(amazonLabel+amazonShip))}${amazonTax?` · tax ${fmt$(amazonTax)}`:''}</div>` : ''}
           ${showEbayItemCost ? `<div class="kpi-sub" style="font-size:10px;line-height:1.45;margin-top:2px">From eBay sheet COST column · eBay fees ${fmt$(fee)} · combined ${fmt$(r2(ebayItemCost+fee))}</div>` : ''}
         </div>
         <canvas class="kpi-sparkline-wrap" id="sp-fee" width="80" height="32"></canvas>
@@ -2528,11 +2570,11 @@ function getAmazonWorkflowRows(data, search = '') {
     .sort((a,b) => (b.date || '').localeCompare(a.date || '') || String(b.orderId || '').localeCompare(String(a.orderId || '')));
 }
 
-function getAmazonWorkflowStats(rows) {
+function getAmazonWorkflowStats(rows, meta = orderSheetMeta()) {
   const units = r2(rows.reduce((s,r)=>s+(r.sales || 1),0));
   const revenue = r2(rows.reduce((s,r)=>s+r.price,0));
-  const fees = r2(rows.reduce((s,r)=>s+(r.amazonFee || r.fee || 0),0));
-  const payout = r2(rows.reduce((s,r)=>s+(r.amazonPayout || r.payout || 0),0));
+  const fees = r2(rows.reduce((s,r)=>s+(r[meta.feeField] || r.fee || 0),0));
+  const payout = r2(rows.reduce((s,r)=>s+(r[meta.payoutField] || r.platformPayout || r.payout || 0),0));
   const profit = r2(rows.reduce((s,r)=>s+(r.profit || 0),0));
   const withTracking = rows.filter(r => String(r.tracking || '').trim()).length;
   const labelShared = rows.filter(r => !String(r.tracking || '').trim() && /label\s*shared/i.test(String(r.status || ''))).length;
@@ -2545,7 +2587,7 @@ function getAmazonWorkflowStats(rows) {
     return !String(r.tracking || '').trim() && (!status || /needs?\s*tracking/i.test(status));
   }).length;
   const latestOrderDate = rows.map(r => r.date).filter(Boolean).sort().pop();
-  const lastEdit = latestModifiedForSources(AMAZON_FBM_SOURCES, 'Amazon');
+  const lastEdit = latestModifiedForSources(meta.sources || [], meta.prefix || meta.label);
   const lastEditLabel = lastEdit ? (() => {
     const hrs = (Date.now() - new Date(lastEdit).getTime()) / 3600000;
     return hrs < 1 ? 'just now' : hrs < 24 ? `${Math.floor(hrs)}h ago` : `${Math.floor(hrs / 24)}d ago`;
@@ -2553,13 +2595,13 @@ function getAmazonWorkflowStats(rows) {
   return { units, revenue, fees, payout, profit, withTracking, labelShared, inProgress, needsTracking, latestOrderDate, lastEditLabel };
 }
 
-function amazonWorkflowTableMarkup(rows) {
+function amazonWorkflowTableMarkup(rows, meta = orderSheetMeta()) {
   return `
     <div style="overflow:auto">
       <table class="amazon-order-table">
         <thead>
           <tr>
-            <th>Date</th><th>Order</th><th>Item</th><th>Status</th><th>Tracking</th><th>Units</th><th>Sale</th><th>Fee</th><th>Payout</th><th>Profit</th>
+            <th>Date</th><th>Order</th><th>Item</th><th>Status</th><th>Tracking</th><th>Units</th><th>Sale</th><th>${escHtml(meta.label)} Fee</th><th>Payout</th><th>Profit</th>
           </tr>
         </thead>
         <tbody>
@@ -2573,17 +2615,17 @@ function amazonWorkflowTableMarkup(rows) {
               <td>${r.tracking ? `<span style="color:var(--green);font-weight:700">${escHtml(r.tracking)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
               <td>${fmtN(r.sales || 1)}</td>
               <td>${fmt$(r.price)}</td>
-              <td style="color:var(--rose)">${fmt$(r.amazonFee || r.fee || 0)}</td>
-              <td style="color:var(--amber);font-weight:800">${fmt$(r.amazonPayout || r.payout || 0)}</td>
+              <td style="color:var(--rose)">${fmt$(r[meta.feeField] || r.fee || 0)}</td>
+              <td style="color:var(--amber);font-weight:800">${fmt$(r[meta.payoutField] || r.platformPayout || r.payout || 0)}</td>
               <td style="color:${r.profit > 0 ? 'var(--green)' : 'var(--muted)'}">${r.profit ? fmt$(r.profit) : 'pending'}</td>
             </tr>`;
-          }).join('') : `<tr><td colspan="10" style="text-align:center;padding:28px;color:var(--muted)">No Amazon orders match this search</td></tr>`}
+          }).join('') : `<tr><td colspan="10" style="text-align:center;padding:28px;color:var(--muted)">No ${escHtml(meta.emptyNoun || 'orders')} match this search</td></tr>`}
         </tbody>
       </table>
     </div>`;
 }
 
-function amazonBestSellersMarkup(rows) {
+function amazonBestSellersMarkup(rows, meta = orderSheetMeta()) {
   const products = {};
   rows.forEach(r => {
     const key = `${r.sku || ''}::${r.product || 'Unknown product'}`;
@@ -2591,7 +2633,7 @@ function amazonBestSellersMarkup(rows) {
     products[key].orders += 1;
     products[key].units = r2(products[key].units + (r.sales || 1));
     products[key].revenue = r2(products[key].revenue + (r.price || 0));
-    products[key].payout = r2(products[key].payout + (r.amazonPayout || r.payout || 0));
+    products[key].payout = r2(products[key].payout + (r[meta.payoutField] || r.platformPayout || r.payout || 0));
     products[key].profit = r2(products[key].profit + (r.profit || 0));
     if (String(r.tracking || '').trim()) products[key].tracked += 1;
   });
@@ -2611,26 +2653,27 @@ function amazonBestSellersMarkup(rows) {
             <span>${fmt$(p.payout)} payout</span>
           </div>
           <div class="amazon-best-foot">${p.tracked}/${p.orders} orders tracking added</div>
-        </div>`).join('') : '<div class="card amazon-best-card"><div class="amazon-best-name">No best sellers yet</div><div class="amazon-best-foot">Once Amazon rows load, product winners show here.</div></div>'}
+        </div>`).join('') : `<div class="card amazon-best-card"><div class="amazon-best-name">No best sellers yet</div><div class="amazon-best-foot">Once ${escHtml(meta.label)} rows load, product winners show here.</div></div>`}
     </div>`;
 }
 
 function renderAmazonWorkflow(data) {
   const section = $('amazon-workflow-section');
   if (!section) return;
-  if (CHANNEL_FILTER !== 'amazon_fbm') {
+  const meta = orderSheetMeta();
+  if (!meta.active) {
     section.style.display = 'none';
     return;
   }
   const search = ($('tbl-search')?.value || '').toLowerCase();
   const rows = getAmazonWorkflowRows(data, search);
-  const s = getAmazonWorkflowStats(rows);
-  const sourceSubtitle = AMAZON_FBM_SOURCES.length === 1
-    ? AMAZON_FBM_SOURCES[0].tab.trim()
-    : `${AMAZON_FBM_SOURCES.length} Amazon sheets`;
+  const s = getAmazonWorkflowStats(rows, meta);
+  const sourceSubtitle = meta.sources.length === 1
+    ? meta.sources[0].tab.trim()
+    : `${meta.sources.length} ${meta.label} sheets`;
   section.innerHTML = `
     <div class="section-hdr">
-      <span class="section-title">📦 Amazon Seller Central Mirror</span>
+      <span class="section-title">${meta.icon} ${meta.title}</span>
       <span style="font-size:11px;color:var(--muted)">${escHtml(sourceSubtitle)} · ${s.latestOrderDate ? `latest order ${fmtDayLabel(s.latestOrderDate)}` : 'waiting on rows'}</span>
     </div>
     <div class="card amazon-workflow-card">
@@ -2639,7 +2682,7 @@ function renderAmazonWorkflow(data) {
       <div class="amazon-metric"><span>Units</span><strong>${fmtN(s.units)}</strong></div>
       <div class="amazon-metric"><span>Revenue</span><strong>${fmt$(s.revenue)}</strong></div>
       <div class="amazon-metric"><span>Est. payout</span><strong>${fmt$(s.payout)}</strong></div>
-      <div class="amazon-metric"><span>Amazon fees</span><strong>${fmt$(s.fees)}</strong></div>
+      <div class="amazon-metric"><span>${escHtml(meta.label)} fees</span><strong>${fmt$(s.fees)}</strong></div>
       <div class="amazon-metric"><span>Sheet edit</span><strong>${s.lastEditLabel}</strong></div>
     </div>
     <div class="amazon-status-strip">
@@ -2648,31 +2691,32 @@ function renderAmazonWorkflow(data) {
       <span class="amazon-status warn">${s.inProgress} in progress</span>
       <span class="amazon-status risk">${s.needsTracking} need tracking</span>
     </div>
-      ${amazonWorkflowTableMarkup(rows)}
+      ${amazonWorkflowTableMarkup(rows, meta)}
     </div>
     <div class="section-hdr amazon-best-hdr">
       <span class="section-title">🏅 Best Sellers</span>
       <span style="font-size:11px;color:var(--muted)">ranked by units, then revenue</span>
     </div>
-    ${amazonBestSellersMarkup(rows)}`;
+    ${amazonBestSellersMarkup(rows, meta)}`;
   section.style.display = 'block';
 }
 
 function renderAmazonOrderMirror(data, search) {
   const title = document.querySelector('.tbl-section .section-title');
   const card = document.querySelector('.tbl-card');
-  if (title) title.textContent = '📦 Amazon Order Mirror';
+  const meta = orderSheetMeta();
+  if (title) title.textContent = `${meta.icon} ${meta.label} Order Mirror`;
   if (!card) return;
-  card.dataset.mode = 'amazon';
+  card.dataset.mode = 'order-sheet';
   const rows = getAmazonWorkflowRows(data, search);
-  const s = getAmazonWorkflowStats(rows);
+  const s = getAmazonWorkflowStats(rows, meta);
   card.innerHTML = `
     <div class="amazon-mirror-head">
       <div class="amazon-metric"><span>Orders</span><strong>${fmtN(rows.length)}</strong></div>
       <div class="amazon-metric"><span>Units</span><strong>${fmtN(s.units)}</strong></div>
       <div class="amazon-metric"><span>Revenue</span><strong>${fmt$(s.revenue)}</strong></div>
       <div class="amazon-metric"><span>Est. payout</span><strong>${fmt$(s.payout)}</strong></div>
-      <div class="amazon-metric"><span>Amazon fees</span><strong>${fmt$(s.fees)}</strong></div>
+      <div class="amazon-metric"><span>${escHtml(meta.label)} fees</span><strong>${fmt$(s.fees)}</strong></div>
       <div class="amazon-metric"><span>Last sheet edit</span><strong>${s.lastEditLabel}</strong></div>
     </div>
     <div class="amazon-status-strip">
@@ -2681,7 +2725,7 @@ function renderAmazonOrderMirror(data, search) {
       <span class="amazon-status warn">${s.inProgress} in progress</span>
       <span class="amazon-status risk">${s.needsTracking} need tracking</span>
     </div>
-    ${amazonWorkflowTableMarkup(rows)}`;
+    ${amazonWorkflowTableMarkup(rows, meta)}`;
 }
 
 function renderTable(data) {
@@ -2689,13 +2733,13 @@ function renderTable(data) {
   const title = document.querySelector('.tbl-section .section-title');
   const card = document.querySelector('.tbl-card');
   const section = document.querySelector('.tbl-section');
-  if (CHANNEL_FILTER === 'amazon_fbm') {
+  if (isOrderSheetChannel()) {
     if (section) section.style.display = 'none';
     return;
   }
   if (section) section.style.display = '';
   if (title) title.textContent = '📋 Account Summary';
-  if (card && card.dataset.mode === 'amazon') {
+  if (card && card.dataset.mode === 'order-sheet') {
     card.dataset.mode = 'account';
     card.innerHTML = accountSummaryTableMarkup();
   }
@@ -3796,7 +3840,7 @@ function setChannelFilter(ch) {
   // Swap "eBay Fees" label based on channel
   const feeLabel  = $('fee-label');
   const feeLabelP = $('fee-label-placeholder');
-  const feeTxt = ch === 'tiktok' ? '🏷️ TikTok Fees' : ch === 'amazon_fbm' ? '🏷️ Amazon Fees' : ch === 'walmart' ? '🏷️ Walmart Fees' : ch === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
+  const feeTxt = ch === 'tiktok' ? '🏷️ TikTok Fees' : isOrderSheetChannel(ch) ? `📦 ${orderSheetMeta(ch).label} Costs` : ch === 'ebay' ? '🏷️ eBay Fees' : '🏷️ Platform Fees';
   if (feeLabel)  feeLabel.textContent  = feeTxt;
   if (feeLabelP) feeLabelP.textContent = feeTxt.replace('🏷️ ','');
   // Hide listing-growth tab for channels that don't use the eBay listing tracker.

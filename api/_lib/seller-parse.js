@@ -260,9 +260,12 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
     const cardEnding = String(row[colMap.cardEnding] || '').trim();
     const shortCode = String(row[colMap.shortCode] || '').trim();
     const address = String(row[colMap.address] || '').trim();
+    const rowText = row.map(v => String(v || '').trim()).filter(Boolean).join(' ');
+    const looksLikeHelperTotalRow = !dateStr && !price && !platformFee && !profit && /\b(?:total|subtotal|summary)\b/i.test(rowText);
+    if (looksLikeHelperTotalRow) continue;
     const hasData = Boolean(dateStr || orderId || poNumber || status || price || platformFee || totalCost || profit);
     if (!hasData || (!dateStr && !orderId && !poNumber && !status && !price && !profit)) continue;
-    const hasRealUrl = Boolean(url && !/sellercentral\.amazon\.com\/orders-v3\/order\/?$/i.test(url));
+    const hasRealUrl = Boolean(/^https?:\/\//i.test(url) && !/sellercentral\.amazon\.com\/orders-v3\/order\/?$/i.test(url));
     const hasRowIdentity = Boolean(dateStr || orderId || poNumber || buyerOrderId || buyerMail || buyerOrderNumber || hasRealUrl || tracking || carrier || cardEnding || shortCode || address || status);
     if (!hasRowIdentity) continue;
     let roi = parseMoney(row[colMap.roi]);

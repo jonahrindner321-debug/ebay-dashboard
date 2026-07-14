@@ -1045,6 +1045,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
   const channel = options.channel || 'amazon_fbm';
   const platform = options.platform || (channel === 'walmart' ? 'walmart' : 'amazon');
   const source = options.source || (platform === 'walmart' ? 'Walmart Seller Order Sheet' : 'Amazon Seller Central Order Sheet');
+  const sourceTab = options.sourceTab || options.tab || '';
   const feeDisplayName = platform === 'walmart' ? 'walmartFee' : 'amazonFee';
   const dayFirstDates = options.dateOrder === 'DMY' || options.dayFirst === true;
   const norm = h => String(h || '').toUpperCase().replace(/\s+/g, ' ').trim();
@@ -1140,6 +1141,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
       channel,
       platform,
       source,
+      sourceTab,
       date: dateStr,
       _dateRaw: dateRaw,
       orderId,
@@ -1642,6 +1644,7 @@ async function loadAll(forceLive = false) {
             platform: 'amazon',
             source: 'Amazon Seller Central Order Sheet',
             dateOrder: src.dateOrder,
+            sourceTab: src.tab,
           });
           _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
           RAW.push(...parsed);
@@ -1660,6 +1663,7 @@ async function loadAll(forceLive = false) {
                 platform: 'walmart',
                 source: 'Walmart Seller Order Sheet',
                 dateOrder: src.dateOrder,
+                sourceTab: src.tab,
               })
             : parseValues(values, src.person, normSpecial(src.tab), 'walmart', currencyOptionsFor(src.person));
           _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
@@ -2624,6 +2628,68 @@ function getAmazonWorkflowStats(rows, meta = orderSheetMeta()) {
   return { units, revenue, fees, payout, profit, withTracking, labelShared, inProgress, needsTracking, latestOrderDate, lastEditLabel };
 }
 
+function marketplaceSourceLabel(tab, meta = orderSheetMeta()) {
+  const raw = String(tab || '').trim();
+  if (!raw) return `${meta.label || 'Marketplace'} orders`;
+  let label = raw;
+  if (meta.channel === 'walmart') {
+    label = label.replace(/^2\s*Step\s*Walmart\s*DT\s*Seller\s*/i, '');
+  } else if (meta.channel === 'amazon_fbm') {
+    label = label.replace(/^2\s*Step\s*Amazon\s*Proda\s*Products\s*/i, '').replace(/^with\s+/i, '');
+  }
+  label = label
+    .replace(/\bNC\b/i, 'NC')
+    .replace(/\bFL\b/i, 'FL')
+    .replace(/\bWAREHOUSE\b/ig, 'Warehouse')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return label || raw;
+}
+
+function marketplaceSourceSubtitle(rows, meta = orderSheetMeta()) {
+  const tabs = [...new Set(rows.map(r => String(r.sourceTab || '').trim()).filter(Boolean))];
+  if (tabs.length) return `${tabs.length} warehouse tab${tabs.length === 1 ? '' : 's'} loaded`;
+  const configured = (meta.sources || []).map(src => src.tab).filter(Boolean);
+  if (configured.length === 1) return configured[0].trim();
+  const patterns = (meta.sources || []).map(src => src.tabPattern).filter(Boolean);
+  if (patterns.length) return `Auto-discovering ${meta.label} order tabs`;
+  return `${meta.label} order mirror`;
+}
+
+function amazonWorkflowGroupsMarkup(rows, meta = orderSheetMeta()) {
+  if (!rows.length) {
+    return `<div class="card amazon-source-empty">No ${escHtml(meta.emptyNoun || 'orders')} match this search.</div>`;
+  }
+  const grouped = {};
+  rows.forEach(r => {
+    const key = String(r.sourceTab || '').trim() || `${meta.label} orders`;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(r);
+  });
+  const groups = Object.entries(grouped)
+    .map(([tab, groupRows]) => ({ tab, label: marketplaceSourceLabel(tab, meta), rows: groupRows, stats: getAmazonWorkflowStats(groupRows, meta) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  return `
+    <div class="amazon-source-groups">
+      ${groups.map((g, i) => `
+        <details class="amazon-source-group" ${i === 0 ? 'open' : ''}>
+          <summary>
+            <div>
+              <strong>${escHtml(g.label)}</strong>
+              <span>${fmtN(g.rows.length)} orders · ${fmtN(g.stats.units)} units · ${fmt$(g.stats.profit)} profit</span>
+            </div>
+            <div class="amazon-source-badges">
+              <span class="amazon-status ok">${g.stats.withTracking} tracking</span>
+              <span class="amazon-status warn">${g.stats.inProgress} in progress</span>
+              <span class="amazon-status risk">${g.stats.needsTracking} need tracking</span>
+            </div>
+          </summary>
+          ${amazonWorkflowTableMarkup(g.rows, meta)}
+        </details>
+      `).join('')}
+    </div>`;
+}
+
 function amazonWorkflowTableMarkup(rows, meta = orderSheetMeta()) {
   return `
     <div style="overflow:auto">
@@ -2697,9 +2763,7 @@ function renderAmazonWorkflow(data) {
   const search = ($('tbl-search')?.value || '').toLowerCase();
   const rows = getAmazonWorkflowRows(data, search);
   const s = getAmazonWorkflowStats(rows, meta);
-  const sourceSubtitle = meta.sources.length === 1
-    ? meta.sources[0].tab.trim()
-    : `${meta.sources.length} ${meta.label} sheets`;
+  const sourceSubtitle = marketplaceSourceSubtitle(rows, meta);
   section.innerHTML = `
     <div class="section-hdr">
       <span class="section-title">${meta.icon} ${meta.title}</span>
@@ -2720,13 +2784,17 @@ function renderAmazonWorkflow(data) {
       <span class="amazon-status warn">${s.inProgress} in progress</span>
       <span class="amazon-status risk">${s.needsTracking} need tracking</span>
     </div>
-      ${amazonWorkflowTableMarkup(rows, meta)}
     </div>
     <div class="section-hdr amazon-best-hdr">
       <span class="section-title">🏅 Best Sellers</span>
       <span style="font-size:11px;color:var(--muted)">ranked by units, then revenue</span>
     </div>
-    ${amazonBestSellersMarkup(rows, meta)}`;
+    ${amazonBestSellersMarkup(rows, meta)}
+    <div class="section-hdr amazon-best-hdr">
+      <span class="section-title">🧭 Warehouse Order Boards</span>
+      <span style="font-size:11px;color:var(--muted)">expand for tracking, status, address, payout, and profit</span>
+    </div>
+    ${amazonWorkflowGroupsMarkup(rows, meta)}`;
   section.style.display = 'block';
 }
 

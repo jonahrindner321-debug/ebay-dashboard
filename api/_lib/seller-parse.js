@@ -205,6 +205,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
   const channel = options.channel || 'amazon_fbm';
   const platform = options.platform || (channel === 'walmart' ? 'walmart' : 'amazon');
   const source = options.source || (platform === 'walmart' ? 'Walmart Seller Order Sheet' : 'Amazon Seller Central Order Sheet');
+  const sourceTab = options.sourceTab || options.tab || '';
   const fallbackMonth = options.fallbackMonthLabel || monthLabelFromDate(new Date().toISOString().substring(0, 10), 'Unknown');
   const feeDisplayName = platform === 'walmart' ? 'walmartFee' : 'amazonFee';
   const dayFirstDates = options.dateOrder === 'DMY' || options.dayFirst === true;
@@ -292,6 +293,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
       channel,
       platform,
       source,
+      sourceTab,
       date: dateStr,
       _dateRaw: dateRaw,
       orderId,

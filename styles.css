@@ -1050,8 +1050,46 @@
       border-radius:999px; padding:4px 7px; font-size:10px; font-weight:800; color:var(--text);
     }
     .amazon-best-foot { margin-top:11px; color:var(--muted); font-size:10px; font-weight:750; }
+    .amazon-source-empty {
+      padding:22px; color:var(--muted); text-align:center; font-weight:750;
+    }
+    .amazon-source-groups {
+      display:flex; flex-direction:column; gap:10px;
+    }
+    .amazon-source-group {
+      overflow:hidden; border:1px solid rgba(245,158,11,.17);
+      border-radius:14px; background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.025)),var(--card);
+      box-shadow:0 14px 40px rgba(0,0,0,.16);
+    }
+    .walmart-mode .amazon-source-group { border-color:rgba(0,113,206,.22); }
+    .amazon-source-group summary {
+      display:flex; align-items:center; justify-content:space-between; gap:14px;
+      padding:14px 16px; cursor:pointer; list-style:none;
+    }
+    .amazon-source-group summary::-webkit-details-marker { display:none; }
+    .amazon-source-group summary::after {
+      content:"⌄"; color:var(--muted); font-size:18px; font-weight:900;
+      transform:rotate(-90deg); transition:transform .18s ease, color .18s ease;
+    }
+    .amazon-source-group[open] summary::after {
+      transform:rotate(0deg); color:var(--text);
+    }
+    .amazon-source-group summary strong {
+      display:block; color:var(--text); font-size:14px; font-weight:950; margin-bottom:4px;
+    }
+    .amazon-source-group summary span {
+      color:var(--muted); font-size:11px; font-weight:750;
+    }
+    .amazon-source-badges {
+      display:flex; flex-wrap:wrap; gap:7px; justify-content:flex-end;
+    }
+    .amazon-source-group .amazon-order-table {
+      border-top:1px solid var(--card-border);
+    }
     @media (max-width: 900px) {
       .amazon-mirror-head { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .amazon-source-group summary { align-items:flex-start; flex-direction:column; }
+      .amazon-source-badges { justify-content:flex-start; }
     }
     .pill { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
     .pill.green  { background: rgba(16,185,129,.15);  color: var(--emerald); }

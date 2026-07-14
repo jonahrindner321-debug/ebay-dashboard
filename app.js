@@ -44,6 +44,7 @@ const WALMART_SOURCES = [
     person: 'Johna',
     channel: 'walmart',
     parser: 'order_sheet',
+    dateOrder: 'DMY',
     activityLabel: 'Walmart Johna',
   },
 ];
@@ -1033,6 +1034,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
   const platform = options.platform || (channel === 'walmart' ? 'walmart' : 'amazon');
   const source = options.source || (platform === 'walmart' ? 'Walmart Seller Order Sheet' : 'Amazon Seller Central Order Sheet');
   const feeDisplayName = platform === 'walmart' ? 'walmartFee' : 'amazonFee';
+  const dayFirstDates = options.dateOrder === 'DMY' || options.dayFirst === true;
   const norm = h => String(h || '').toUpperCase().replace(/\s+/g, ' ').trim();
   for (let i = 0; i < Math.min(12, values.length); i++) {
     const header = (values[i] || []).map(norm);
@@ -1080,7 +1082,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
   for (let i = headerIdx + 1; i < values.length; i++) {
     const row = values[i] || [];
     const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
-    const dateStr = parseDate(dateRaw, { dayFirst: true });
+    const dateStr = parseDate(dateRaw, { dayFirst: dayFirstDates });
     const orderId = String(row[colMap.orderId] || '').trim();
     const poNumber = String(row[colMap.poNumber] || '').trim();
     const url = String(row[colMap.url] || '').trim();
@@ -1626,6 +1628,7 @@ async function loadAll(forceLive = false) {
             channel: 'amazon_fbm',
             platform: 'amazon',
             source: 'Amazon Seller Central Order Sheet',
+            dateOrder: src.dateOrder,
           });
           _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };
           RAW.push(...parsed);
@@ -1643,6 +1646,7 @@ async function loadAll(forceLive = false) {
                 channel: 'walmart',
                 platform: 'walmart',
                 source: 'Walmart Seller Order Sheet',
+                dateOrder: src.dateOrder,
               })
             : parseValues(values, src.person, normSpecial(src.tab), 'walmart', currencyOptionsFor(src.person));
           _tabDataCache[cacheKey] = { records: parsed, ts: Date.now() };

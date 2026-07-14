@@ -41,6 +41,7 @@ const WALMART_SOURCES = [
     person: 'Johna',
     channel: 'walmart',
     parser: 'order_sheet',
+    dateOrder: 'DMY',
     activityLabel: 'Walmart Johna',
   },
 ];

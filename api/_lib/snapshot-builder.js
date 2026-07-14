@@ -148,6 +148,7 @@ async function buildWalmartSources({ raw, loadAudit, tabErrors, env }) {
                 channel: 'walmart',
                 platform: 'walmart',
                 source: 'Walmart Seller Order Sheet',
+                dateOrder: src.dateOrder,
               })
             : parseValues(valueRanges[idx]?.values || [], src.person, normSpecial(tab), 'walmart', currencyOptionsFor(src.person));
           raw.push(...parsed);
@@ -181,6 +182,7 @@ async function buildAmazonFbmSources({ raw, loadAudit, env }) {
         channel: 'amazon_fbm',
         platform: 'amazon',
         source: 'Amazon Seller Central Order Sheet',
+        dateOrder: src.dateOrder,
       });
       raw.push(...parsed);
       loadAudit.push({

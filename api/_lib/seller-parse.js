@@ -207,6 +207,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
   const source = options.source || (platform === 'walmart' ? 'Walmart Seller Order Sheet' : 'Amazon Seller Central Order Sheet');
   const fallbackMonth = options.fallbackMonthLabel || monthLabelFromDate(new Date().toISOString().substring(0, 10), 'Unknown');
   const feeDisplayName = platform === 'walmart' ? 'walmartFee' : 'amazonFee';
+  const dayFirstDates = options.dateOrder === 'DMY' || options.dayFirst === true;
   const norm = h => String(h || '').toUpperCase().replace(/\s+/g, ' ').trim();
   for (let i = 0; i < Math.min(12, values.length); i++) {
     const header = (values[i] || []).map(norm);
@@ -251,7 +252,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
   for (let i = headerIdx + 1; i < values.length; i++) {
     const row = values[i] || [];
     const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
-    const dateStr = parseDate(dateRaw, { dayFirst: true });
+    const dateStr = parseDate(dateRaw, { dayFirst: dayFirstDates });
     const orderId = String(row[colMap.orderId] || '').trim();
     const poNumber = String(row[colMap.poNumber] || '').trim();
     const price = parseMoney(row[colMap.price]);

@@ -86,8 +86,9 @@ const MONTH_NAME_MAP = {
 };
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-function parseDate(v) {
+function parseDate(v, options = {}) {
   if (v === null || v === undefined || v === '') return null;
+  const dayFirst = Boolean(options.dayFirst);
   if (typeof v === 'number') {
     const ms = Math.round((v - 25569) * 86400 * 1000);
     const d = new Date(ms);
@@ -95,10 +96,23 @@ function parseDate(v) {
   }
   const s = String(v).trim();
   if (!s) return null;
-  const m = s.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/);
+  let m = s.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/);
   if (m) {
     const mo = MONTH_NAME_MAP[m[1].toLowerCase()];
     if (mo) return `${m[3]}-${String(mo).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
+  }
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+  if (m) {
+    const yr = m[3].length === 2 ? `20${m[3]}` : m[3];
+    const first = Number(m[1]);
+    const second = Number(m[2]);
+    const mo = dayFirst || first > 12 ? second : first;
+    const day = dayFirst || first > 12 ? first : second;
+    if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31) {
+      return `${yr}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
   }
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d.toISOString().substring(0, 10);
@@ -237,7 +251,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
   for (let i = headerIdx + 1; i < values.length; i++) {
     const row = values[i] || [];
     const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
-    const dateStr = parseDate(dateRaw);
+    const dateStr = parseDate(dateRaw, { dayFirst: true });
     const orderId = String(row[colMap.orderId] || '').trim();
     const poNumber = String(row[colMap.poNumber] || '').trim();
     const price = parseMoney(row[colMap.price]);

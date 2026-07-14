@@ -556,8 +556,9 @@ function switchTab(tab) {
 }
 
 // ─── DATE PARSING ──────────────────────────────────────────────────────────
-function parseDate(raw) {
+function parseDate(raw, options = {}) {
   if (raw === null || raw === undefined) return null;
+  const dayFirst = Boolean(options.dayFirst);
   const num = parseFloat(raw);
   if (!isNaN(num) && num > 40000 && num < 55000) {
     const dt = new Date(Math.round((num - 25569) * 86400 * 1000));
@@ -572,7 +573,13 @@ function parseDate(raw) {
   let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if (m) { const yr = m[3].length===2?'20'+m[3]:m[3]; return `${yr}-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`; }
+  if (m) {
+    const yr = m[3].length===2?'20'+m[3]:m[3];
+    const first = Number(m[1]), second = Number(m[2]);
+    const mo = dayFirst || first > 12 ? second : first;
+    const day = dayFirst || first > 12 ? first : second;
+    if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31) return `${yr}-${String(mo).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  }
   m = s.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,})[-\/\s](\d{2,4})$/);
   if (m) { const mo = MO[m[2].toLowerCase().substring(0,3)]; if (mo) { const yr=m[3].length===2?'20'+m[3]:m[3]; return `${yr}-${String(mo).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`; } }
   m = s.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,})$/);
@@ -580,7 +587,12 @@ function parseDate(raw) {
   m = s.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{2,4})$/);
   if (m) { const mo = MO[m[1].toLowerCase().substring(0,3)]; if (mo) { const yr=m[3].length===2?'20'+m[3]:m[3]; return `${yr}-${String(mo).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`; } }
   m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (m) return `${m[3]}-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`;
+  if (m) {
+    const first = Number(m[1]), second = Number(m[2]);
+    const mo = dayFirst || first > 12 ? second : first;
+    const day = dayFirst || first > 12 ? first : second;
+    if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31) return `${m[3]}-${String(mo).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  }
   try {
     const dt = new Date(s);
     if (!isNaN(dt.getTime())) {
@@ -1068,7 +1080,7 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
   for (let i = headerIdx + 1; i < values.length; i++) {
     const row = values[i] || [];
     const dateRaw = colMap.date !== undefined ? row[colMap.date] : null;
-    const dateStr = parseDate(dateRaw);
+    const dateStr = parseDate(dateRaw, { dayFirst: true });
     const orderId = String(row[colMap.orderId] || '').trim();
     const poNumber = String(row[colMap.poNumber] || '').trim();
     const url = String(row[colMap.url] || '').trim();

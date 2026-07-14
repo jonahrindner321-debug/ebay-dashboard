@@ -22,7 +22,7 @@ const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i
 const AMAZON_FBM_SOURCES = [
   {
     id: '1cbwmBhLOOHygZ5dfCN1i_JHOLRLtbgaDvaOKtAp1580',
-    tab: '2 Step Amazon Proda Products.',
+    tabPattern: '^2 Step Amazon Proda Products',
     person: 'Paul',
     channel: 'amazon_fbm',
     activityLabel: 'Amazon Paul',
@@ -40,7 +40,7 @@ const TIKTOK_SOURCES = [
 const WALMART_SOURCES = [
   {
     id: '1IKET6AiIc5sWHEQG8yAuDOxVGxldC9uqzNm0hX_3LhQ',
-    tab: '2 Step Walmart DT Seller ',
+    tabPattern: '^2 Step Walmart DT Seller',
     person: 'Johna',
     channel: 'walmart',
     parser: 'order_sheet',
@@ -63,6 +63,15 @@ const BANNED_STORES = new Set(['Levi']);
 
 function sourceActivityLabel(src, prefix) {
   return src.activityLabel || `${prefix} ${src.person}`;
+}
+
+function sourceTabsFromList(src, tabs) {
+  if (src.tab) return [src.tab];
+  const pattern = src.tabPattern ? new RegExp(src.tabPattern, 'i') : null;
+  return (tabs || []).filter(tab => {
+    if (!tab || /^_meta$/i.test(tab) || SKIP_TABS.test(tab)) return false;
+    return pattern ? pattern.test(tab) : true;
+  });
 }
 
 function latestModifiedForSources(sources, prefix) {
@@ -901,7 +910,10 @@ async function googleFetchUnthrottled(type, params) {
 async function _googleDirect(type, { id, tab }) {
   let url;
   if (type === 'tabs')   url = `https://sheets.googleapis.com/v4/spreadsheets/${id}?key=${API_KEY}&fields=sheets.properties(title,sheetType)`;
-  if (type === 'values') url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(tab)}!A:AZ?key=${API_KEY}`;
+  if (type === 'values') {
+    const range = `'${String(tab).replace(/'/g, "''")}'!A:AZ`;
+    url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(range)}?key=${API_KEY}`;
+  }
   if (type === 'drive')  url = `https://www.googleapis.com/drive/v3/files/${id}?key=${API_KEY}&fields=createdTime,modifiedTime`;
   if (type === 'meta')   url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/_meta!A1?key=${API_KEY}`;
   return apiFetch(url);
@@ -1575,18 +1587,19 @@ async function loadAll(forceLive = false) {
   for (let i = 0; i < WALMART_SOURCES.length; i++) {
     const src = WALMART_SOURCES[i];
     if (ids.length || TIKTOK_SOURCES.length || i > 0) await delay(50);
-    const list = src.tab
-      ? [src.tab]
-      : await getDataTabs(src.id).catch(e => { tabErrors.push({ id: src.id, e: e.message, sourceType: 'walmart' }); return []; });
-    list
-      .filter(tab => tab && !/^_meta$/i.test(tab) && !SKIP_TABS.test(tab))
+    const list = await getDataTabs(src.id).catch(e => { tabErrors.push({ id: src.id, e: e.message, sourceType: 'walmart' }); return []; });
+    sourceTabsFromList(src, list)
       .forEach(tab => allSources.push({ ...src, tab, sourceType: 'walmart' }));
     _introSetProgress(ids.length + TIKTOK_SOURCES.length + i + 1, discoverJobs, `${ids.length} eBay stores · ${TIKTOK_SOURCES.length} TikTok · ${i + 1} Walmart source${i ? 's' : ''}`);
   }
-  AMAZON_FBM_SOURCES.forEach((src, idx) => {
-    allSources.push({ ...src, sourceType: 'amazon_fbm' });
+  for (let idx = 0; idx < AMAZON_FBM_SOURCES.length; idx++) {
+    const src = AMAZON_FBM_SOURCES[idx];
+    if (ids.length || TIKTOK_SOURCES.length || WALMART_SOURCES.length || idx > 0) await delay(50);
+    const list = await getDataTabs(src.id).catch(e => { tabErrors.push({ id: src.id, e: e.message, sourceType: 'amazon_fbm' }); return []; });
+    sourceTabsFromList(src, list)
+      .forEach(tab => allSources.push({ ...src, tab, sourceType: 'amazon_fbm' }));
     _introSetProgress(ids.length + TIKTOK_SOURCES.length + WALMART_SOURCES.length + idx + 1, discoverJobs, `${ids.length} eBay stores · ${TIKTOK_SOURCES.length} TikTok · ${WALMART_SOURCES.length} Walmart · ${idx + 1} Amazon source${idx ? 's' : ''}`);
-  });
+  }
   allSources = prioritizeLoadSources(allSources);
 
   loadListingTracker();

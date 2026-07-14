@@ -31,6 +31,15 @@ async function getTabs(id, env) {
     .map(sheet => sheet.properties.title);
 }
 
+function sourceTabsFromList(src, tabs) {
+  if (src.tab) return [src.tab];
+  const pattern = src.tabPattern ? new RegExp(src.tabPattern, 'i') : null;
+  return tabs.filter(tab => {
+    if (!tab || SKIP_SOURCE_TABS.test(tab) || SKIP_DATA_TABS.test(tab)) return false;
+    return pattern ? pattern.test(tab) : true;
+  });
+}
+
 async function batchTabValues(id, tabs, env) {
   if (!tabs.length) return [];
   const valueRanges = await batchGetValues(id, tabs.map(tab => sheetRange(tab, 'A:AZ')), { env });
@@ -136,9 +145,7 @@ async function buildWalmartSources({ raw, loadAudit, tabErrors, env }) {
   for (const src of WALMART_SOURCES) {
     await sleep(REQUEST_GAP_MS);
     try {
-      const tabs = src.tab
-        ? [src.tab]
-        : (await getTabs(src.id, env)).filter(tab => !SKIP_SOURCE_TABS.test(tab) && !SKIP_DATA_TABS.test(tab));
+      const tabs = sourceTabsFromList(src, await getTabs(src.id, env));
       sourceCount += tabs.length;
       const valueRanges = await batchTabValues(src.id, tabs, env);
       tabs.forEach((tab, idx) => {
@@ -175,26 +182,33 @@ async function buildAmazonFbmSources({ raw, loadAudit, env }) {
   let sourceCount = 0;
   for (const src of AMAZON_FBM_SOURCES) {
     await sleep(REQUEST_GAP_MS);
-    sourceCount += 1;
     try {
-      const data = await getValues(src.id, sheetRange(src.tab, 'A:AZ'), { env });
-      const parsed = parseAmazonFbmValues(data.values || [], src.person, {
-        channel: 'amazon_fbm',
-        platform: 'amazon',
-        source: 'Amazon Seller Central Order Sheet',
-        dateOrder: src.dateOrder,
-      });
-      raw.push(...parsed);
-      loadAudit.push({
-        person: src.person,
-        tab: `Amazon / ${src.tab}`,
-        rows: parsed.length,
-        profit: r2(parsed.reduce((sum, record) => sum + record.profit, 0)),
-        status: parsed.length ? 'ok' : 'skipped',
-        channel: 'amazon_fbm',
+      const tabs = sourceTabsFromList(src, await getTabs(src.id, env));
+      sourceCount += tabs.length;
+      const valueRanges = await batchTabValues(src.id, tabs, env);
+      tabs.forEach((tab, idx) => {
+        try {
+          const parsed = parseAmazonFbmValues(valueRanges[idx]?.values || [], src.person, {
+            channel: 'amazon_fbm',
+            platform: 'amazon',
+            source: 'Amazon Seller Central Order Sheet',
+            dateOrder: src.dateOrder,
+          });
+          raw.push(...parsed);
+          loadAudit.push({
+            person: src.person,
+            tab: `Amazon / ${tab}`,
+            rows: parsed.length,
+            profit: r2(parsed.reduce((sum, record) => sum + record.profit, 0)),
+            status: parsed.length ? 'ok' : 'skipped',
+            channel: 'amazon_fbm',
+          });
+        } catch (e) {
+          loadAudit.push({ person: src.person, tab: `Amazon / ${tab}`, rows: 0, profit: 0, status: 'error', err: e.message, channel: 'amazon_fbm' });
+        }
       });
     } catch (e) {
-      loadAudit.push({ person: src.person, tab: `Amazon / ${src.tab}`, rows: 0, profit: 0, status: 'error', err: e.message, channel: 'amazon_fbm' });
+      loadAudit.push({ person: src.person, tab: `Amazon / ${src.tab || src.tabPattern || src.id}`, rows: 0, profit: 0, status: 'error', err: e.message, channel: 'amazon_fbm' });
     }
   }
   return sourceCount;

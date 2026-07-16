@@ -321,6 +321,16 @@ function splitOwnerLabel(split) {
   return split.ownerLabel || `${split.storeOwnerPct || split.ownerPct || 0}%`;
 }
 
+function ownedCostClass(person) {
+  if (OWNED_STORES.includes(person)) return 'owned';
+  if (JACOB_STORES.includes(person)) return 'nameFee';
+  return null;
+}
+
+function ownedCostLabel(person) {
+  return ownedCostClass(person) === 'owned' ? 'Owned' : 'Name fee';
+}
+
 // ─── STATE ─────────────────────────────────────────────────────────────────
 let RAW = [];
 let CHARTS = {};
@@ -1763,6 +1773,7 @@ function applyFilters() {
   renderAmazonWorkflow(d);
   renderSheetActivity();
   renderSplitSummary(d);
+  renderOwnedAmazonProductCost(d);
   renderGoalTracker(d);
   renderKPIs(d);
   renderRecords(d);
@@ -2048,6 +2059,138 @@ function renderSplitSummary(data) {
       <div class="split-sub">Paid to ${byPerson.filter(x=>x.split.storeOwner>0).length} store owners</div>
       ${projHtml(projOwners, 'var(--yellow)')}
       <div class="split-rows">${ownerRows || '<span style="color:var(--muted);font-size:11px">No partner stores in selection</span>'}</div>
+    </div>`;
+}
+
+// ─── OWNED / NAME-FEE AMAZON PRODUCT COST ─────────────────────────────────
+function renderOwnedAmazonProductCost(data) {
+  const section = $('owned-cost-section');
+  const panel = $('owned-cost-panel');
+  const sub = $('owned-cost-sub');
+  if (!section || !panel) return;
+
+  const rows = data.filter(r => {
+    const costClass = ownedCostClass(r.person);
+    return r.channel === 'ebay' && costClass && Number(r.cost || 0) > 0;
+  });
+
+  if (!rows.length || (CHANNEL_FILTER !== 'all' && CHANNEL_FILTER !== 'ebay')) {
+    section.style.display = 'none';
+    panel.innerHTML = '';
+    if (sub) sub.textContent = '';
+    return;
+  }
+
+  const totalCost = r2(rows.reduce((s, r) => s + (r.cost || 0), 0));
+  const totalProfit = r2(rows.reduce((s, r) => s + (r.profit || 0), 0));
+  const totalRevenue = r2(rows.reduce((s, r) => s + (r.price || 0), 0));
+  const ownedCost = r2(rows.filter(r => ownedCostClass(r.person) === 'owned').reduce((s, r) => s + (r.cost || 0), 0));
+  const nameFeeCost = r2(rows.filter(r => ownedCostClass(r.person) === 'nameFee').reduce((s, r) => s + (r.cost || 0), 0));
+  const monthMap = {};
+  rows.forEach(r => {
+    const month = normSpecial(r.month || 'Unknown');
+    if (!monthMap[month]) monthMap[month] = [];
+    monthMap[month].push(r);
+  });
+  const months = Object.keys(monthMap).sort((a, b) => monthIndex(a) - monthIndex(b));
+  const monthRows = months.map(month => {
+    const mr = monthMap[month] || [];
+    const accountMap = {};
+    mr.forEach(r => {
+      if (!accountMap[r.person]) {
+        accountMap[r.person] = {
+          person: r.person,
+          type: ownedCostClass(r.person),
+          cost: 0,
+          revenue: 0,
+          profit: 0,
+          sales: 0,
+        };
+      }
+      accountMap[r.person].cost = r2(accountMap[r.person].cost + (r.cost || 0));
+      accountMap[r.person].revenue = r2(accountMap[r.person].revenue + (r.price || 0));
+      accountMap[r.person].profit = r2(accountMap[r.person].profit + (r.profit || 0));
+      accountMap[r.person].sales += 1;
+    });
+    const allAccounts = Object.values(accountMap).sort((a, b) => b.cost - a.cost);
+    const cost = r2(mr.reduce((s, r) => s + (r.cost || 0), 0));
+    const revenue = r2(mr.reduce((s, r) => s + (r.price || 0), 0));
+    const profit = r2(mr.reduce((s, r) => s + (r.profit || 0), 0));
+    const owned = r2(mr.filter(r => ownedCostClass(r.person) === 'owned').reduce((s, r) => s + (r.cost || 0), 0));
+    const nameFee = r2(mr.filter(r => ownedCostClass(r.person) === 'nameFee').reduce((s, r) => s + (r.cost || 0), 0));
+    return { month, cost, revenue, profit, owned, nameFee, sales: mr.length, accounts: allAccounts };
+  });
+
+  const maxCost = Math.max(...monthRows.map(m => m.cost), 1);
+  const latest = monthRows[monthRows.length - 1];
+  const costRate = totalRevenue > 0 ? totalCost / totalRevenue * 100 : 0;
+  const accountCount = new Set(rows.map(r => r.person)).size;
+  const selectedPerson = $('filter-person')?.value || 'all';
+  const selectedMonth = $('filter-month')?.value || 'all';
+  const scope = [
+    selectedPerson !== 'all' ? selectedPerson : `${accountCount} stores`,
+    selectedMonth !== 'all' ? selectedMonth : `${months.length} months`,
+  ].join(' · ');
+
+  if (sub) sub.textContent = `${scope} · eBay COST column only`;
+
+  const monthHtml = monthRows.map((m, idx) => {
+    const open = idx === monthRows.length - 1 ? ' open' : '';
+    const accountHtml = m.accounts.map(a => `
+      <div class="owned-cost-account">
+        <div>
+          <strong>${escapeHtml(a.person)}</strong>
+          <span class="owned-cost-badge ${a.type}">${ownedCostLabel(a.person)}</span>
+        </div>
+        <div class="owned-cost-account-stats">
+          <span>${fmt$(a.cost)} cost</span>
+          <span>${fmt$(a.profit)} profit</span>
+          <span>${fmtN(a.sales)} sales</span>
+        </div>
+      </div>
+    `).join('');
+    return `
+      <details class="owned-cost-month"${open}>
+        <summary>
+          <div class="owned-cost-month-main">
+            <strong>${escapeHtml(m.month)}</strong>
+            <span>${fmtN(m.sales)} sales · ${fmt$(m.profit)} profit</span>
+          </div>
+          <div class="owned-cost-month-bar" aria-hidden="true"><i style="width:${Math.max(4, Math.round(m.cost / maxCost * 100))}%"></i></div>
+          <div class="owned-cost-month-cost">${fmt$(m.cost)}</div>
+        </summary>
+        <div class="owned-cost-month-body">
+          <div class="owned-cost-split">
+            <div><span>Owned stores</span><strong>${fmt$(m.owned)}</strong></div>
+            <div><span>Name-fee stores</span><strong>${fmt$(m.nameFee)}</strong></div>
+            <div><span>Cost / revenue</span><strong>${fmtP(m.revenue > 0 ? m.cost / m.revenue * 100 : 0)}</strong></div>
+          </div>
+          <div class="owned-cost-accounts">${accountHtml}</div>
+        </div>
+      </details>`;
+  }).join('');
+
+  section.style.display = 'block';
+  panel.innerHTML = `
+    <div class="card owned-cost-card">
+      <div class="owned-cost-hero">
+        <div>
+          <div class="owned-cost-label">Amazon product cash out</div>
+          <div class="owned-cost-value">${fmt$(totalCost)}</div>
+          <div class="owned-cost-note">For owned + name-fee eBay stores in the current filters.</div>
+        </div>
+        <div class="owned-cost-stats">
+          <div><span>Owned</span><strong>${fmt$(ownedCost)}</strong></div>
+          <div><span>Name fees</span><strong>${fmt$(nameFeeCost)}</strong></div>
+          <div><span>Cost / revenue</span><strong>${fmtP(costRate)}</strong></div>
+          <div><span>Profit</span><strong>${fmt$(totalProfit)}</strong></div>
+        </div>
+      </div>
+      <div class="owned-cost-current">
+        <span>${latest ? `Latest month: ${escapeHtml(latest.month)}` : 'Latest month'}</span>
+        <strong>${latest ? fmt$(latest.cost) : '—'}</strong>
+      </div>
+      <div class="owned-cost-months">${monthHtml}</div>
     </div>`;
 }
 

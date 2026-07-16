@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1"
     integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
     crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260714-marketplace-boards" />
+  <link rel="stylesheet" href="./styles.css?v=20260716-owned-costs" />
 </head>
 <body>
 
@@ -49,7 +49,7 @@
     <div id="intro-prog-bar"><div id="intro-prog-fill"></div></div>
     <div id="intro-prog-label"></div>
   </div>
-    <div id="intro-version">v2026.07.14-MKBOARDS</div>
+    <div id="intro-version">v2026.07.16-COSTS</div>
   </div>
   <div id="intro-dots">
     <div class="intro-dot"></div>
@@ -298,6 +298,15 @@
   <div class="split-section" id="split-section" style="display:none">
     <div class="section-hdr"><span class="section-title">💸 Profit Distribution</span></div>
     <div class="split-grid" id="split-grid"></div>
+  </div>
+
+  <!-- Owned / Name-Fee Amazon Product Cost -->
+  <div class="owned-cost-section" id="owned-cost-section" style="display:none">
+    <div class="section-hdr">
+      <span class="section-title">🛒 Owned + Name-Fee Amazon Cost</span>
+      <span id="owned-cost-sub" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div id="owned-cost-panel"></div>
   </div>
 
   <!-- Daily Take-Home -->
@@ -833,6 +842,6 @@
 <!-- Mr. Six (party mode) -->
 <div class="mr-six" id="mr-six">👴</div>
 
-<script src="./app.js?v=20260714-marketplace-boards"></script>
+<script src="./app.js?v=20260716-owned-costs"></script>
 </body>
 </html>

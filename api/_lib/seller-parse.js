@@ -126,7 +126,7 @@ function monthLabelFromDate(dateStr, fallback = 'Unknown') {
 }
 
 function normSpecial(tab) {
-  const s = String(tab || '').replace(/_/g, ' ');
+  const s = String(tab || '').replace(/[_-]/g, ' ');
   const m = s.match(/([A-Za-z]+)\s*(\d{4}|\d{2})/);
   if (!m) return s.trim();
   const mo = m[1].slice(0, 3);

@@ -15,6 +15,7 @@ const SHEETS = {
   '14yqVyVqwAfHdSN2KGI6piacNaK5EhwtS8xPvCI_EVVE': 'Elle',
   '1Izvdk9QA4zADd3j1IzMzGWzSqAUefBg1CuLUwaK6Ego': 'Kevin',
   '1vErWSypjyWms11NL3SfOm24lr52Lp_XS1KfJxchrwik': 'Rachel',
+  '1SSwqVQNlD1CraGke5HMP90wDeOKplJbwHn0P7_2O1Bg': 'Danah Lee',
 };
 
 const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i;
@@ -108,6 +109,8 @@ const LISTING_NAME_MAP = {
   'Elle':         'Elle',
   'Kevin':        'Kevin',
   'Rachel':       'Rachel',
+  'Danah':        'Danah Lee',
+  'Danah Lee':    'Danah Lee',
 };
 let LISTING_DATA = { summary: [], todayRow: null, dailyColNames: [] };
 let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok' | 'amazon_fbm' | 'walmart'
@@ -264,7 +267,7 @@ const COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06
 // Owned stores → J&R keep 60% of profit
 const OWNED_STORES = ['Russell', 'Russ LLC', 'BANOS', 'Johna', 'Dolo LLC'];
 // Name-fee stores → J&R 50%, Danian 40%, store name fee 10%
-const NAME_FEE_STORES = ['Jacob', 'Rachel', 'Paul', 'Elle', 'Danah'];
+const NAME_FEE_STORES = ['Jacob', 'Rachel', 'Paul', 'Elle', 'Danah', 'Danah Lee'];
 const SPECIAL_STORE_SPLITS = {
   __premium_partner__: {
     type: 'premium_partner',

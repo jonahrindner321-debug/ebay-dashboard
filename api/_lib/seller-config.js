@@ -14,6 +14,7 @@ const SHEETS = {
   '14yqVyVqwAfHdSN2KGI6piacNaK5EhwtS8xPvCI_EVVE': 'Elle',
   '1Izvdk9QA4zADd3j1IzMzGWzSqAUefBg1CuLUwaK6Ego': 'Kevin',
   '1vErWSypjyWms11NL3SfOm24lr52Lp_XS1KfJxchrwik': 'Rachel',
+  '1SSwqVQNlD1CraGke5HMP90wDeOKplJbwHn0P7_2O1Bg': 'Danah Lee',
 };
 
 const TIKTOK_SOURCES = [

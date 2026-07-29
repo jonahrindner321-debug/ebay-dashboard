@@ -263,8 +263,8 @@ const COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06
 // ─── PROFIT SPLIT CONFIG ───────────────────────────────────────────────────
 // Owned stores → J&R keep 60% of profit
 const OWNED_STORES = ['Russell', 'Russ LLC', 'BANOS', 'Johna', 'Dolo LLC'];
-// Name-fee owned stores → J&R 50%, Danian 40%, store name fee 10%
-const JACOB_STORES = ['Jacob', 'Rachel', 'Paul'];
+// Name-fee stores → J&R 50%, Danian 40%, store name fee 10%
+const NAME_FEE_STORES = ['Jacob', 'Rachel', 'Paul', 'Elle', 'Danah'];
 const SPECIAL_STORE_SPLITS = {
   __premium_partner__: {
     type: 'premium_partner',
@@ -304,9 +304,9 @@ function getSplit(person, profit) {
   if (OWNED_STORES.includes(person)) {
     // J&R own the store: J&R 60%, Danian 40%
     return buildSplit('owned', profit, 0, 40, 60, { label: 'Owner', className: 'owned', ownerLabel: '— owner', ownerNote: 'J&R own this store' });
-  } else if (JACOB_STORES.includes(person)) {
-    // J&R get 60% but give Jacob 10% name fee → J&R net 50%, Jacob 10%, Danian 40%
-    return buildSplit('jacob', profit, 10, 40, 50, { label: '50/50', className: 'jacob', ownerLabel: '10% (fee)', ownerNote: 'name fee' });
+  } else if (NAME_FEE_STORES.includes(person)) {
+    // J&R get 60% but give 10% as a store name fee → J&R net 50%, name fee 10%, Danian 40%
+    return buildSplit('jacob', profit, 10, 40, 50, { label: 'Name fee', className: 'jacob', ownerLabel: '10% (fee)', ownerNote: 'name fee' });
   } else {
     // Partner stores: owner 50%, Danian 30%, J&R 20%
     return buildSplit('partner', profit, 50, 30, 20, { label: 'Partner', className: 'partner', ownerLabel: '50%' });
@@ -323,7 +323,7 @@ function splitOwnerLabel(split) {
 
 function ownedCostClass(person) {
   if (OWNED_STORES.includes(person)) return 'owned';
-  if (JACOB_STORES.includes(person)) return 'nameFee';
+  if (NAME_FEE_STORES.includes(person)) return 'nameFee';
   return null;
 }
 

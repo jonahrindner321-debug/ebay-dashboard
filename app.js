@@ -23,7 +23,7 @@ const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i
 const AMAZON_FBM_SOURCES = [
   {
     id: '1cbwmBhLOOHygZ5dfCN1i_JHOLRLtbgaDvaOKtAp1580',
-    tabPattern: '^2 Step Amazon Proda Products',
+    tabPattern: 'warehouse',
     person: 'Paul',
     channel: 'amazon_fbm',
     activityLabel: 'Amazon Paul',
@@ -41,7 +41,7 @@ const TIKTOK_SOURCES = [
 const WALMART_SOURCES = [
   {
     id: '1IKET6AiIc5sWHEQG8yAuDOxVGxldC9uqzNm0hX_3LhQ',
-    tabPattern: '^2 Step Walmart DT Seller',
+    tabPattern: 'warehouse',
     person: 'Johna',
     channel: 'walmart',
     parser: 'order_sheet',

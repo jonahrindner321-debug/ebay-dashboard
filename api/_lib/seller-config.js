@@ -27,8 +27,8 @@ const TIKTOK_SOURCES = [
 
 const AMAZON_FBM_SOURCES = [
   {
-    id: '1cbwmBhLOOHygZ5dfCN1i_JHOLRLtbgaDvaOKtAp1580',
-    tabPattern: 'warehouse',
+    id: '1CEzsQy7KAoQpGoitj6P8s0fyydGKj9IBpGzQZKQMnK4',
+    tabPattern: 'warehouse|^(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\\b',
     person: 'Paul',
     channel: 'amazon_fbm',
     activityLabel: 'Amazon Paul',
@@ -37,12 +37,12 @@ const AMAZON_FBM_SOURCES = [
 
 const WALMART_SOURCES = [
   {
-    id: '1IKET6AiIc5sWHEQG8yAuDOxVGxldC9uqzNm0hX_3LhQ',
-    tabPattern: 'warehouse',
+    id: '1beRaDg3a0v086fR1WFJKCzvI57UYxAggGOj5niwrLpc',
+    tabPattern: 'warehouse|^(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\\b',
     person: 'Johna',
     channel: 'walmart',
     parser: 'order_sheet',
-    dateOrder: 'DMY',
+    dateOrder: 'MDY',
     activityLabel: 'Walmart Johna',
   },
 ];

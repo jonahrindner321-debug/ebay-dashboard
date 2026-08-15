@@ -15,6 +15,9 @@ const SHEETS = {
   '1Izvdk9QA4zADd3j1IzMzGWzSqAUefBg1CuLUwaK6Ego': 'Kevin',
   '1vErWSypjyWms11NL3SfOm24lr52Lp_XS1KfJxchrwik': 'Rachel',
   '1SSwqVQNlD1CraGke5HMP90wDeOKplJbwHn0P7_2O1Bg': 'Danah Lee',
+  '1XLZ3UZ7opj7ljQp0f-yxokUhMDAcPLHqqQ0YahR__dQ': 'Happy Shop',
+  '1SZ22rFIfIDdqzKwPDHIvr9Mf3fHJuzxBrtLijAGYIU0': 'Special Shop',
+  '1frDfOdZ8a5ZxDXoICemwuZNvcpEBhyxm8mUioagTijQ': 'Best Shop',
 };
 
 const TIKTOK_SOURCES = [

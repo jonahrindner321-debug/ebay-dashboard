@@ -16,6 +16,9 @@ const SHEETS = {
   '1Izvdk9QA4zADd3j1IzMzGWzSqAUefBg1CuLUwaK6Ego': 'Kevin',
   '1vErWSypjyWms11NL3SfOm24lr52Lp_XS1KfJxchrwik': 'Rachel',
   '1SSwqVQNlD1CraGke5HMP90wDeOKplJbwHn0P7_2O1Bg': 'Danah Lee',
+  '1XLZ3UZ7opj7ljQp0f-yxokUhMDAcPLHqqQ0YahR__dQ': 'Happy Shop',
+  '1SZ22rFIfIDdqzKwPDHIvr9Mf3fHJuzxBrtLijAGYIU0': 'Special Shop',
+  '1frDfOdZ8a5ZxDXoICemwuZNvcpEBhyxm8mUioagTijQ': 'Best Shop',
 };
 
 const SKIP_TABS = /expense|gift|giftcard|template|summary|overview|instruction/i;
@@ -111,6 +114,9 @@ const LISTING_NAME_MAP = {
   'Rachel':       'Rachel',
   'Danah':        'Danah Lee',
   'Danah Lee':    'Danah Lee',
+  'Happy Shop':   'Happy Shop',
+  'Special Shop': 'Special Shop',
+  'Best Shop':    'Best Shop',
 };
 let LISTING_DATA = { summary: [], todayRow: null, dailyColNames: [] };
 let CHANNEL_FILTER = 'all'; // 'all' | 'ebay' | 'tiktok' | 'amazon_fbm' | 'walmart'
@@ -265,7 +271,7 @@ const COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06
 
 // ─── PROFIT SPLIT CONFIG ───────────────────────────────────────────────────
 // Owned stores → J&R keep 60% of profit
-const OWNED_STORES = ['Russell', 'Russ LLC', 'BANOS', 'Johna', 'Dolo LLC'];
+const OWNED_STORES = ['Russell', 'Russ LLC', 'BANOS', 'Johna', 'Dolo LLC', 'Happy Shop', 'Special Shop', 'Best Shop'];
 // Name-fee stores → J&R 50%, Danian 40%, store name fee 10%
 const NAME_FEE_STORES = ['Jacob', 'Rachel', 'Paul', 'Elle', 'Danah', 'Danah Lee'];
 const SPECIAL_STORE_SPLITS = {

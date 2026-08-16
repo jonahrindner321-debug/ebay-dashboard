@@ -2223,6 +2223,40 @@ function payoutMovementItems(current, previous) {
   return items.slice(0, 5);
 }
 
+function compactPayoutNames(entries) {
+  return entries.map(e => e.person).sort((a, b) => a.localeCompare(b)).join(', ');
+}
+
+function payoutStoreKind(person) {
+  const split = getSplit(person, 1);
+  if (split.type === 'owned') {
+    return { key: 'owned', lane: 'funded', label: 'Owned', short: 'Owned', className: 'owned', rank: 0 };
+  }
+  if (split.type === 'jacob') {
+    return { key: 'nameFee', lane: 'funded', label: 'Name fee', short: 'Name fee', className: 'name-fee', rank: 0 };
+  }
+  return { key: 'partner', lane: 'partner', label: 'Client / partner', short: 'Client', className: 'partner', rank: 2 };
+}
+
+function isFundedPayoutStore(person) {
+  return payoutStoreKind(person).lane === 'funded';
+}
+
+function groupedPayoutNames(entries) {
+  const groups = [
+    { key: 'owned', label: 'Owned' },
+    { key: 'nameFee', label: 'Name-fee' },
+    { key: 'partner', label: 'Client / partner' },
+  ];
+  return groups
+    .map(group => {
+      const names = entries.filter(e => payoutStoreKind(e.person).key === group.key);
+      return names.length ? `${group.label}: ${compactPayoutNames(names)}` : '';
+    })
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function readPayoutObservations() {
   try {
     return JSON.parse(localStorage.getItem(PAYOUT_OBSERVATION_KEY) || '{}') || {};
@@ -2263,20 +2297,20 @@ function payoutObservedSince(entry, bucket, observations) {
 
 function payoutWatchItems(entries, observations) {
   const items = [];
+  const waitingRows = [];
+  const missingTabs = [];
   entries.forEach(e => {
+    const kind = payoutStoreKind(e.person);
     const modifiedDays = daysSinceDateTime(SHEET_MODIFIED[e.person]);
     if (!e.hasData) {
-      items.push({
-        level: e.tabReady ? 'warn' : 'info',
-        title: `${e.person}: waiting on payout row`,
-        detail: e.tabReady ? 'Tab exists, but balances are not filled yet.' : 'PENDING PAYOUT BALANCE tab was not found during load.',
-      });
+      (e.tabReady ? waitingRows : missingTabs).push(e);
       return;
     }
     if (modifiedDays !== null && modifiedDays >= 2) {
       items.push({
         level: modifiedDays >= 4 ? 'danger' : 'warn',
-        title: `${e.person}: balance update is stale`,
+        ownerRank: kind.rank,
+        title: `${kind.short} · ${e.person}: balance update is stale`,
         detail: `Last sheet edit was ${modifiedDays} day${modifiedDays === 1 ? '' : 's'} ago.`,
       });
     }
@@ -2285,7 +2319,8 @@ function payoutWatchItems(entries, observations) {
       const ageDays = holdSince ? daysSinceIsoDate(holdSince.date) : null;
       items.push({
         level: payoutWindowSeverity(ageDays, e.onHoldReleaseDate),
-        title: `${e.person}: ${fmt$(e.onHold)} on hold`,
+        ownerRank: kind.rank,
+        title: `${kind.short} · ${e.person}: ${fmt$(e.onHold)} on hold`,
         detail: `${holdSince ? `${formatWindowAge(holdSince.date)} ${holdSince.source === 'browser' ? 'observed locally' : 'from sheet'}` : 'duration unknown'} · ${payoutWindowLabel(ageDays, e.onHoldReleaseDate)} · check tracking, delivery, disputes, account notices, or buyer issues.`,
       });
     }
@@ -2298,20 +2333,44 @@ function payoutWatchItems(entries, observations) {
         : '';
       items.push({
         level: (completeDays !== null && completeDays < 0) || (ageDays !== null && ageDays >= 3) ? 'warn' : 'info',
-        title: `${e.person}: ${fmt$(e.processing)} processing`,
+        ownerRank: kind.rank,
+        title: `${kind.short} · ${e.person}: ${fmt$(e.processing)} processing`,
         detail: `${processingSince ? `${formatWindowAge(processingSince.date)} ${processingSince.source === 'browser' ? 'observed locally' : 'from sheet'}` : 'duration unknown'}${completeNote} · buyer paid, but this is pre-payout and not requestable yet.`,
       });
     }
     if ((e.available || 0) < 0) {
       items.push({
         level: 'danger',
-        title: `${e.person}: negative available balance`,
+        ownerRank: kind.rank,
+        title: `${kind.short} · ${e.person}: negative available balance`,
         detail: `${fmt$(e.available)} available. Check refunds, fees, disputes, or payout timing before spending.`,
       });
     }
   });
+  if (waitingRows.length) {
+    const funded = waitingRows.some(e => isFundedPayoutStore(e.person));
+    items.push({
+      level: funded ? 'warn' : 'info',
+      ownerRank: funded ? 0 : 2,
+      title: `${waitingRows.length} payout row${waitingRows.length === 1 ? '' : 's'} ready for VA update`,
+      detail: groupedPayoutNames(waitingRows) || 'Tabs exist, but balances are not filled yet.',
+    });
+  }
+  if (missingTabs.length) {
+    const funded = missingTabs.some(e => isFundedPayoutStore(e.person));
+    items.push({
+      level: funded ? 'warn' : 'info',
+      ownerRank: funded ? 0 : 2,
+      title: `${missingTabs.length} payout tab${missingTabs.length === 1 ? '' : 's'} not found`,
+      detail: groupedPayoutNames(missingTabs) || 'PENDING PAYOUT BALANCE tab was not found during load.',
+    });
+  }
   const rank = { danger: 0, warn: 1, info: 2 };
-  return items.sort((a, b) => (rank[a.level] ?? 3) - (rank[b.level] ?? 3)).slice(0, 8);
+  return items.sort((a, b) =>
+    (rank[a.level] ?? 3) - (rank[b.level] ?? 3) ||
+    (a.ownerRank ?? 3) - (b.ownerRank ?? 3) ||
+    a.title.localeCompare(b.title)
+  ).slice(0, 8);
 }
 
 function renderPayoutBalances() {
@@ -2374,19 +2433,69 @@ function renderPayoutBalances() {
   const watchItems = payoutWatchItems(entries, observations);
   const activeHoldStores = entries.filter(e => (e.onHold || 0) > 0).length;
   const activeProcessingStores = entries.filter(e => (e.processing || 0) > 0).length;
+  const fundedEntries = entries.filter(e => isFundedPayoutStore(e.person));
+  const fundedAvailable = r2(fundedEntries.reduce((sum, e) => sum + (e.available || 0), 0));
+  const fundedProcessing = r2(fundedEntries.reduce((sum, e) => sum + (e.processing || 0), 0));
+  const fundedOnHold = r2(fundedEntries.reduce((sum, e) => sum + (e.onHold || 0), 0));
+  const fundedTotal = r2(fundedEntries.reduce((sum, e) => sum + (e.total || 0), 0));
+  const fundedBlocked = r2(fundedProcessing + fundedOnHold);
+  const fundedLiquidityPct = fundedTotal ? Math.max(0, Math.min(100, fundedAvailable / fundedTotal * 100)) : liquidityPct;
+  const fundedBlockedPct = fundedTotal ? Math.max(0, Math.min(100, fundedBlocked / fundedTotal * 100)) : blockedPct;
+  const fundedHoldStores = fundedEntries.filter(e => (e.onHold || 0) > 0).length;
+  const fundedProcessingStores = fundedEntries.filter(e => (e.processing || 0) > 0).length;
+  const cashBasisIsFunded = fundedEntries.length > 0;
+  const readAvailable = cashBasisIsFunded ? fundedAvailable : available;
+  const readProcessing = cashBasisIsFunded ? fundedProcessing : processing;
+  const readOnHold = cashBasisIsFunded ? fundedOnHold : onHold;
+  const readBlocked = cashBasisIsFunded ? fundedBlocked : blocked;
+  const readLiquidityPct = cashBasisIsFunded ? fundedLiquidityPct : liquidityPct;
+  const readBlockedPct = cashBasisIsFunded ? fundedBlockedPct : blockedPct;
+  const readBasisLabel = cashBasisIsFunded ? 'J&R funded' : 'selected';
+  const watchHoldStores = cashBasisIsFunded ? fundedHoldStores : activeHoldStores;
+  const watchProcessingStores = cashBasisIsFunded ? fundedProcessingStores : activeProcessingStores;
   const staleStores = entries.filter(e => {
     const days = daysSinceDateTime(SHEET_MODIFIED[e.person]);
     return days !== null && days >= 2;
   }).length;
-  const cashRead = onHold > available
-    ? `Holds are larger than spendable cash by ${fmt$(onHold - available)}.`
-    : processing > available
-      ? `More cash is clearing than usable right now by ${fmt$(processing - available)}.`
-      : available > 0
-        ? `${fmt$(available)} is usable/requestable now.`
+  const cashRead = readOnHold > readAvailable
+    ? `${readBasisLabel} holds are larger than spendable cash by ${fmt$(readOnHold - readAvailable)}.`
+    : readProcessing > readAvailable
+      ? `More ${readBasisLabel} cash is clearing than usable right now by ${fmt$(readProcessing - readAvailable)}.`
+      : readAvailable > 0
+        ? `${fmt$(readAvailable)} from ${readBasisLabel} stores is usable/requestable now.`
         : 'No spendable payout cash has been entered yet.';
+  const ownershipGroups = [
+    { key: 'funded', lane: 'funded', label: 'J&R funded stores', note: 'owned + name-fee cash we carry', className: 'funded', open: true },
+    { key: 'partner', lane: 'partner', label: 'Client / partner stores', note: 'visible, but not our funded lane', className: 'partner', open: false },
+  ].map(group => {
+    const groupEntries = entries.filter(e => payoutStoreKind(e.person).lane === group.lane);
+    const groupAvailable = r2(groupEntries.reduce((sum, e) => sum + (e.available || 0), 0));
+    const groupProcessing = r2(groupEntries.reduce((sum, e) => sum + (e.processing || 0), 0));
+    const groupOnHold = r2(groupEntries.reduce((sum, e) => sum + (e.onHold || 0), 0));
+    const groupTotal = r2(groupEntries.reduce((sum, e) => sum + (e.total || 0), 0));
+    return {
+      ...group,
+      entries: groupEntries,
+      filled: groupEntries.filter(e => e.hasData).length,
+      available: groupAvailable,
+      processing: groupProcessing,
+      onHold: groupOnHold,
+      blocked: r2(groupProcessing + groupOnHold),
+      total: groupTotal,
+    };
+  });
+  const ownershipHtml = ownershipGroups.map(group => `
+    <div class="bank-owner-lane ${group.className}">
+      <div>
+        <span>${escapeHtml(group.label)}</span>
+        <small>${escapeHtml(group.note)} · ${group.filled}/${group.entries.length} filled</small>
+      </div>
+      <strong>${fmt$(group.total)}</strong>
+      <em>${fmt$(group.available)} available · ${fmt$(group.blocked)} clearing/held</em>
+    </div>`).join('');
 
-  const rowHtml = entries.map(e => {
+  const entryCardHtml = (e) => {
+    const kind = payoutStoreKind(e.person);
     const modified = SHEET_MODIFIED[e.person] ? new Date(SHEET_MODIFIED[e.person]) : null;
     const updated = modified && !Number.isNaN(modified.getTime()) ? formatRelativeAge(modified) : 'No timestamp';
     const status = e.hasData ? 'filled' : e.tabReady ? 'waiting' : 'missing tab';
@@ -2406,24 +2515,87 @@ function renderPayoutBalances() {
     const note = e.hasData
       ? `${fmt$(e.total || ((e.available || 0) + (e.processing || 0) + (e.onHold || 0)))} total`
       : (e.tabReady ? 'Ready for VA update' : 'Tab not loaded yet');
-    return `
-      <div class="payout-store ${e.hasData ? 'is-filled' : 'is-empty'}">
-        <div class="payout-store-main">
-          <div>
-            <strong>${escapeHtml(e.person)}</strong>
-            <span>${escapeHtml(note)}</span>
-            ${windowText ? `<small>${escapeHtml(windowText)}</small>` : ''}
-          </div>
-          <em>${escapeHtml(updated)}</em>
-        </div>
-        <div class="payout-store-values">
+    const isQuiet = !e.hasData || Math.abs(e.total || 0) < 0.005;
+    const valueHtml = e.hasData
+      ? `<div class="payout-store-values">
           <div><span>Available</span><b>${fmt$(e.available || 0)}</b></div>
           <div><span>Processing</span><b>${fmt$(e.processing || 0)}</b></div>
           <div><span>On hold</span><b>${fmt$(e.onHold || 0)}</b></div>
-          <i>${escapeHtml(status)}</i>
+        </div>`
+      : '';
+    return `
+      <div class="payout-store ${e.hasData ? 'is-filled' : 'is-empty'} ${isQuiet ? 'is-quiet' : ''} kind-${kind.className}">
+        <div class="payout-store-main">
+          <div>
+            <strong>${escapeHtml(e.person)} <span class="payout-store-pill ${kind.className}">${escapeHtml(kind.label)}</span></strong>
+            <span>${escapeHtml(note)}</span>
+            ${windowText ? `<small>${escapeHtml(windowText)}</small>` : ''}
+          </div>
+          <div class="payout-store-status">
+            <em>${escapeHtml(updated)}</em>
+            <i>${escapeHtml(status)}</i>
+          </div>
         </div>
+        ${valueHtml}
       </div>`;
-  }).join('');
+  };
+  const isActivePayoutEntry = e =>
+    e.hasData && (
+      Math.abs(e.total || 0) > 0.005 ||
+      Math.abs(e.available || 0) > 0.005 ||
+      Math.abs(e.processing || 0) > 0.005 ||
+      Math.abs(e.onHold || 0) > 0.005
+    );
+  const activeEntries = entries.filter(e =>
+    isActivePayoutEntry(e)
+  );
+  const waitingEntries = entries.filter(e => !activeEntries.includes(e));
+  const activeGroupHtml = ownershipGroups.map(group => {
+    const groupActiveEntries = activeEntries.filter(e => payoutStoreKind(e.person).lane === group.lane);
+    const groupBody = groupActiveEntries.length
+      ? `<div class="payout-store-grid">${groupActiveEntries.map(entryCardHtml).join('')}</div>`
+      : `<div class="payout-empty-note slim">${group.key === 'funded'
+          ? 'No funded-store payout dollars are active right now.'
+          : `No active ${group.label.toLowerCase()} payout dollars right now.`}</div>`;
+    if (group.key !== 'funded' && !groupActiveEntries.length) return '';
+    if (group.key === 'funded') {
+      return `
+        <div class="payout-active-group ${group.className}">
+          <div class="payout-active-head">
+            <div>
+              <span>${escapeHtml(group.label)}</span>
+              <small>${escapeHtml(group.note)}</small>
+            </div>
+            <b>${fmt$(group.total)} total</b>
+          </div>
+          ${groupBody}
+        </div>`;
+    }
+    return `
+      <details class="payout-active-group ${group.className}" ${group.open ? 'open' : ''}>
+        <summary>
+          <span>${escapeHtml(group.label)}</span>
+          <b>${fmtN(groupActiveEntries.length)} active · ${fmt$(group.total)}</b>
+        </summary>
+        ${groupBody}
+      </details>`;
+  }).join('') || `<div class="payout-empty-note">No store has active payout dollars entered yet. Add the eBay financial summary numbers to each payout tab and this board wakes up.</div>`;
+  const waitingSummary = waitingEntries.length
+    ? `<details class="payout-waiting-details">
+        <summary>
+          <span>${waitingEntries.length} quiet / waiting store${waitingEntries.length === 1 ? '' : 's'}</span>
+          <b>show</b>
+        </summary>
+        <div class="payout-waiting-groups">
+          ${ownershipGroups.map(group => {
+            const groupWaiting = waitingEntries.filter(e => payoutStoreKind(e.person).lane === group.lane);
+            return groupWaiting.length
+              ? `<div><strong>${escapeHtml(group.label)}</strong><span>${escapeHtml(compactPayoutNames(groupWaiting))}</span></div>`
+              : '';
+          }).join('')}
+        </div>
+      </details>`
+    : '';
 
   const emptyNote = filledCount
     ? ''
@@ -2467,22 +2639,23 @@ function renderPayoutBalances() {
           <div><span>Tabs ready</span><strong>${readyCount}/${entries.length}</strong></div>
         </div>
       </div>
+      <div class="bank-owner-grid">${ownershipHtml}</div>
       <div class="bank-intel-grid">
         <div class="bank-intel-card primary">
           <span>Cash read</span>
           <strong>${escapeHtml(cashRead)}</strong>
-          <p>${fmtP(liquidityPct)} of the entered payout position is spendable/requestable right now.</p>
-          <div class="bank-cash-bar"><i style="width:${liquidityPct}%"></i></div>
+          <p>${fmtP(readLiquidityPct)} of the ${escapeHtml(readBasisLabel)} payout position is spendable/requestable right now.</p>
+          <div class="bank-cash-bar"><i style="width:${readLiquidityPct}%"></i></div>
         </div>
         <div class="bank-intel-card">
-          <span>Blocked or clearing</span>
-          <strong>${fmt$(blocked)}</strong>
-          <p>${fmtP(blockedPct)} is still pre-payout processing or on hold. This is the cash-flow drag to watch daily.</p>
+          <span>${cashBasisIsFunded ? 'Funded' : 'Selected'} blocked or clearing</span>
+          <strong>${fmt$(readBlocked)}</strong>
+          <p>${fmtP(readBlockedPct)} of ${escapeHtml(readBasisLabel)} cash is still pre-payout processing or on hold. All-store blocked cash: ${fmt$(blocked)}.</p>
         </div>
         <div class="bank-intel-card">
-          <span>Stores to watch</span>
-          <strong>${activeHoldStores} held · ${activeProcessingStores} processing</strong>
-          <p>${staleStores ? `${staleStores} store${staleStores === 1 ? '' : 's'} have stale payout updates.` : 'No stale payout updates in the visible rows.'}</p>
+          <span>${cashBasisIsFunded ? 'Funded' : 'Selected'} stores to watch</span>
+          <strong>${watchHoldStores} held · ${watchProcessingStores} processing</strong>
+          <p>${staleStores ? `${staleStores} store${staleStores === 1 ? '' : 's'} have stale payout updates.` : 'No stale payout updates in the visible rows.'} All stores: ${activeHoldStores} held · ${activeProcessingStores} processing.</p>
         </div>
       </div>
       <div class="bank-meaning-grid">
@@ -2491,7 +2664,7 @@ function renderPayoutBalances() {
         <div><b>On hold</b><span>Blocked funds waiting on delivery, account, dispute, or transaction release conditions.</span></div>
         <div><b>Bank-bound</b><span>That is payout status: in progress/funds sent. Different from fund status processing.</span></div>
       </div>
-      <details class="bank-rules-card" open>
+      <details class="bank-rules-card">
         <summary>
         <span>eBay hold logic Seller OS is using</span>
           <b>24h / 2d / 7d / 15d / 31d / 90d windows</b>
@@ -2518,10 +2691,11 @@ function renderPayoutBalances() {
       ${emptyNote}
       <details class="payout-balance-details" open>
         <summary>
-          <span>Store payout rows</span>
-          <b>${fmtN(filledCount)} filled</b>
+          <span>Active store payout rows · funded first</span>
+          <b>${fmtN(activeEntries.length)} active · ${fmtN(filledCount)} filled</b>
         </summary>
-        <div class="payout-store-grid">${rowHtml}</div>
+        ${activeGroupHtml}
+        ${waitingSummary}
       </details>
     </div>`;
 }

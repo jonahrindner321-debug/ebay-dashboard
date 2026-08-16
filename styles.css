@@ -641,7 +641,67 @@
       background: rgba(245,158,11,.08);
       border: 1px solid rgba(245,158,11,.16);
     }
+    .payout-empty-note.slim {
+      margin: 0;
+      background: rgba(255,255,255,.035);
+      border-color: rgba(255,255,255,.07);
+    }
     .payout-empty-note strong { color: var(--yellow); }
+    .bank-owner-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 10px;
+      padding: 14px 22px 0;
+    }
+    .bank-owner-lane {
+      display: grid;
+      gap: 8px;
+      min-height: 118px;
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.08);
+      background:
+        radial-gradient(circle at 94% 10%, rgba(255,255,255,.06), transparent 30%),
+        rgba(255,255,255,.035);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+    }
+    .bank-owner-lane.funded {
+      border-color: rgba(94,230,168,.22);
+      background:
+        radial-gradient(circle at 92% 8%, rgba(94,230,168,.14), transparent 32%),
+        radial-gradient(circle at 8% 90%, rgba(34,211,238,.08), transparent 26%),
+        rgba(94,230,168,.04);
+    }
+    .bank-owner-lane.partner {
+      border-color: rgba(245,158,11,.16);
+      background:
+        radial-gradient(circle at 92% 8%, rgba(245,158,11,.1), transparent 32%),
+        rgba(245,158,11,.03);
+    }
+    .bank-owner-lane span {
+      display: block;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .bank-owner-lane small,
+    .bank-owner-lane em {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.45;
+      font-style: normal;
+    }
+    .bank-owner-lane strong {
+      color: var(--emerald);
+      font-size: 24px;
+      font-weight: 950;
+      line-height: 1;
+    }
+    .bank-owner-lane.funded strong { color: var(--emerald); }
+    .bank-owner-lane.partner strong { color: var(--yellow); }
     .bank-intel-grid {
       display: grid;
       grid-template-columns: 1.15fr .85fr .85fr;
@@ -770,6 +830,7 @@
       font-weight: 900;
       margin-bottom: 12px;
     }
+    .bank-rules-card:not([open]) summary { margin-bottom: 0; }
     .bank-rules-card summary::-webkit-details-marker { display: none; }
     .bank-rules-card summary span {
       letter-spacing: .08em;
@@ -932,6 +993,59 @@
       color: var(--emerald);
       font-size: 11px;
     }
+    .payout-active-group {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.075);
+      background: rgba(255,255,255,.025);
+    }
+    .payout-active-group.funded {
+      border-color: rgba(94,230,168,.18);
+      background:
+        radial-gradient(circle at 0% 0%, rgba(94,230,168,.08), transparent 28%),
+        radial-gradient(circle at 100% 0%, rgba(34,211,238,.05), transparent 22%),
+        rgba(94,230,168,.025);
+    }
+    .payout-active-group.partner {
+      border-color: rgba(245,158,11,.13);
+      background: rgba(245,158,11,.022);
+    }
+    .payout-active-group summary,
+    .payout-active-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin: 0 0 10px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 900;
+      list-style: none;
+    }
+    .payout-active-group summary::-webkit-details-marker { display: none; }
+    .payout-active-group:not([open]) summary { margin-bottom: 0; }
+    .payout-active-head span,
+    .payout-active-group summary span {
+      display: block;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .payout-active-head small {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+    .payout-active-head b,
+    .payout-active-group summary b {
+      color: var(--emerald);
+      font-size: 11px;
+      white-space: nowrap;
+    }
     .payout-store-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -950,6 +1064,13 @@
       border-color: rgba(94,230,168,.18);
       background: linear-gradient(135deg, rgba(94,230,168,.055), rgba(255,255,255,.025));
     }
+    .payout-store.is-quiet {
+      opacity: .78;
+      background: rgba(255,255,255,.026);
+    }
+    .payout-store.kind-owned { border-color: rgba(94,230,168,.2); }
+    .payout-store.kind-name-fee { border-color: rgba(34,211,238,.16); }
+    .payout-store.kind-partner { border-color: rgba(245,158,11,.13); }
     .payout-store-main,
     .payout-store-values {
       display: flex;
@@ -976,6 +1097,46 @@
       color: var(--cyan);
       opacity: .85;
     }
+    .payout-store-status {
+      display: grid;
+      gap: 4px;
+      justify-items: end;
+      text-align: right;
+      white-space: nowrap;
+    }
+    .payout-store-status i {
+      color: var(--muted);
+      font-size: 9px;
+      font-style: normal;
+      font-weight: 850;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .payout-store-pill {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 6px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      vertical-align: 2px;
+      color: var(--emerald);
+      background: rgba(94,230,168,.12);
+      border: 1px solid rgba(94,230,168,.16);
+      font-size: 8px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .payout-store-pill.name-fee {
+      color: var(--cyan);
+      background: rgba(34,211,238,.1);
+      border-color: rgba(34,211,238,.14);
+    }
+    .payout-store-pill.partner {
+      color: var(--yellow);
+      background: rgba(245,158,11,.1);
+      border-color: rgba(245,158,11,.14);
+    }
     .payout-store-values div { min-width: 76px; }
     .payout-store-values b {
       color: var(--text);
@@ -985,6 +1146,37 @@
     .payout-store-values div:first-child b { color: var(--emerald); }
     .payout-store-values div:nth-child(2) b { color: var(--cyan); }
     .payout-store-values div:nth-child(3) b { color: var(--yellow); }
+    .payout-waiting-details {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 15px;
+      border: 1px solid rgba(255,255,255,.07);
+      background: rgba(255,255,255,.025);
+    }
+    .payout-waiting-details summary {
+      margin: 0;
+      color: var(--muted);
+    }
+    .payout-waiting-details[open] summary { margin-bottom: 10px; }
+    .payout-waiting-details summary b { color: var(--yellow); }
+    .payout-waiting-groups {
+      display: grid;
+      gap: 8px;
+    }
+    .payout-waiting-groups div {
+      display: grid;
+      grid-template-columns: 130px minmax(0, 1fr);
+      gap: 10px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .payout-waiting-groups strong {
+      color: var(--text2);
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
 
     /* ── KPI Grid ── */
     .kpi-grid {
@@ -2170,6 +2362,7 @@
       .pace-hero { align-items: flex-start; }
       .payout-balance-hero { grid-template-columns: 1fr; }
       .payout-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .bank-owner-grid { grid-template-columns: 1fr; }
       .bank-intel-grid,
       .bank-window-card { grid-template-columns: 1fr; }
       .bank-watch-columns { grid-template-columns: 1fr; }
@@ -2200,7 +2393,9 @@
       .bank-meaning-grid { grid-template-columns: 1fr; }
       .payout-store-main,
       .payout-store-values { align-items: flex-start; flex-direction: column; }
+      .payout-store-status { justify-items: start; text-align: left; }
       .payout-store-values { gap: 8px; }
+      .payout-waiting-groups div { grid-template-columns: 1fr; gap: 3px; }
       .owned-cost-month summary { grid-template-columns: 1fr; gap: 9px; }
       .owned-cost-split { grid-template-columns: 1fr; }
       .owned-cost-account { grid-template-columns: 1fr; }

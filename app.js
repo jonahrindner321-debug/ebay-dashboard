@@ -131,6 +131,8 @@ let _freshnessTimer = null;
 // Expenses parsed from Expense tabs — populated on load
 // Structure: { person: { 'YYYY-MM': totalAmount, ... } }
 const EXPENSES = {};
+// Current eBay payout cash position from each store's PENDING PAYOUT BALANCE tab.
+const PAYOUT_BALANCES = {};
 
 // Store sheets can be maintained in local marketplace currency, but dashboard
 // totals are normalized to USD before rollups, splits, and projections.
@@ -247,6 +249,113 @@ function parseExpenseTab(values, person, options = {}) {
   return result;
 }
 
+const PAYOUT_BALANCE_TAB_RE = /^pending\s+payout\s+balance$/i;
+
+function isPayoutBalanceTab(tab) {
+  return PAYOUT_BALANCE_TAB_RE.test(String(tab || '').trim());
+}
+
+function payoutBucketForLabel(label) {
+  const text = String(label || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  if (/\b(total|combined|cash position|current balance)\b/.test(text)) return 'total';
+  if (/\b(available|ready|payable|payoutable)\b/.test(text)) return 'available';
+  if (/\b(on hold|hold|pending|reserve|withheld|unavailable|processing)\b/.test(text)) return 'onHold';
+  return null;
+}
+
+function isLikelyMoneyCell(value) {
+  const text = String(value ?? '').trim();
+  if (!text || text === '-' || text === '—') return false;
+  if (!/[0-9]/.test(text)) return false;
+  if (/^\d{4}-\d{1,2}-\d{1,2}/.test(text)) return false;
+  if (/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(text)) return false;
+  if (/^\d{1,2}:\d{2}/.test(text)) return false;
+  return true;
+}
+
+function moneyFromRow(row, startIndex = 0) {
+  for (let i = Math.max(0, startIndex); i < (row || []).length; i++) {
+    if (isLikelyMoneyCell(row[i])) {
+      return { value: parseMoney(row[i]), raw: row[i], col: i };
+    }
+  }
+  return null;
+}
+
+function normalizePayoutBalanceRecord(record, options = {}) {
+  const today = new Date().toISOString().substring(0, 10);
+  const { sourceCurrency, fxRate, fxMonthKey } = resolveFxRate(options, { date: record.date || today });
+  record.currency = 'USD';
+  record.sourceCurrency = sourceCurrency;
+  if (sourceCurrency === 'USD' || !Number.isFinite(fxRate) || fxRate === 1) return record;
+
+  ['available', 'onHold', 'total'].forEach(field => {
+    const nativeValue = Number(record[field] || 0);
+    record[`${field}Native`] = r2(nativeValue);
+    record[field] = r2(nativeValue * fxRate);
+  });
+  record.fxRate = fxRate;
+  record.fxMonthKey = fxMonthKey;
+  return record;
+}
+
+function parsePayoutBalanceTab(values, person, options = {}) {
+  const result = {
+    person,
+    tab: 'PENDING PAYOUT BALANCE',
+    available: 0,
+    onHold: 0,
+    total: 0,
+    hasData: false,
+    tabReady: Boolean(values && values.length),
+    rows: 0,
+    labelsFound: [],
+    note: '',
+  };
+  const found = { available: false, onHold: false, total: false };
+  const rows = (values || []).filter(row => (row || []).some(cell => String(cell || '').trim()));
+  result.rows = rows.length;
+
+  const setBucket = (bucket, amount, label) => {
+    if (!bucket || amount === null || amount === undefined || !Number.isFinite(Number(amount))) return;
+    result[bucket] = r2(Math.max(0, Number(amount)));
+    found[bucket] = true;
+    if (label) result.labelsFound.push(String(label).trim());
+  };
+
+  rows.forEach(row => {
+    (row || []).forEach((cell, idx) => {
+      const bucket = payoutBucketForLabel(cell);
+      if (!bucket) return;
+      const amount = moneyFromRow(row, idx + 1) || moneyFromRow(row, 0);
+      if (amount) setBucket(bucket, amount.value, cell);
+    });
+  });
+
+  for (let i = 0; i < rows.length; i++) {
+    const buckets = (rows[i] || []).map(payoutBucketForLabel);
+    if (!buckets.some(Boolean)) continue;
+    for (let j = i + 1; j < Math.min(rows.length, i + 6); j++) {
+      const row = rows[j] || [];
+      buckets.forEach((bucket, col) => {
+        if (!bucket || found[bucket] || !isLikelyMoneyCell(row[col])) return;
+        setBucket(bucket, parseMoney(row[col]), rows[i][col]);
+      });
+      if (found.available || found.onHold || found.total) break;
+    }
+  }
+
+  if (!found.total) result.total = r2((result.available || 0) + (result.onHold || 0));
+  result.hasData = Boolean(found.available || found.onHold || found.total);
+  if (!result.hasData && rows.length) result.note = 'Payout tab exists, waiting on VA-entered balances.';
+
+  result.available = r2(result.available);
+  result.onHold = r2(result.onHold);
+  result.total = r2(result.total);
+  return normalizePayoutBalanceRecord(result, options);
+}
+
 const MONTH_ORDER = [
   'Nov 2025','Dec 2025','Dec/Jan 2026','Jan 2026',
   'Feb 2026','Mar 2026','Apr 2026','May 2026','Jun 2026',
@@ -351,6 +460,7 @@ let totalJobs = 0, doneJobs = 0;
 const TAB_CACHE_TTL = 45 * 60 * 1000;
 let _tabDataCache = {};  // "person::tab" -> { records: [...], ts: timestamp }
 let _expDataCache = {};  // "person::tab" -> { records: [...], ts: timestamp }
+let _payoutDataCache = {}; // "person::tab" -> { record: {...}, ts: timestamp }
 let activeTab = 'daily';
 let lastChartData = [];
 let firstLoad = true;
@@ -1395,6 +1505,7 @@ function clearRuntimeData() {
   RAW = [];
   doneJobs = 0;
   Object.keys(EXPENSES).forEach(k => delete EXPENSES[k]);
+  Object.keys(PAYOUT_BALANCES).forEach(k => delete PAYOUT_BALANCES[k]);
   Object.keys(STORE_CREATED).forEach(k => delete STORE_CREATED[k]);
   Object.keys(SHEET_MODIFIED).forEach(k => delete SHEET_MODIFIED[k]);
   Object.keys(SHEET_STATUS).forEach(k => delete SHEET_STATUS[k]);
@@ -1447,6 +1558,7 @@ async function loadDashboardSnapshot() {
     clearRuntimeData();
     RAW = snapshot.raw || [];
     Object.assign(EXPENSES, snapshot.expenses || {});
+    Object.assign(PAYOUT_BALANCES, snapshot.payoutBalances || {});
     Object.assign(STORE_CREATED, snapshot.storeCreated || {});
     Object.assign(SHEET_MODIFIED, snapshot.sheetModified || {});
     Object.assign(SHEET_STATUS, snapshot.sheetStatus || {});
@@ -1654,10 +1766,24 @@ async function loadAll(forceLive = false) {
     await Promise.all(batch.map(async src => {
       const cacheKey = `${src.id}::${src.person}::${src.tab}`;
       const isExp = /^expenses?$/i.test(src.tab.trim());
+      const isPayout = isPayoutBalanceTab(src.tab);
       try {
         const values = await getTabValues(src.id, src.tab);
 
-        if (src.sourceType === 'amazon_fbm') {
+        if (isPayout) {
+          const balance = parsePayoutBalanceTab(values, src.person, currencyOptionsFor(src.person));
+          PAYOUT_BALANCES[balance.person] = balance;
+          _payoutDataCache[cacheKey] = { record: balance, ts: Date.now() };
+          loadAudit.push({
+            person: src.person,
+            tab: src.tab,
+            rows: balance.hasData ? 1 : 0,
+            profit: 0,
+            status: balance.hasData ? 'ok' : 'skipped',
+            channel: 'ebay',
+            kind: 'payout_balance',
+          });
+        } else if (src.sourceType === 'amazon_fbm') {
           const parsed = parseAmazonFbmValues(values, src.person, {
             channel: 'amazon_fbm',
             platform: 'amazon',
@@ -1707,8 +1833,9 @@ async function loadAll(forceLive = false) {
         }
       } catch(e) {
         const now = Date.now();
-        const tabCached = !isExp && _tabDataCache[cacheKey] && (now - _tabDataCache[cacheKey].ts) < TAB_CACHE_TTL;
+        const tabCached = !isExp && !isPayout && _tabDataCache[cacheKey] && (now - _tabDataCache[cacheKey].ts) < TAB_CACHE_TTL;
         const expCached = isExp  && _expDataCache[cacheKey] && (now - _expDataCache[cacheKey].ts) < TAB_CACHE_TTL;
+        const payoutCached = isPayout && _payoutDataCache[cacheKey] && (now - _payoutDataCache[cacheKey].ts) < TAB_CACHE_TTL;
         if (tabCached) {
           RAW.push(..._tabDataCache[cacheKey].records);
           const cachedProfit = _tabDataCache[cacheKey].records.reduce((s,r)=>s+r.profit,0);
@@ -1721,8 +1848,12 @@ async function loadAll(forceLive = false) {
           });
           const ageMin = Math.round((now - _expDataCache[cacheKey].ts) / 60000);
           loadAudit.push({ person: src.person, tab: src.tab, rows: _expDataCache[cacheKey].records.length, profit: 0, status: 'cached', err: `${e.message} (cache ${ageMin}m old)` });
+        } else if (payoutCached) {
+          PAYOUT_BALANCES[src.person] = _payoutDataCache[cacheKey].record;
+          const ageMin = Math.round((now - _payoutDataCache[cacheKey].ts) / 60000);
+          loadAudit.push({ person: src.person, tab: src.tab, rows: PAYOUT_BALANCES[src.person].hasData ? 1 : 0, profit: 0, status: 'cached', err: `${e.message} (cache ${ageMin}m old)`, kind: 'payout_balance' });
         } else {
-          loadAudit.push({ person: src.person, tab: src.tab, rows: 0, profit: 0, status: 'error', err: e.message + ((_tabDataCache[cacheKey] || _expDataCache[cacheKey]) ? ' (cache expired)' : '') });
+          loadAudit.push({ person: src.person, tab: src.tab, rows: 0, profit: 0, status: 'error', err: e.message + ((_tabDataCache[cacheKey] || _expDataCache[cacheKey] || _payoutDataCache[cacheKey]) ? ' (cache expired)' : '') });
         }
       } finally {
         doneJobs++;
@@ -1783,6 +1914,7 @@ function applyFilters() {
   renderSheetActivity();
   renderSplitSummary(d);
   renderOwnedAmazonProductCost(d);
+  renderPayoutBalances();
   renderGoalTracker(d);
   renderKPIs(d);
   renderRecords(d);
@@ -1803,6 +1935,110 @@ function applyFilters() {
   // Re-render Growth tab so month filter affects efficiency/profit views there too
   if (LISTING_DATA.summary && LISTING_DATA.summary.length) { try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); } }
   if ($('war-room-page')?.style.display === 'block') { try { renderWarRoom(); } catch(e) { console.error('renderWarRoom error:', e); } }
+}
+
+// ─── EBAY PAYOUT BALANCES ─────────────────────────────────────────────────
+function renderPayoutBalances() {
+  const section = $('payout-balance-section');
+  const panel = $('payout-balance-panel');
+  const sub = $('payout-balance-sub');
+  if (!section || !panel) return;
+
+  if (CHANNEL_FILTER !== 'all' && CHANNEL_FILTER !== 'ebay') {
+    section.style.display = 'none';
+    panel.innerHTML = '';
+    if (sub) sub.textContent = '';
+    return;
+  }
+
+  const selectedPerson = $('filter-person')?.value || 'all';
+  const ebayNames = [...new Set(Object.values(SHEETS))].filter(name => !BANNED_STORES.has(name));
+  const scopeNames = selectedPerson === 'all'
+    ? ebayNames
+    : ebayNames.includes(selectedPerson) ? [selectedPerson] : [];
+
+  if (!scopeNames.length) {
+    section.style.display = 'none';
+    panel.innerHTML = '';
+    if (sub) sub.textContent = '';
+    return;
+  }
+
+  const entries = scopeNames.map(person => ({
+    person,
+    available: 0,
+    onHold: 0,
+    total: 0,
+    hasData: false,
+    tabReady: false,
+    ...(PAYOUT_BALANCES[person] || {}),
+  })).sort((a, b) =>
+    Number(b.hasData) - Number(a.hasData) ||
+    (b.total || 0) - (a.total || 0) ||
+    a.person.localeCompare(b.person)
+  );
+
+  const filledCount = entries.filter(e => e.hasData).length;
+  const readyCount = entries.filter(e => e.tabReady || PAYOUT_BALANCES[e.person]).length;
+  const available = r2(entries.reduce((sum, e) => sum + (e.available || 0), 0));
+  const onHold = r2(entries.reduce((sum, e) => sum + (e.onHold || 0), 0));
+  const total = r2(entries.reduce((sum, e) => sum + (e.total || 0), 0));
+  const scopeLabel = selectedPerson === 'all' ? `${entries.length} eBay stores` : selectedPerson;
+  const waiting = entries.length - filledCount;
+  if (sub) sub.textContent = `${scopeLabel} · ${filledCount}/${entries.length} filled · current values, not month-filtered`;
+
+  const rowHtml = entries.map(e => {
+    const modified = SHEET_MODIFIED[e.person] ? new Date(SHEET_MODIFIED[e.person]) : null;
+    const updated = modified && !Number.isNaN(modified.getTime()) ? formatRelativeAge(modified) : 'No timestamp';
+    const status = e.hasData ? 'filled' : e.tabReady ? 'waiting' : 'missing tab';
+    const note = e.hasData
+      ? `${fmt$(e.total || ((e.available || 0) + (e.onHold || 0)))} total`
+      : (e.tabReady ? 'Ready for VA update' : 'Tab not loaded yet');
+    return `
+      <div class="payout-store ${e.hasData ? 'is-filled' : 'is-empty'}">
+        <div class="payout-store-main">
+          <div>
+            <strong>${escapeHtml(e.person)}</strong>
+            <span>${escapeHtml(note)}</span>
+          </div>
+          <em>${escapeHtml(updated)}</em>
+        </div>
+        <div class="payout-store-values">
+          <div><span>Available</span><b>${fmt$(e.available || 0)}</b></div>
+          <div><span>On hold</span><b>${fmt$(e.onHold || 0)}</b></div>
+          <i>${escapeHtml(status)}</i>
+        </div>
+      </div>`;
+  }).join('');
+
+  const emptyNote = filledCount
+    ? ''
+    : `<div class="payout-empty-note">Tabs are wired. Once the VA enters balances using labels like <strong>Available balance</strong> and <strong>On hold</strong>, this turns into the live eBay cash board.</div>`;
+
+  section.style.display = 'block';
+  panel.innerHTML = `
+    <div class="card payout-balance-card">
+      <div class="payout-balance-hero">
+        <div>
+          <div class="payout-label">eBay payout position</div>
+          <div class="payout-value">${fmt$(total)}</div>
+          <div class="payout-note">${waiting ? `${waiting} store${waiting === 1 ? '' : 's'} still waiting on VA balances.` : 'All visible stores have payout balances filled.'}</div>
+        </div>
+        <div class="payout-stats">
+          <div><span>Available</span><strong>${fmt$(available)}</strong></div>
+          <div><span>On hold</span><strong>${fmt$(onHold)}</strong></div>
+          <div><span>Tabs ready</span><strong>${readyCount}/${entries.length}</strong></div>
+        </div>
+      </div>
+      ${emptyNote}
+      <details class="payout-balance-details" open>
+        <summary>
+          <span>Store payout rows</span>
+          <b>${fmtN(filledCount)} filled</b>
+        </summary>
+        <div class="payout-store-grid">${rowHtml}</div>
+      </details>
+    </div>`;
 }
 
 // ─── 30-DAY CURRENT PACE ──────────────────────────────────────────────────

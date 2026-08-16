@@ -1,5 +1,5 @@
 const { AMAZON_FBM_SOURCES, SHEETS, TIKTOK_SOURCES, WALMART_SOURCES, currencyOptionsFor } = require('./seller-config');
-const { normSpecial, parseAmazonFbmValues, parseExpenseTab, parseValues, r2 } = require('./seller-parse');
+const { isPayoutBalanceTab, normSpecial, parseAmazonFbmValues, parseExpenseTab, parsePayoutBalanceTab, parseValues, r2 } = require('./seller-parse');
 const { batchGetValues, getSpreadsheetSheets, getValues, sheetRange } = require('./google-sheets');
 
 const REQUEST_GAP_MS = Number(process.env.SELLER_OS_GOOGLE_GAP_MS || 1100);
@@ -68,7 +68,7 @@ function pushExpenseRows(expenses, expRows) {
   });
 }
 
-async function buildEbaySources({ raw, expenses, loadAudit, tabErrors, env }) {
+async function buildEbaySources({ raw, expenses, payoutBalances, loadAudit, tabErrors, env }) {
   let sourceCount = 0;
   for (const id of Object.keys(SHEETS)) {
     await sleep(REQUEST_GAP_MS);
@@ -80,7 +80,22 @@ async function buildEbaySources({ raw, expenses, loadAudit, tabErrors, env }) {
       tabs.forEach((tab, idx) => {
         const values = valueRanges[idx]?.values || [];
         const isExp = /^expenses?$/i.test(String(tab || '').trim());
+        const isPayout = isPayoutBalanceTab(tab);
         try {
+          if (isPayout) {
+            const balance = parsePayoutBalanceTab(values, person, currencyOptionsFor(person));
+            payoutBalances[person] = balance;
+            loadAudit.push({
+              person,
+              tab,
+              rows: balance.hasData ? 1 : 0,
+              profit: 0,
+              status: balance.hasData ? 'ok' : 'skipped',
+              channel: 'ebay',
+              kind: 'payout_balance',
+            });
+            return;
+          }
           if (isExp) {
             const expRows = parseExpenseTab(values, person, currencyOptionsFor(person));
             pushExpenseRows(expenses, expRows);
@@ -250,6 +265,7 @@ async function buildSnapshot({ env = process.env } = {}) {
   const readEnv = sourceReadEnv(env);
   const raw = [];
   const expenses = {};
+  const payoutBalances = {};
   const loadAudit = [];
   const storeCreated = {};
   const sheetModified = {};
@@ -257,7 +273,7 @@ async function buildSnapshot({ env = process.env } = {}) {
   const tabErrors = [];
 
   let sourceCount = 0;
-  sourceCount += await buildEbaySources({ raw, expenses, loadAudit, tabErrors, env: readEnv });
+  sourceCount += await buildEbaySources({ raw, expenses, payoutBalances, loadAudit, tabErrors, env: readEnv });
   sourceCount += await buildTikTokSources({ raw, loadAudit, tabErrors, env: readEnv });
   sourceCount += await buildWalmartSources({ raw, loadAudit, tabErrors, env: readEnv });
   sourceCount += await buildAmazonFbmSources({ raw, loadAudit, env: readEnv });
@@ -268,6 +284,7 @@ async function buildSnapshot({ env = process.env } = {}) {
     generatedAt: new Date().toISOString(),
     raw,
     expenses,
+    payoutBalances,
     storeCreated,
     sheetModified,
     sheetStatus,

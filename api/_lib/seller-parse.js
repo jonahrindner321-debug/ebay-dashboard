@@ -70,6 +70,23 @@ function normalizeExpenseRecord(record, options = {}) {
   return record;
 }
 
+function normalizePayoutBalanceRecord(record, options = {}) {
+  const today = new Date().toISOString().substring(0, 10);
+  const { sourceCurrency, fxRate, fxMonthKey } = resolveFxRate(options, { date: record.date || today });
+  record.currency = 'USD';
+  record.sourceCurrency = sourceCurrency;
+  if (sourceCurrency === 'USD' || !Number.isFinite(fxRate) || fxRate === 1) return record;
+
+  ['available', 'onHold', 'total'].forEach(field => {
+    const nativeValue = Number(record[field] || 0);
+    record[`${field}Native`] = r2(nativeValue);
+    record[field] = r2(nativeValue * fxRate);
+  });
+  record.fxRate = fxRate;
+  record.fxMonthKey = fxMonthKey;
+  return record;
+}
+
 const MONTH_NAME_MAP = {
   jan: 1, january: 1,
   feb: 2, february: 2,
@@ -195,6 +212,96 @@ function parseExpenseTab(values, person, options = {}) {
     result.push(normalizeExpenseRecord({ person, monthKey: `${yr}-${String(mo).padStart(2, '0')}`, label, amount: r2(Math.abs(amt)) }, options));
   }
   return result;
+}
+
+const PAYOUT_BALANCE_TAB_RE = /^pending\s+payout\s+balance$/i;
+
+function isPayoutBalanceTab(tab) {
+  return PAYOUT_BALANCE_TAB_RE.test(String(tab || '').trim());
+}
+
+function payoutBucketForLabel(label) {
+  const text = String(label || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  if (/\b(total|combined|cash position|current balance)\b/.test(text)) return 'total';
+  if (/\b(available|ready|payable|payoutable)\b/.test(text)) return 'available';
+  if (/\b(on hold|hold|pending|reserve|withheld|unavailable|processing)\b/.test(text)) return 'onHold';
+  return null;
+}
+
+function isLikelyMoneyCell(value) {
+  const text = String(value ?? '').trim();
+  if (!text || text === '-' || text === '—') return false;
+  if (!/[0-9]/.test(text)) return false;
+  if (/^\d{4}-\d{1,2}-\d{1,2}/.test(text)) return false;
+  if (/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(text)) return false;
+  if (/^\d{1,2}:\d{2}/.test(text)) return false;
+  return true;
+}
+
+function moneyFromRow(row, startIndex = 0) {
+  for (let i = Math.max(0, startIndex); i < (row || []).length; i++) {
+    if (isLikelyMoneyCell(row[i])) {
+      return { value: parseMoney(row[i]), raw: row[i], col: i };
+    }
+  }
+  return null;
+}
+
+function parsePayoutBalanceTab(values, person, options = {}) {
+  const result = {
+    person,
+    tab: 'PENDING PAYOUT BALANCE',
+    available: 0,
+    onHold: 0,
+    total: 0,
+    hasData: false,
+    tabReady: Boolean(values && values.length),
+    rows: 0,
+    labelsFound: [],
+    note: '',
+  };
+  const found = { available: false, onHold: false, total: false };
+  const rows = (values || []).filter(row => (row || []).some(cell => String(cell || '').trim()));
+  result.rows = rows.length;
+
+  const setBucket = (bucket, amount, label) => {
+    if (!bucket || amount === null || amount === undefined || !Number.isFinite(Number(amount))) return;
+    result[bucket] = r2(Math.max(0, Number(amount)));
+    found[bucket] = true;
+    if (label) result.labelsFound.push(String(label).trim());
+  };
+
+  rows.forEach(row => {
+    (row || []).forEach((cell, idx) => {
+      const bucket = payoutBucketForLabel(cell);
+      if (!bucket) return;
+      const amount = moneyFromRow(row, idx + 1) || moneyFromRow(row, 0);
+      if (amount) setBucket(bucket, amount.value, cell);
+    });
+  });
+
+  for (let i = 0; i < rows.length; i++) {
+    const buckets = (rows[i] || []).map(payoutBucketForLabel);
+    if (!buckets.some(Boolean)) continue;
+    for (let j = i + 1; j < Math.min(rows.length, i + 6); j++) {
+      const row = rows[j] || [];
+      buckets.forEach((bucket, col) => {
+        if (!bucket || found[bucket] || !isLikelyMoneyCell(row[col])) return;
+        setBucket(bucket, parseMoney(row[col]), rows[i][col]);
+      });
+      if (found.available || found.onHold || found.total) break;
+    }
+  }
+
+  if (!found.total) result.total = r2((result.available || 0) + (result.onHold || 0));
+  result.hasData = Boolean(found.available || found.onHold || found.total);
+  if (!result.hasData && rows.length) result.note = 'Payout tab exists, waiting on VA-entered balances.';
+
+  result.available = r2(result.available);
+  result.onHold = r2(result.onHold);
+  result.total = r2(result.total);
+  return normalizePayoutBalanceRecord(result, options);
 }
 
 function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
@@ -334,10 +441,12 @@ function parseAmazonFbmValues(values, person = 'Johna', options = {}) {
 }
 
 module.exports = {
+  isPayoutBalanceTab,
   normSpecial,
   normalizeMoneyRecord,
   parseAmazonFbmValues,
   parseExpenseTab,
+  parsePayoutBalanceTab,
   parseValues,
   r2,
 };

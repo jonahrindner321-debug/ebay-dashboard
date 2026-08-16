@@ -118,6 +118,11 @@ function parseDate(v, options = {}) {
     const mo = MONTH_NAME_MAP[m[1].toLowerCase()];
     if (mo) return `${m[3]}-${String(mo).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
   }
+  m = s.match(/^([A-Za-z]+)\s+(\d{1,2})$/);
+  if (m) {
+    const mo = MONTH_NAME_MAP[m[1].toLowerCase()];
+    if (mo) return `${new Date().getFullYear()}-${String(mo).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
+  }
   m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
   m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
@@ -230,12 +235,26 @@ function payoutBucketForLabel(label) {
   return null;
 }
 
+function payoutDateBucketForLabel(label) {
+  const text = String(label || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  if (/\b(as of|updated|last checked|snapshot date|balance date)\b/.test(text)) return 'asOf';
+  if (/\b(next payout|payout schedule|scheduled payout)\b/.test(text)) return 'nextPayoutDate';
+  if (/\b(to be completed|processing completes|complete on|funds available on|available on)\b/.test(text)) return 'processingCompletesOn';
+  if (/\b(release date|estimated release|hold release|released on)\b/.test(text)) return 'onHoldReleaseDate';
+  if (/\b(on hold since|hold since|held since|reserve since|withheld since)\b/.test(text)) return 'onHoldSince';
+  if (/\b(processing since|pending since|in process since)\b/.test(text)) return 'processingSince';
+  return null;
+}
+
 function isLikelyMoneyCell(value) {
   const text = String(value ?? '').trim();
   if (!text || text === '-' || text === '—') return false;
   if (!/[0-9]/.test(text)) return false;
   if (/^\d{4}-\d{1,2}-\d{1,2}/.test(text)) return false;
   if (/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(text)) return false;
+  if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b/i.test(text)) return false;
+  if (/\b(next payout|to be completed|complete on|available on|release date|since)\b/i.test(text)) return false;
   if (/^\d{1,2}:\d{2}/.test(text)) return false;
   return true;
 }
@@ -245,6 +264,37 @@ function moneyFromRow(row, startIndex = 0) {
     if (isLikelyMoneyCell(row[i])) {
       return { value: parseMoney(row[i]), raw: row[i], col: i };
     }
+  }
+  return null;
+}
+
+function parseLooseDate(value, options = {}) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  const standaloneDate = /^(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Za-z]{3,}\s+\d{1,2},?\s*\d{0,4}|\d{1,2}[-/\s][A-Za-z]{3,}[-/\s]?\d{0,4})$/i;
+  if (standaloneDate.test(text)) {
+    const direct = parseDate(text, options);
+    if (direct) return direct;
+  }
+  const candidates = [
+    text.match(/(\d{4}-\d{1,2}-\d{1,2})/)?.[1],
+    text.match(/(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/)?.[1],
+    text.match(/([A-Za-z]{3,}\s+\d{1,2},?\s+\d{2,4})/)?.[1],
+    text.match(/([A-Za-z]{3,}\s+\d{1,2})/)?.[1],
+    text.match(/(\d{1,2}[-/\s][A-Za-z]{3,}[-/\s]\d{2,4})/)?.[1],
+    text.match(/(\d{1,2}[-/\s][A-Za-z]{3,})/)?.[1],
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    const parsed = parseDate(candidate, options);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function dateFromRow(row, startIndex = 0, options = {}) {
+  for (let i = Math.max(0, startIndex); i < (row || []).length; i++) {
+    const parsed = parseLooseDate(row[i], options);
+    if (parsed) return parsed;
   }
   return null;
 }
@@ -262,6 +312,12 @@ function parsePayoutBalanceTab(values, person, options = {}) {
     rows: 0,
     labelsFound: [],
     note: '',
+    asOf: '',
+    nextPayoutDate: '',
+    processingCompletesOn: '',
+    onHoldReleaseDate: '',
+    processingSince: '',
+    onHoldSince: '',
   };
   const found = { available: false, processing: false, onHold: false, total: false };
   const rows = (values || []).filter(row => (row || []).some(cell => String(cell || '').trim()));
@@ -276,6 +332,11 @@ function parsePayoutBalanceTab(values, person, options = {}) {
 
   rows.forEach(row => {
     (row || []).forEach((cell, idx) => {
+      const dateBucket = payoutDateBucketForLabel(cell);
+      if (dateBucket) {
+        const dateValue = dateFromRow(row, idx + 1, options) || dateFromRow(row, 0, options);
+        if (dateValue) result[dateBucket] = dateValue;
+      }
       const bucket = payoutBucketForLabel(cell);
       if (!bucket) return;
       const amount = moneyFromRow(row, idx + 1) || moneyFromRow(row, 0);

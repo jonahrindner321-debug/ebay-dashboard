@@ -642,6 +642,247 @@
       border: 1px solid rgba(245,158,11,.16);
     }
     .payout-empty-note strong { color: var(--yellow); }
+    .bank-intel-grid {
+      display: grid;
+      grid-template-columns: 1.15fr .85fr .85fr;
+      gap: 12px;
+      padding: 16px 22px 0;
+    }
+    .bank-intel-card,
+    .bank-window-card,
+    .bank-meaning-grid > div {
+      border: 1px solid rgba(255,255,255,.075);
+      background: rgba(255,255,255,.04);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.045);
+    }
+    .bank-intel-card {
+      min-height: 116px;
+      border-radius: 16px;
+      padding: 15px;
+    }
+    .bank-intel-card.primary {
+      background:
+        radial-gradient(circle at 16% 15%, rgba(94,230,168,.13), transparent 34%),
+        rgba(255,255,255,.045);
+      border-color: rgba(94,230,168,.16);
+    }
+    .bank-intel-card span,
+    .bank-meaning-grid b,
+    .bank-window-card h3 {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .bank-intel-card strong {
+      display: block;
+      color: var(--text);
+      font-size: 19px;
+      line-height: 1.25;
+      margin-top: 8px;
+      letter-spacing: 0;
+    }
+    .bank-intel-card.primary strong {
+      color: var(--emerald);
+      font-size: 22px;
+    }
+    .bank-intel-card p,
+    .bank-window-card p,
+    .bank-meaning-grid span,
+    .bank-watch-item span {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+      margin-top: 8px;
+    }
+    .bank-cash-bar {
+      height: 8px;
+      margin-top: 13px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255,255,255,.07);
+    }
+    .bank-cash-bar i {
+      display: block;
+      height: 100%;
+      min-width: 2px;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--emerald), var(--cyan));
+      box-shadow: 0 0 18px rgba(94,230,168,.2);
+      transition: width .7s ease;
+    }
+    .bank-meaning-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      padding: 14px 22px 0;
+    }
+    .bank-meaning-grid > div {
+      border-radius: 14px;
+      padding: 13px;
+    }
+    .bank-meaning-grid b {
+      color: var(--text2);
+      margin-bottom: 4px;
+    }
+    .bank-window-card {
+      display: grid;
+      grid-template-columns: minmax(260px, .9fr) minmax(300px, 1.1fr);
+      gap: 18px;
+      margin: 14px 22px 0;
+      padding: 16px;
+      border-radius: 16px;
+      background:
+        radial-gradient(circle at 92% 16%, rgba(245,158,11,.12), transparent 28%),
+        rgba(255,255,255,.035);
+    }
+    .bank-window-card h3 {
+      color: var(--text);
+      font-size: 20px;
+      text-transform: none;
+      letter-spacing: 0;
+      margin-top: 7px;
+    }
+    .bank-window-card p b {
+      color: var(--text2);
+      font-weight: 850;
+    }
+    .bank-rules-card {
+      margin: 14px 22px 0;
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.075);
+      background:
+        radial-gradient(circle at 7% 0%, rgba(99,102,241,.12), transparent 28%),
+        rgba(255,255,255,.032);
+    }
+    .bank-rules-card summary {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      list-style: none;
+      cursor: pointer;
+      color: var(--text2);
+      font-size: 12px;
+      font-weight: 900;
+      margin-bottom: 12px;
+    }
+    .bank-rules-card summary::-webkit-details-marker { display: none; }
+    .bank-rules-card summary span {
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--text);
+      font-size: 11px;
+    }
+    .bank-rules-card summary b {
+      color: var(--yellow);
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .bank-rule-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+    }
+    .bank-rule-card {
+      min-height: 154px;
+      padding: 13px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.075);
+      background: rgba(255,255,255,.035);
+    }
+    .bank-rule-card strong {
+      display: block;
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+    .bank-rule-card em {
+      display: block;
+      margin-top: 7px;
+      color: var(--yellow);
+      font-size: 10px;
+      line-height: 1.4;
+      font-style: normal;
+      font-weight: 850;
+    }
+    .bank-rule-card span,
+    .bank-rule-card small {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.45;
+      margin-top: 8px;
+    }
+    .bank-rule-card small {
+      color: var(--cyan);
+      opacity: .86;
+    }
+    .bank-watch-list {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .bank-watch-columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .bank-mini-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+      margin: 0 0 8px;
+      color: var(--text2);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .bank-mini-title span {
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 850;
+      text-align: right;
+      letter-spacing: .08em;
+    }
+    .bank-watch-item {
+      padding: 11px 12px;
+      border-radius: 13px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.04);
+    }
+    .bank-watch-item strong {
+      display: block;
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+    .bank-watch-item span {
+      display: block;
+      margin-top: 5px;
+    }
+    .bank-watch-item.danger {
+      border-color: rgba(248,113,113,.24);
+      background: rgba(248,113,113,.08);
+    }
+    .bank-watch-item.warn {
+      border-color: rgba(245,158,11,.24);
+      background: rgba(245,158,11,.08);
+    }
+    .bank-watch-item.info {
+      border-color: rgba(34,211,238,.2);
+      background: rgba(34,211,238,.07);
+    }
+    .bank-watch-item.good {
+      border-color: rgba(94,230,168,.2);
+      background: rgba(94,230,168,.07);
+    }
     .payout-stats {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -722,11 +963,18 @@
       color: var(--text);
     }
     .payout-store-main span,
+    .payout-store-main small,
     .payout-store-main em,
     .payout-store-values i {
       color: var(--muted);
       font-size: 10px;
       font-style: normal;
+    }
+    .payout-store-main small {
+      display: block;
+      margin-top: 4px;
+      color: var(--cyan);
+      opacity: .85;
     }
     .payout-store-values div { min-width: 76px; }
     .payout-store-values b {
@@ -1917,9 +2165,15 @@
       .filters .sf { flex: 1; }
       .kpi-grid { grid-template-columns: repeat(2, 1fr); }
       .proj-body { flex-direction: column; gap: 16px; }
+      .bank-hero { align-items: flex-start; flex-direction: column; }
+      .bank-hero-pills { justify-content: flex-start; }
       .pace-hero { align-items: flex-start; }
       .payout-balance-hero { grid-template-columns: 1fr; }
       .payout-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .bank-intel-grid,
+      .bank-window-card { grid-template-columns: 1fr; }
+      .bank-watch-columns { grid-template-columns: 1fr; }
+      .bank-meaning-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .owned-cost-hero { grid-template-columns: 1fr; }
       .owned-cost-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .podium-row { gap: 6px; }
@@ -1943,6 +2197,7 @@
       .health-grid { grid-template-columns: repeat(2,1fr); }
       .split-grid { grid-template-columns: 1fr; }
       .payout-stats { grid-template-columns: 1fr; }
+      .bank-meaning-grid { grid-template-columns: 1fr; }
       .payout-store-main,
       .payout-store-values { align-items: flex-start; flex-direction: column; }
       .payout-store-values { gap: 8px; }
@@ -2205,7 +2460,66 @@
     .page-nav-btn:hover:not(.active) { background:var(--glass-hover); color:var(--text); }
 
     /* ── Growth Page ── */
-    #growth-page, #war-room-page { display:none; }
+    #growth-page, #bank-page, #war-room-page { display:none; }
+
+    /* ── Bank Page ── */
+    .bank-page { padding-top: var(--gap); }
+    .bank-hero {
+      margin-bottom: var(--gap);
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 14% 22%, rgba(94,230,168,.13), transparent 30%),
+        radial-gradient(circle at 92% 8%, rgba(34,211,238,.09), transparent 26%),
+        linear-gradient(135deg, rgba(16,185,129,.06), rgba(109,106,248,.035)),
+        var(--card);
+    }
+    .bank-eyebrow {
+      color: var(--emerald);
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+      margin-bottom: 7px;
+    }
+    .bank-hero h1 {
+      margin: 0;
+      font-size: clamp(32px, 5vw, 56px);
+      line-height: .95;
+      font-weight: 1000;
+      letter-spacing: 0;
+      background: linear-gradient(135deg, var(--emerald), var(--cyan) 58%, var(--violet-soft));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .bank-hero p {
+      color: var(--text2);
+      font-size: 13px;
+      line-height: 1.55;
+      max-width: 540px;
+      margin-top: 10px;
+    }
+    .bank-hero-pills {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      max-width: 420px;
+    }
+    .bank-hero-pills span {
+      padding: 8px 11px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.055);
+      border: 1px solid rgba(255,255,255,.08);
+      color: var(--text2);
+      font-size: 11px;
+      font-weight: 800;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+    }
 
     /* ── War Room / Experiment Lab ── */
 .war-room {

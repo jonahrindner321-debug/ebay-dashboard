@@ -265,12 +265,26 @@ function payoutBucketForLabel(label) {
   return null;
 }
 
+function payoutDateBucketForLabel(label) {
+  const text = String(label || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  if (/\b(as of|updated|last checked|snapshot date|balance date)\b/.test(text)) return 'asOf';
+  if (/\b(next payout|payout schedule|scheduled payout)\b/.test(text)) return 'nextPayoutDate';
+  if (/\b(to be completed|processing completes|complete on|funds available on|available on)\b/.test(text)) return 'processingCompletesOn';
+  if (/\b(release date|estimated release|hold release|released on)\b/.test(text)) return 'onHoldReleaseDate';
+  if (/\b(on hold since|hold since|held since|reserve since|withheld since)\b/.test(text)) return 'onHoldSince';
+  if (/\b(processing since|pending since|in process since)\b/.test(text)) return 'processingSince';
+  return null;
+}
+
 function isLikelyMoneyCell(value) {
   const text = String(value ?? '').trim();
   if (!text || text === '-' || text === '—') return false;
   if (!/[0-9]/.test(text)) return false;
   if (/^\d{4}-\d{1,2}-\d{1,2}/.test(text)) return false;
   if (/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(text)) return false;
+  if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b/i.test(text)) return false;
+  if (/\b(next payout|to be completed|complete on|available on|release date|since)\b/i.test(text)) return false;
   if (/^\d{1,2}:\d{2}/.test(text)) return false;
   return true;
 }
@@ -280,6 +294,37 @@ function moneyFromRow(row, startIndex = 0) {
     if (isLikelyMoneyCell(row[i])) {
       return { value: parseMoney(row[i]), raw: row[i], col: i };
     }
+  }
+  return null;
+}
+
+function parseLooseDate(value, options = {}) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  const standaloneDate = /^(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Za-z]{3,}\s+\d{1,2},?\s*\d{0,4}|\d{1,2}[-/\s][A-Za-z]{3,}[-/\s]?\d{0,4})$/i;
+  if (standaloneDate.test(text)) {
+    const direct = parseDate(text, options);
+    if (direct) return direct;
+  }
+  const candidates = [
+    text.match(/(\d{4}-\d{1,2}-\d{1,2})/)?.[1],
+    text.match(/(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/)?.[1],
+    text.match(/([A-Za-z]{3,}\s+\d{1,2},?\s+\d{2,4})/)?.[1],
+    text.match(/([A-Za-z]{3,}\s+\d{1,2})/)?.[1],
+    text.match(/(\d{1,2}[-/\s][A-Za-z]{3,}[-/\s]\d{2,4})/)?.[1],
+    text.match(/(\d{1,2}[-/\s][A-Za-z]{3,})/)?.[1],
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    const parsed = parseDate(candidate, options);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function dateFromRow(row, startIndex = 0, options = {}) {
+  for (let i = Math.max(0, startIndex); i < (row || []).length; i++) {
+    const parsed = parseLooseDate(row[i], options);
+    if (parsed) return parsed;
   }
   return null;
 }
@@ -314,6 +359,12 @@ function parsePayoutBalanceTab(values, person, options = {}) {
     rows: 0,
     labelsFound: [],
     note: '',
+    asOf: '',
+    nextPayoutDate: '',
+    processingCompletesOn: '',
+    onHoldReleaseDate: '',
+    processingSince: '',
+    onHoldSince: '',
   };
   const found = { available: false, processing: false, onHold: false, total: false };
   const rows = (values || []).filter(row => (row || []).some(cell => String(cell || '').trim()));
@@ -328,6 +379,11 @@ function parsePayoutBalanceTab(values, person, options = {}) {
 
   rows.forEach(row => {
     (row || []).forEach((cell, idx) => {
+      const dateBucket = payoutDateBucketForLabel(cell);
+      if (dateBucket) {
+        const dateValue = dateFromRow(row, idx + 1, options) || dateFromRow(row, 0, options);
+        if (dateValue) result[dateBucket] = dateValue;
+      }
       const bucket = payoutBucketForLabel(cell);
       if (!bucket) return;
       const amount = moneyFromRow(row, idx + 1) || moneyFromRow(row, 0);
@@ -728,6 +784,8 @@ function parseDate(raw, options = {}) {
   if (m) { const mo = MO[m[2].toLowerCase().substring(0,3)]; if (mo) { const yr = new Date().getFullYear(); return `${yr}-${String(mo).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`; } }
   m = s.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{2,4})$/);
   if (m) { const mo = MO[m[1].toLowerCase().substring(0,3)]; if (mo) { const yr=m[3].length===2?'20'+m[3]:m[3]; return `${yr}-${String(mo).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`; } }
+  m = s.match(/^([A-Za-z]{3,})\s+(\d{1,2})$/);
+  if (m) { const mo = MO[m[1].toLowerCase().substring(0,3)]; if (mo) { const yr = new Date().getFullYear(); return `${yr}-${String(mo).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`; } }
   m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
   if (m) {
     const first = Number(m[1]), second = Number(m[2]);
@@ -1941,13 +1999,329 @@ function applyFilters() {
 }
 
 // ─── EBAY PAYOUT BALANCES ─────────────────────────────────────────────────
+const PAYOUT_OBSERVATION_KEY = 'selleros:payout-observations-v1';
+const PAYOUT_HISTORY_KEY = 'selleros:payout-daily-history-v1';
+const EBAY_PAYOUT_RULES = [
+  {
+    key: 'processing',
+    label: 'Processing funds',
+    window: 'usually short; use eBay completion date when shown',
+    detail: 'Buyer paid, but the payment is still processing inside eBay. It is part of Total funds, but not Available/requestable yet.',
+    signal: 'If processing shrinks and available rises, Seller OS treats it as likely cleared.',
+  },
+  {
+    key: 'standard_hold',
+    label: 'Transaction hold',
+    window: 'often 24h-2d after delivery, or 31d after buyer pays without tracking',
+    detail: 'Used when eBay wants proof the transaction completed successfully, especially during unusual activity, growth spikes, or account review.',
+    signal: 'Tracking and delivery confirmation are the fastest unlock path.',
+  },
+  {
+    key: 'new_restricted',
+    label: 'New / inactive / restricted account',
+    window: '24h-2d after delivery; 14-31d without strong delivery proof',
+    detail: 'More common on fresh stores, recently inactive stores, and stores coming out of restriction.',
+    signal: 'If the store is young or recently had account issues, holds are less surprising but still need tracking discipline.',
+  },
+  {
+    key: 'high_price',
+    label: 'High-priced item hold',
+    window: 'typically 31 days from transaction date',
+    detail: 'eBay may hold higher-risk or high-priced transactions long enough for the buyer to inspect/report issues.',
+    signal: 'A hold aging toward 31 days can be normal if it is tied to a high-price order.',
+  },
+  {
+    key: 'dispute',
+    label: 'Payment dispute hold',
+    window: 'can last up to 90 calendar days',
+    detail: 'If a buyer files a payment dispute, the held amount can stay locked until the buyer’s payment institution decides.',
+    signal: 'Anything aging past 31 days should be treated like possible dispute/account-risk money until proven otherwise.',
+  },
+];
+
+function todayIsoDate() {
+  return typeof todayIsoLocal === 'function' ? todayIsoLocal() : new Date().toISOString().substring(0, 10);
+}
+
+function daysSinceIsoDate(dateStr) {
+  if (!dateStr) return null;
+  const date = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = new Date(`${todayIsoDate()}T00:00:00`);
+  return Math.max(0, Math.floor((today.getTime() - date.getTime()) / 86400000));
+}
+
+function daysSinceDateTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
+}
+
+function formatWindowAge(dateStr) {
+  const days = daysSinceIsoDate(dateStr);
+  if (days === null) return 'duration unknown';
+  if (days === 0) return 'seen today';
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
+
+function daysUntilIsoDate(dateStr) {
+  if (!dateStr) return null;
+  const date = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = new Date(`${todayIsoDate()}T00:00:00`);
+  return Math.ceil((date.getTime() - today.getTime()) / 86400000);
+}
+
+function fmtDelta$(value) {
+  if (!Number.isFinite(Number(value)) || Math.abs(value) < 0.005) return '$0.00';
+  return `${value > 0 ? '+' : ''}${fmt$(value)}`;
+}
+
+function payoutWindowSeverity(days, releaseDate) {
+  const releaseDays = releaseDate ? daysUntilIsoDate(releaseDate) : null;
+  if (releaseDays !== null && releaseDays < 0) return 'danger';
+  if (days === null) return 'warn';
+  if (days >= 31) return 'danger';
+  if (days >= 14) return 'warn';
+  return 'info';
+}
+
+function payoutWindowLabel(days, releaseDate) {
+  if (releaseDate) {
+    const until = daysUntilIsoDate(releaseDate);
+    if (until === null) return `release estimate ${fmtDayLabel(releaseDate)}`;
+    if (until < 0) return `release estimate ${fmtDayLabel(releaseDate)} is ${Math.abs(until)}d late`;
+    if (until === 0) return `release estimate is today`;
+    return `release estimate ${fmtDayLabel(releaseDate)} (${until}d out)`;
+  }
+  if (days === null) return 'no age captured yet';
+  if (days >= 90) return '90d+ · extreme dispute/account-risk zone';
+  if (days >= 31) return '31d+ · past normal transaction-hold window';
+  if (days >= 14) return '14d+ · aging hold, investigate';
+  if (days >= 2) return `${days}d · normal if waiting on delivery/account review`;
+  return 'fresh hold';
+}
+
+function readPayoutHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PAYOUT_HISTORY_KEY) || '{}');
+    if (!parsed || typeof parsed !== 'object') return { scopes: {} };
+    if (parsed.scopes && typeof parsed.scopes === 'object') return parsed;
+    return { scopes: { all: parsed } };
+  } catch (e) {
+    return { scopes: {} };
+  }
+}
+
+function writePayoutHistory(history) {
+  try { localStorage.setItem(PAYOUT_HISTORY_KEY, JSON.stringify(history)); } catch (e) {}
+}
+
+function summarizePayoutEntries(entries) {
+  const filled = entries.filter(e => e.hasData);
+  return {
+    available: r2(filled.reduce((s, e) => s + (e.available || 0), 0)),
+    processing: r2(filled.reduce((s, e) => s + (e.processing || 0), 0)),
+    onHold: r2(filled.reduce((s, e) => s + (e.onHold || 0), 0)),
+    total: r2(filled.reduce((s, e) => s + (e.total || 0), 0)),
+    filledCount: filled.length,
+    storeCount: entries.length,
+    stores: Object.fromEntries(filled.map(e => [e.person, {
+      available: r2(e.available || 0),
+      processing: r2(e.processing || 0),
+      onHold: r2(e.onHold || 0),
+      total: r2(e.total || 0),
+    }])),
+  };
+}
+
+function updatePayoutHistory(entries, scopeKey = 'all') {
+  const date = todayIsoDate();
+  const root = readPayoutHistory();
+  const history = root.scopes[scopeKey] || {};
+  const summary = summarizePayoutEntries(entries);
+  if (!summary.filledCount) {
+    const keys = Object.keys(history).sort();
+    const previousKey = keys.filter(key => key < date).pop();
+    return { history, current: { date, recordedAt: new Date().toISOString(), ...summary }, previous: previousKey ? history[previousKey] : null };
+  }
+  history[date] = { date, recordedAt: new Date().toISOString(), ...summary };
+  const keep = Object.keys(history).sort().slice(-45);
+  const trimmed = {};
+  keep.forEach(key => { trimmed[key] = history[key]; });
+  root.scopes[scopeKey] = trimmed;
+  writePayoutHistory(root);
+  const previousKey = keep.filter(key => key < date).pop();
+  return { history: trimmed, current: trimmed[date], previous: previousKey ? trimmed[previousKey] : null };
+}
+
+function payoutMovementItems(current, previous) {
+  if (!current || !previous) {
+    return [{
+      level: 'info',
+      title: 'Movement starts after one daily snapshot',
+      detail: 'Bank will compare tomorrow against today and start calling out clears, holds, and payout drains.',
+    }];
+  }
+  const d = {
+    available: r2(current.available - previous.available),
+    processing: r2(current.processing - previous.processing),
+    onHold: r2(current.onHold - previous.onHold),
+    total: r2(current.total - previous.total),
+  };
+  const items = [];
+  if (d.processing < -0.01 && d.available > 0.01) {
+    items.push({
+      level: 'good',
+      title: `Processing likely cleared into available`,
+      detail: `${fmtDelta$(d.processing)} processing and ${fmtDelta$(d.available)} available since ${previous.date}.`,
+    });
+  }
+  if (d.processing > 0.01) {
+    items.push({
+      level: 'info',
+      title: `New buyer-paid funds entered processing`,
+      detail: `${fmtDelta$(d.processing)} processing since ${previous.date}; watch when it becomes available.`,
+    });
+  }
+  if (d.available < -0.01) {
+    items.push({
+      level: 'info',
+      title: `Available cash moved out`,
+      detail: `${fmtDelta$(d.available)} available since ${previous.date}; likely payout sent/requested, fees, refunds, or adjustments.`,
+    });
+  }
+  if (d.available > 0.01 && d.processing >= -0.01) {
+    items.push({
+      level: 'good',
+      title: `Available cash increased`,
+      detail: `${fmtDelta$(d.available)} available since ${previous.date}; more spendable/requestable cash in the system.`,
+    });
+  }
+  if (d.onHold > 0.01) {
+    items.push({
+      level: 'warn',
+      title: `Holds grew`,
+      detail: `${fmtDelta$(d.onHold)} on hold since ${previous.date}; check delivery, tracking, disputes, and account notices.`,
+    });
+  }
+  if (d.onHold < -0.01) {
+    items.push({
+      level: 'good',
+      title: `Held funds released or reduced`,
+      detail: `${fmtDelta$(d.onHold)} on hold since ${previous.date}; confirm whether it moved to available or offset fees/refunds.`,
+    });
+  }
+  if (!items.length) {
+    items.push({
+      level: 'info',
+      title: `No meaningful cash movement`,
+      detail: `Available, processing, and holds are basically flat since ${previous.date}.`,
+    });
+  }
+  return items.slice(0, 5);
+}
+
+function readPayoutObservations() {
+  try {
+    return JSON.parse(localStorage.getItem(PAYOUT_OBSERVATION_KEY) || '{}') || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function updatePayoutObservations(entries) {
+  const today = todayIsoDate();
+  const store = readPayoutObservations();
+  entries.forEach(e => {
+    ['processing', 'onHold'].forEach(bucket => {
+      const key = `${e.person}::${bucket}`;
+      const amount = Number(e[bucket] || 0);
+      if (e.hasData && Math.abs(amount) > 0.005) {
+        const existing = store[key] || {};
+        store[key] = {
+          firstSeen: existing.firstSeen || today,
+          lastSeen: today,
+          lastAmount: r2(amount),
+        };
+      } else if (store[key]) {
+        delete store[key];
+      }
+    });
+  });
+  try { localStorage.setItem(PAYOUT_OBSERVATION_KEY, JSON.stringify(store)); } catch (e) {}
+  return store;
+}
+
+function payoutObservedSince(entry, bucket, observations) {
+  const direct = bucket === 'processing' ? entry.processingSince : entry.onHoldSince;
+  if (direct) return { date: direct, source: 'sheet' };
+  const observed = observations[`${entry.person}::${bucket}`]?.firstSeen;
+  return observed ? { date: observed, source: 'browser' } : null;
+}
+
+function payoutWatchItems(entries, observations) {
+  const items = [];
+  entries.forEach(e => {
+    const modifiedDays = daysSinceDateTime(SHEET_MODIFIED[e.person]);
+    if (!e.hasData) {
+      items.push({
+        level: e.tabReady ? 'warn' : 'info',
+        title: `${e.person}: waiting on payout row`,
+        detail: e.tabReady ? 'Tab exists, but balances are not filled yet.' : 'PENDING PAYOUT BALANCE tab was not found during load.',
+      });
+      return;
+    }
+    if (modifiedDays !== null && modifiedDays >= 2) {
+      items.push({
+        level: modifiedDays >= 4 ? 'danger' : 'warn',
+        title: `${e.person}: balance update is stale`,
+        detail: `Last sheet edit was ${modifiedDays} day${modifiedDays === 1 ? '' : 's'} ago.`,
+      });
+    }
+    const holdSince = payoutObservedSince(e, 'onHold', observations);
+    if ((e.onHold || 0) > 0) {
+      const ageDays = holdSince ? daysSinceIsoDate(holdSince.date) : null;
+      items.push({
+        level: payoutWindowSeverity(ageDays, e.onHoldReleaseDate),
+        title: `${e.person}: ${fmt$(e.onHold)} on hold`,
+        detail: `${holdSince ? `${formatWindowAge(holdSince.date)} ${holdSince.source === 'browser' ? 'observed locally' : 'from sheet'}` : 'duration unknown'} · ${payoutWindowLabel(ageDays, e.onHoldReleaseDate)} · check tracking, delivery, disputes, account notices, or buyer issues.`,
+      });
+    }
+    const processingSince = payoutObservedSince(e, 'processing', observations);
+    if ((e.processing || 0) > 0) {
+      const ageDays = processingSince ? daysSinceIsoDate(processingSince.date) : null;
+      const completeDays = daysUntilIsoDate(e.processingCompletesOn);
+      const completeNote = e.processingCompletesOn
+        ? ` · expected complete ${fmtDayLabel(e.processingCompletesOn)}${completeDays !== null && completeDays < 0 ? ` (${Math.abs(completeDays)}d late)` : ''}`
+        : '';
+      items.push({
+        level: (completeDays !== null && completeDays < 0) || (ageDays !== null && ageDays >= 3) ? 'warn' : 'info',
+        title: `${e.person}: ${fmt$(e.processing)} processing`,
+        detail: `${processingSince ? `${formatWindowAge(processingSince.date)} ${processingSince.source === 'browser' ? 'observed locally' : 'from sheet'}` : 'duration unknown'}${completeNote} · buyer paid, but this is pre-payout and not requestable yet.`,
+      });
+    }
+    if ((e.available || 0) < 0) {
+      items.push({
+        level: 'danger',
+        title: `${e.person}: negative available balance`,
+        detail: `${fmt$(e.available)} available. Check refunds, fees, disputes, or payout timing before spending.`,
+      });
+    }
+  });
+  const rank = { danger: 0, warn: 1, info: 2 };
+  return items.sort((a, b) => (rank[a.level] ?? 3) - (rank[b.level] ?? 3)).slice(0, 8);
+}
+
 function renderPayoutBalances() {
   const section = $('payout-balance-section');
   const panel = $('payout-balance-panel');
   const sub = $('payout-balance-sub');
   if (!section || !panel) return;
 
-  if (CHANNEL_FILTER !== 'all' && CHANNEL_FILTER !== 'ebay') {
+  const onBankPage = $('bank-page')?.style.display === 'block';
+  if (!onBankPage && CHANNEL_FILTER !== 'all' && CHANNEL_FILTER !== 'ebay') {
     section.style.display = 'none';
     panel.innerHTML = '';
     if (sub) sub.textContent = '';
@@ -1988,14 +2362,47 @@ function renderPayoutBalances() {
   const processing = r2(entries.reduce((sum, e) => sum + (e.processing || 0), 0));
   const onHold = r2(entries.reduce((sum, e) => sum + (e.onHold || 0), 0));
   const total = r2(entries.reduce((sum, e) => sum + (e.total || 0), 0));
+  const blocked = r2(processing + onHold);
+  const liquidityPct = total ? Math.max(0, Math.min(100, available / total * 100)) : 0;
+  const blockedPct = total ? Math.max(0, Math.min(100, blocked / total * 100)) : 0;
   const scopeLabel = selectedPerson === 'all' ? `${entries.length} eBay stores` : selectedPerson;
   const waiting = entries.length - filledCount;
   if (sub) sub.textContent = `${scopeLabel} · ${filledCount}/${entries.length} filled · current values, not month-filtered`;
+  const observations = updatePayoutObservations(entries);
+  const movement = updatePayoutHistory(entries, selectedPerson === 'all' ? 'all' : `person:${selectedPerson}`);
+  const movementItems = payoutMovementItems(movement.current, movement.previous);
+  const watchItems = payoutWatchItems(entries, observations);
+  const activeHoldStores = entries.filter(e => (e.onHold || 0) > 0).length;
+  const activeProcessingStores = entries.filter(e => (e.processing || 0) > 0).length;
+  const staleStores = entries.filter(e => {
+    const days = daysSinceDateTime(SHEET_MODIFIED[e.person]);
+    return days !== null && days >= 2;
+  }).length;
+  const cashRead = onHold > available
+    ? `Holds are larger than spendable cash by ${fmt$(onHold - available)}.`
+    : processing > available
+      ? `More cash is clearing than usable right now by ${fmt$(processing - available)}.`
+      : available > 0
+        ? `${fmt$(available)} is usable/requestable now.`
+        : 'No spendable payout cash has been entered yet.';
 
   const rowHtml = entries.map(e => {
     const modified = SHEET_MODIFIED[e.person] ? new Date(SHEET_MODIFIED[e.person]) : null;
     const updated = modified && !Number.isNaN(modified.getTime()) ? formatRelativeAge(modified) : 'No timestamp';
     const status = e.hasData ? 'filled' : e.tabReady ? 'waiting' : 'missing tab';
+    const processingSince = payoutObservedSince(e, 'processing', observations);
+    const holdSince = payoutObservedSince(e, 'onHold', observations);
+    const windowText = e.hasData && ((e.processing || 0) > 0 || (e.onHold || 0) > 0)
+      ? [
+          (e.processing || 0) > 0
+            ? (e.processingCompletesOn ? `processing completes ${fmtDayLabel(e.processingCompletesOn)}` : `processing ${processingSince ? formatWindowAge(processingSince.date) : 'duration unknown'}`)
+            : '',
+          (e.onHold || 0) > 0
+            ? (e.onHoldReleaseDate ? `hold release ${fmtDayLabel(e.onHoldReleaseDate)}` : `hold ${holdSince ? formatWindowAge(holdSince.date) : 'duration unknown'}`)
+            : '',
+          e.nextPayoutDate ? `next payout ${fmtDayLabel(e.nextPayoutDate)}` : '',
+        ].filter(Boolean).join(' · ')
+      : '';
     const note = e.hasData
       ? `${fmt$(e.total || ((e.available || 0) + (e.processing || 0) + (e.onHold || 0)))} total`
       : (e.tabReady ? 'Ready for VA update' : 'Tab not loaded yet');
@@ -2005,6 +2412,7 @@ function renderPayoutBalances() {
           <div>
             <strong>${escapeHtml(e.person)}</strong>
             <span>${escapeHtml(note)}</span>
+            ${windowText ? `<small>${escapeHtml(windowText)}</small>` : ''}
           </div>
           <em>${escapeHtml(updated)}</em>
         </div>
@@ -2020,6 +2428,28 @@ function renderPayoutBalances() {
   const emptyNote = filledCount
     ? ''
     : `<div class="payout-empty-note">Tabs are wired. Once the VA enters balances using labels like <strong>Available balance</strong> and <strong>On hold</strong>, this turns into the live eBay cash board.</div>`;
+  const watchHtml = watchItems.length
+    ? watchItems.map(item => `
+      <div class="bank-watch-item ${item.level}">
+        <strong>${escapeHtml(item.title)}</strong>
+        <span>${escapeHtml(item.detail)}</span>
+      </div>`).join('')
+    : `<div class="bank-watch-item good"><strong>Cash board looks clean</strong><span>No major processing, hold, or stale-update warnings in the visible payout rows.</span></div>`;
+  const movementHtml = movementItems.map(item => `
+    <div class="bank-watch-item ${item.level}">
+      <strong>${escapeHtml(item.title)}</strong>
+      <span>${escapeHtml(item.detail)}</span>
+    </div>`).join('');
+  const ruleHtml = EBAY_PAYOUT_RULES.map(rule => `
+    <div class="bank-rule-card ${rule.key}">
+      <strong>${escapeHtml(rule.label)}</strong>
+      <em>${escapeHtml(rule.window)}</em>
+      <span>${escapeHtml(rule.detail)}</span>
+      <small>${escapeHtml(rule.signal)}</small>
+    </div>`).join('');
+  const movementLabel = movement.previous
+    ? `Compared with ${movement.previous.date}`
+    : 'Starting the daily movement log';
 
   section.style.display = 'block';
   panel.innerHTML = `
@@ -2035,6 +2465,54 @@ function renderPayoutBalances() {
           <div><span>Processing</span><strong>${fmt$(processing)}</strong></div>
           <div><span>On hold</span><strong>${fmt$(onHold)}</strong></div>
           <div><span>Tabs ready</span><strong>${readyCount}/${entries.length}</strong></div>
+        </div>
+      </div>
+      <div class="bank-intel-grid">
+        <div class="bank-intel-card primary">
+          <span>Cash read</span>
+          <strong>${escapeHtml(cashRead)}</strong>
+          <p>${fmtP(liquidityPct)} of the entered payout position is spendable/requestable right now.</p>
+          <div class="bank-cash-bar"><i style="width:${liquidityPct}%"></i></div>
+        </div>
+        <div class="bank-intel-card">
+          <span>Blocked or clearing</span>
+          <strong>${fmt$(blocked)}</strong>
+          <p>${fmtP(blockedPct)} is still pre-payout processing or on hold. This is the cash-flow drag to watch daily.</p>
+        </div>
+        <div class="bank-intel-card">
+          <span>Stores to watch</span>
+          <strong>${activeHoldStores} held · ${activeProcessingStores} processing</strong>
+          <p>${staleStores ? `${staleStores} store${staleStores === 1 ? '' : 's'} have stale payout updates.` : 'No stale payout updates in the visible rows.'}</p>
+        </div>
+      </div>
+      <div class="bank-meaning-grid">
+        <div><b>Available</b><span>Spendable/requestable payout cash.</span></div>
+        <div><b>Processing</b><span>Buyer paid, but eBay has not made the funds available yet. Not bank-bound yet.</span></div>
+        <div><b>On hold</b><span>Blocked funds waiting on delivery, account, dispute, or transaction release conditions.</span></div>
+        <div><b>Bank-bound</b><span>That is payout status: in progress/funds sent. Different from fund status processing.</span></div>
+      </div>
+      <details class="bank-rules-card" open>
+        <summary>
+        <span>eBay hold logic Seller OS is using</span>
+          <b>24h / 2d / 7d / 15d / 31d / 90d windows</b>
+        </summary>
+        <div class="bank-rule-grid">${ruleHtml}</div>
+      </details>
+      <div class="bank-window-card">
+        <div>
+          <div class="payout-label">Payout window intelligence</div>
+          <h3>How long is cash sitting?</h3>
+          <p>Seller OS snapshots the payout board daily and infers what likely happened as available, processing, and held funds move. For cleaner precision, add optional rows in each payout tab: <b>Processing completes on</b>, <b>Next payout</b>, <b>Processing since</b>, and <b>On hold since</b>.</p>
+        </div>
+        <div class="bank-watch-columns">
+          <div>
+            <div class="bank-mini-title">Movement read <span>${escapeHtml(movementLabel)}</span></div>
+            <div class="bank-watch-list">${movementHtml}</div>
+          </div>
+          <div>
+            <div class="bank-mini-title">Watchlist <span>cash-flow friction</span></div>
+            <div class="bank-watch-list">${watchHtml}</div>
+          </div>
         </div>
       </div>
       ${emptyNote}
@@ -4241,24 +4719,50 @@ let _growthCharts = {};
 function switchPage(page) {
   const ops = document.querySelector('main.container');
   const growth = $('growth-page');
+  const bank = $('bank-page');
   const war = $('war-room-page');
-  const btnOps = $('page-btn-ops'), btnGrowth = $('page-btn-growth'), btnWar = $('page-btn-war');
+  const btnOps = $('page-btn-ops'), btnGrowth = $('page-btn-growth'), btnBank = $('page-btn-bank'), btnWar = $('page-btn-war');
   const animateIn = el => { el.classList.remove('page-enter'); void el.offsetWidth; el.classList.add('page-enter'); };
+  const clearActive = () => {
+    btnOps?.classList.remove('active');
+    btnGrowth?.classList.remove('active');
+    btnBank?.classList.remove('active');
+    btnWar?.classList.remove('active');
+  };
+  const hidePages = () => {
+    if (ops) ops.style.display = 'none';
+    if (growth) growth.style.display = 'none';
+    if (bank) bank.style.display = 'none';
+    if (war) war.style.display = 'none';
+  };
   if (page === 'growth') {
-    ops.style.display = 'none'; growth.style.display = 'block'; if (war) war.style.display = 'none';
+    hidePages();
+    growth.style.display = 'block';
     animateIn(growth);
-    btnOps.classList.remove('active'); btnGrowth.classList.add('active'); btnWar?.classList.remove('active');
+    clearActive();
+    btnGrowth?.classList.add('active');
     renderGrowthPage();
+  } else if (page === 'bank') {
+    hidePages();
+    if (bank) bank.style.display = 'block';
+    if (bank) animateIn(bank);
+    clearActive();
+    btnBank?.classList.add('active');
+    renderPayoutBalances();
   } else if (page === 'war') {
-    ops.style.display = 'none'; growth.style.display = 'none'; if (war) war.style.display = 'block';
+    hidePages();
+    if (war) war.style.display = 'block';
     if (war) animateIn(war);
-    btnOps.classList.remove('active'); btnGrowth.classList.remove('active'); btnWar?.classList.add('active');
+    clearActive();
+    btnWar?.classList.add('active');
     renderGrowthPage();
     renderWarRoom();
   } else {
-    growth.style.display = 'none'; if (war) war.style.display = 'none'; ops.style.display = 'block';
+    hidePages();
+    if (ops) ops.style.display = 'block';
     animateIn(ops);
-    btnGrowth.classList.remove('active'); btnWar?.classList.remove('active'); btnOps.classList.add('active');
+    clearActive();
+    btnOps?.classList.add('active');
   }
 }
 
@@ -4339,7 +4843,7 @@ function setChannelFilter(ch) {
   const growthBtn = $('page-btn-growth');
   const hideListingGrowth = ch === 'tiktok' || ch === 'amazon_fbm' || ch === 'walmart';
   if (growthBtn) growthBtn.style.display = hideListingGrowth ? 'none' : '';
-  if (hideListingGrowth) { try { switchPage('ops'); } catch(e) {} }
+  if (hideListingGrowth && $('growth-page')?.style.display === 'block') { try { switchPage('ops'); } catch(e) {} }
   try { applyFilters(); } catch(e) {}
   try { renderAllTimeBanner(); } catch(e) { console.error('renderAllTimeBanner error:', e); }
   try { renderGrowthPage(); } catch(e) { console.error('renderGrowthPage error:', e); }

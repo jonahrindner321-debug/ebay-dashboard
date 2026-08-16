@@ -260,7 +260,8 @@ function payoutBucketForLabel(label) {
   if (!text) return null;
   if (/\b(total|combined|cash position|current balance)\b/.test(text)) return 'total';
   if (/\b(available|ready|payable|payoutable)\b/.test(text)) return 'available';
-  if (/\b(on hold|hold|pending|reserve|withheld|unavailable|processing)\b/.test(text)) return 'onHold';
+  if (/\b(processing|pending|in process)\b/.test(text)) return 'processing';
+  if (/\b(on hold|hold|reserve|withheld|unavailable)\b/.test(text)) return 'onHold';
   return null;
 }
 
@@ -290,7 +291,7 @@ function normalizePayoutBalanceRecord(record, options = {}) {
   record.sourceCurrency = sourceCurrency;
   if (sourceCurrency === 'USD' || !Number.isFinite(fxRate) || fxRate === 1) return record;
 
-  ['available', 'onHold', 'total'].forEach(field => {
+  ['available', 'processing', 'onHold', 'total'].forEach(field => {
     const nativeValue = Number(record[field] || 0);
     record[`${field}Native`] = r2(nativeValue);
     record[field] = r2(nativeValue * fxRate);
@@ -305,6 +306,7 @@ function parsePayoutBalanceTab(values, person, options = {}) {
     person,
     tab: 'PENDING PAYOUT BALANCE',
     available: 0,
+    processing: 0,
     onHold: 0,
     total: 0,
     hasData: false,
@@ -313,13 +315,13 @@ function parsePayoutBalanceTab(values, person, options = {}) {
     labelsFound: [],
     note: '',
   };
-  const found = { available: false, onHold: false, total: false };
+  const found = { available: false, processing: false, onHold: false, total: false };
   const rows = (values || []).filter(row => (row || []).some(cell => String(cell || '').trim()));
   result.rows = rows.length;
 
   const setBucket = (bucket, amount, label) => {
     if (!bucket || amount === null || amount === undefined || !Number.isFinite(Number(amount))) return;
-    result[bucket] = r2(Math.max(0, Number(amount)));
+    result[bucket] = r2(Number(amount));
     found[bucket] = true;
     if (label) result.labelsFound.push(String(label).trim());
   };
@@ -342,15 +344,16 @@ function parsePayoutBalanceTab(values, person, options = {}) {
         if (!bucket || found[bucket] || !isLikelyMoneyCell(row[col])) return;
         setBucket(bucket, parseMoney(row[col]), rows[i][col]);
       });
-      if (found.available || found.onHold || found.total) break;
+      if (found.available || found.processing || found.onHold || found.total) break;
     }
   }
 
-  if (!found.total) result.total = r2((result.available || 0) + (result.onHold || 0));
-  result.hasData = Boolean(found.available || found.onHold || found.total);
+  if (!found.total) result.total = r2((result.available || 0) + (result.processing || 0) + (result.onHold || 0));
+  result.hasData = Boolean(found.available || found.processing || found.onHold || found.total);
   if (!result.hasData && rows.length) result.note = 'Payout tab exists, waiting on VA-entered balances.';
 
   result.available = r2(result.available);
+  result.processing = r2(result.processing);
   result.onHold = r2(result.onHold);
   result.total = r2(result.total);
   return normalizePayoutBalanceRecord(result, options);
@@ -1967,6 +1970,7 @@ function renderPayoutBalances() {
   const entries = scopeNames.map(person => ({
     person,
     available: 0,
+    processing: 0,
     onHold: 0,
     total: 0,
     hasData: false,
@@ -1981,6 +1985,7 @@ function renderPayoutBalances() {
   const filledCount = entries.filter(e => e.hasData).length;
   const readyCount = entries.filter(e => e.tabReady || PAYOUT_BALANCES[e.person]).length;
   const available = r2(entries.reduce((sum, e) => sum + (e.available || 0), 0));
+  const processing = r2(entries.reduce((sum, e) => sum + (e.processing || 0), 0));
   const onHold = r2(entries.reduce((sum, e) => sum + (e.onHold || 0), 0));
   const total = r2(entries.reduce((sum, e) => sum + (e.total || 0), 0));
   const scopeLabel = selectedPerson === 'all' ? `${entries.length} eBay stores` : selectedPerson;
@@ -1992,7 +1997,7 @@ function renderPayoutBalances() {
     const updated = modified && !Number.isNaN(modified.getTime()) ? formatRelativeAge(modified) : 'No timestamp';
     const status = e.hasData ? 'filled' : e.tabReady ? 'waiting' : 'missing tab';
     const note = e.hasData
-      ? `${fmt$(e.total || ((e.available || 0) + (e.onHold || 0)))} total`
+      ? `${fmt$(e.total || ((e.available || 0) + (e.processing || 0) + (e.onHold || 0)))} total`
       : (e.tabReady ? 'Ready for VA update' : 'Tab not loaded yet');
     return `
       <div class="payout-store ${e.hasData ? 'is-filled' : 'is-empty'}">
@@ -2005,6 +2010,7 @@ function renderPayoutBalances() {
         </div>
         <div class="payout-store-values">
           <div><span>Available</span><b>${fmt$(e.available || 0)}</b></div>
+          <div><span>Processing</span><b>${fmt$(e.processing || 0)}</b></div>
           <div><span>On hold</span><b>${fmt$(e.onHold || 0)}</b></div>
           <i>${escapeHtml(status)}</i>
         </div>
@@ -2026,6 +2032,7 @@ function renderPayoutBalances() {
         </div>
         <div class="payout-stats">
           <div><span>Available</span><strong>${fmt$(available)}</strong></div>
+          <div><span>Processing</span><strong>${fmt$(processing)}</strong></div>
           <div><span>On hold</span><strong>${fmt$(onHold)}</strong></div>
           <div><span>Tabs ready</span><strong>${readyCount}/${entries.length}</strong></div>
         </div>

@@ -644,7 +644,7 @@
     .payout-empty-note strong { color: var(--yellow); }
     .payout-stats {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
       align-content: center;
     }
@@ -735,7 +735,8 @@
       font-weight: 900;
     }
     .payout-store-values div:first-child b { color: var(--emerald); }
-    .payout-store-values div:nth-child(2) b { color: var(--yellow); }
+    .payout-store-values div:nth-child(2) b { color: var(--cyan); }
+    .payout-store-values div:nth-child(3) b { color: var(--yellow); }
 
     /* ── KPI Grid ── */
     .kpi-grid {

@@ -358,6 +358,13 @@ function parsePayoutBalanceTab(values, person, options = {}) {
   }
 
   if (!found.total) result.total = r2((result.available || 0) + (result.processing || 0) + (result.onHold || 0));
+  if (found.total && found.available) {
+    const impliedAvailable = r2((result.total || 0) - (result.processing || 0) - (result.onHold || 0));
+    const closeAsUnsigned = Math.abs(Math.abs(impliedAvailable) - Math.abs(result.available || 0)) <= 0.02;
+    if (closeAsUnsigned && Math.abs(impliedAvailable - (result.available || 0)) > 0.02) {
+      result.available = impliedAvailable;
+    }
+  }
   result.hasData = Boolean(found.available || found.processing || found.onHold || found.total);
   if (!result.hasData && rows.length) result.note = 'Payout tab exists, waiting on VA-entered balances.';
 
